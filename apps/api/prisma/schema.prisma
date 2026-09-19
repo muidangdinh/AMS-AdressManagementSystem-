@@ -1,0 +1,706 @@
+// ============================================================
+//  Prisma schema - Tây Ninh GIS
+//  Phase 0: bật PostGIS + bảng cấu hình tối thiểu.
+//  Phase 1: thêm User (3 vai trò RBAC) + AuditLog.
+//  Các bảng nghiệp vụ (house, survey_record...) sẽ thêm ở phase sau.
+// ============================================================
+
+generator client {
+  provider        = "prisma-client-js"
+  // Cho phép quản lý extension (PostGIS) bằng Prisma
+  previewFeatures = ["postgresqlExtensions"]
+  // "native" = target lúc generate (image build, chưa cài openssl nên Prisma
+  // fallback về libssl 1.1); "linux-musl-openssl-3.0.x" = target thật lúc chạy
+  // (stage "runner" cài openssl mới, Alpine hiện đại dùng OpenSSL 3.0). Khai rõ
+  // cả 2 để tránh lỗi "could not locate the Query Engine" khi Node musl runtime
+  // và Node musl lúc generate lệch phiên bản libssl.
+  binaryTargets   = ["native", "linux-musl-openssl-3.0.x"]
+}
+
+datasource db {
+  provider   = "postgresql"
+  url        = env("DATABASE_URL")
+  extensions = [postgis]
+}
+
+/// Bảng cấu hình hệ thống tối thiểu (Phase 0).
+/// Dùng để kiểm chứng migration + đọc/ghi DB thật.
+model AppSetting {
+  id        Int      @id @default(autoincrement())
+  key       String   @unique
+  value     String
+  updatedAt DateTime @updatedAt
+
+  @@map("app_setting")
+}
+
+/// Vai trò người dùng (MVP — Phase 1). Khớp enum UserRole ở packages/shared.
+enum Role {
+  ADMIN
+  CADASTRAL // Cán bộ địa chính
+  SURVEYOR // Cán bộ khảo sát
+}
+
+/// Tài khoản người dùng hệ thống (Phase 1 — X. Quản trị hệ thống).
+model User {
+  id           String   @id @default(uuid())
+  username     String   @unique
+  passwordHash String
+  fullName     String
+  role         Role     @default(SURVEYOR)
+  /// Đơn vị công tác (tự do nhập ở MVP, chuẩn hóa thành bảng riêng sau)
+  unit         String?
+  /// Chức vụ (tự do nhập, vd "Chuyên viên phòng Kinh tế") — TN-05, góp ý
+  /// khách hàng 11/09/2026, dùng trong lời chào ở dashboard mobile.
+  position     String?
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  auditLogs      AuditLog[]
+  housesCreated  House[]        @relation("HouseCreatedBy")
+  houseHistories HouseHistory[] @relation("HouseChangedBy")
+  schemesCreated  NumberingScheme[] @relation("SchemeCreatedBy")
+  schemesApproved NumberingScheme[] @relation("SchemeApprovedBy")
+  platesIssued    HousePlate[]      @relation("PlateIssuedBy")
+  platesInstalled HousePlate[]      @relation("PlateInstalledBy")
+  platesRevoked   HousePlate[]      @relation("PlateRevokedBy")
+  campaignsCreated    SurveyCampaign[]   @relation("CampaignCreatedBy")
+  assignmentsCreated  SurveyAssignment[] @relation("AssignmentCreatedBy")
+  assignmentsAssigned SurveyAssignment[] @relation("AssignmentAssignee")
+  assignmentsReviewed SurveyAssignment[] @relation("AssignmentReviewedBy")
+  casesCreated  HouseCase[]  @relation("CaseCreatedBy")
+  casesAssigned HouseCase[]  @relation("CaseAssignedTo")
+  caseEvents    CaseEvent[]  @relation("CaseEventActor")
+
+  @@map("app_user")
+}
+
+/// Nhật ký thao tác hệ thống (Phase 1 — XI. Bảo mật).
+/// Ghi lại mọi thao tác thay đổi dữ liệu (POST/PATCH/PUT/DELETE).
+model AuditLog {
+  id     Int     @id @default(autoincrement())
+  userId String?
+  user   User?   @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  method   String
+  path     String
+  action   String
+  ip       String?
+  /// Nội dung request đã ẩn field nhạy cảm (password...)
+  metadata Json?
+
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+  @@index([createdAt])
+  @@map("audit_log")
+}
+
+// ============================================================
+//  Phase 2 — CSDL số nhà (II. Quản lý cơ sở dữ liệu số nhà)
+//  Phase 3 — Bản đồ GIS & Tra cứu (I): thêm cột không gian `geom`
+//  (geometry Point, SRID 4326). Cột này là Unsupported với Prisma
+//  Client (không đọc/ghi trực tiếp qua ORM) — một trigger ở DB tự
+//  đồng bộ geom từ latitude/longitude mỗi khi insert/update, nên
+//  code ứng dụng không cần biết tới nó. Chỉ dùng qua $queryRaw cho
+//  truy vấn không gian thật (ST_DWithin bán kính).
+// ============================================================
+
+/// Trạng thái phê duyệt số nhà. Khớp enum HouseStatus ở packages/shared.
+enum HouseStatus {
+  PENDING // Chờ duyệt
+  APPROVED // Đã cấp biển & QR
+  NEEDS_ADJUST // Cần hiệu chỉnh
+}
+
+/// Loại công trình. Khớp enum BuildingType ở packages/shared.
+/// APARTMENT giữ nguyên tên giá trị trong DB (không backfill dữ liệu cũ) —
+/// nhãn hiển thị "Chung cư đô thị" -> "Nhà chung cư" chỉ đổi ở tầng ứng
+/// dụng (TN-04, góp ý khách hàng 11/09/2026).
+enum BuildingType {
+  SINGLE_HOUSE // Nhà ở riêng lẻ
+  SHOP // Cửa hàng kinh doanh
+  OFFICE_BUILDING // Tòa nhà văn phòng
+  APARTMENT // Nhà chung cư
+  COMPANY_FACTORY // Công ty/Nhà máy
+  RESIDENTIAL_AREA // Khu dân cư
+}
+
+/// Loại ảnh đính kèm hồ sơ số nhà.
+enum PhotoType {
+  FACADE // Ảnh mặt tiền
+  CONDITION // Ảnh hiện trạng khác
+  PLATE // Ảnh biển số nhà (khảo sát tại thời điểm tạo/sửa House — khác installPhotoUrl ở HousePlate Phase 8)
+}
+
+/// Tình trạng sử dụng nhà tại thời điểm khảo sát (BRD mục II, Could-have) —
+/// độc lập với BuildingType (loại công trình xây dựng, không phải đang dùng để làm gì).
+enum HouseUsageStatus {
+  RESIDENTIAL // Nhà ở
+  VACANT // Bỏ trống
+  UNDER_CONSTRUCTION // Đang xây dựng
+  BUSINESS // Kinh doanh / cho thuê
+}
+
+/// Ý định của chủ hộ về việc gắn biển số nhà, ghi nhận LÚC KHẢO SÁT — khác
+/// với HousePlate (Phase 8, việc cấp/gắn biển thật đã xảy ra).
+enum PlateNeed {
+  NEEDED // Có nhu cầu
+  NOT_NEEDED // Không có nhu cầu
+  ALREADY_HAS // Đã có biển
+}
+
+/// 5 giai đoạn phân loại nhà theo thiết kế tham khảo (UI/2-3.jpg) — field ĐỘC LẬP
+/// mới, KHÔNG thay thế HouseStatus (vẫn dùng nguyên cho logic duyệt phương án đánh
+/// số / cấp biển / màu marker bản đồ). reviewStage chỉ phục vụ khối thống kê
+/// "Phân loại số nhà" và có thể chuyển tay từ web (xem UpdateHouseDto).
+enum HouseReviewStage {
+  PROPOSED // Đề xuất
+  CHECKED // Đã kiểm tra
+  APPROVED // Đã duyệt
+  SIGNED // Đã ký duyệt
+  REJECTED // Từ chối
+}
+
+/// Hồ sơ số nhà — bảng lõi của toàn hệ thống.
+model House {
+  id          String @id @default(uuid())
+  houseNumber String // Số nhà gán, vd "18A"
+  street      String
+  ward        String
+  district    String?
+
+  /// Phase 6 — liên kết danh mục địa chỉ chuẩn hoá (song song với text tự do ở
+  /// trên, xem ghi chú tại khối model District/Ward/Hamlet/Street/Alley bên dưới).
+  districtId  String?
+  districtRef District? @relation(fields: [districtId], references: [id], onDelete: SetNull)
+  wardId      String?
+  wardRef     Ward?     @relation(fields: [wardId], references: [id], onDelete: SetNull)
+  hamletId    String?
+  hamlet      Hamlet?   @relation(fields: [hamletId], references: [id], onDelete: SetNull)
+  streetId    String?
+  streetRef   Street?   @relation(fields: [streetId], references: [id], onDelete: SetNull)
+  alleyId     String?
+  alley       Alley?    @relation(fields: [alleyId], references: [id], onDelete: SetNull)
+
+  ownerName     String
+  ownerPhone    String?
+  /// Số CCCD/CMND chủ sở hữu — PII nhạy cảm, chỉ đọc được qua route yêu cầu JWT
+  /// (không bao giờ xuất hiện ở /geojson hay /qrcode.png công khai).
+  ownerIdNumber String?
+
+  buildingType BuildingType @default(SINGLE_HOUSE)
+  floors       Int?
+  area         Float? // m2
+
+  status HouseStatus @default(PENDING)
+  qrCode String      @unique // Chuỗi định danh, vd "TN-3F9A21B4"
+
+  latitude  Float
+  longitude Float
+  /// Đồng bộ tự động từ latitude/longitude bằng trigger DB — xem migration 3_geo
+  geom      Unsupported("geometry(Point, 4326)")?
+
+  /// Số tờ bản đồ / số thửa đất (tự do nhập ở MVP, chưa liên kết bảng thửa đất)
+  soTo   String?
+  soThua String?
+
+  /// Hiện trạng nhà lúc khảo sát (Could-have, để trống cho dữ liệu cũ).
+  usageStatus HouseUsageStatus?
+  /// Nhu cầu gắn biển của chủ hộ lúc khảo sát (để trống cho dữ liệu cũ).
+  plateNeed   PlateNeed?
+  /// Phía đường (chẵn/lẻ) ghi nhận lúc khảo sát — tái dùng enum NumberingSide
+  /// đã có ở Phase 7 (NumberingSchemeItem.side), không tạo enum trùng.
+  side        NumberingSide     @default(NONE)
+  /// 5 giai đoạn phân loại — field độc lập, xem ghi chú tại enum HouseReviewStage.
+  reviewStage HouseReviewStage  @default(PROPOSED)
+  /// Ghi chú khảo sát tự do (mobile SurveyScreen) — trước đây bị giữ local, không gửi lên API.
+  note        String?
+
+  createdById String?
+  createdBy   User?   @relation("HouseCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  /// Phase 9 — nhiệm vụ khảo sát đã tạo ra hồ sơ này, nếu SURVEYOR đang có nhiệm vụ active lúc
+  /// tạo (tùy chọn, không bắt buộc — vẫn tạo House tự do được như trước, xem quyết định #5).
+  surveyAssignmentId String?
+  surveyAssignment   SurveyAssignment? @relation(fields: [surveyAssignmentId], references: [id], onDelete: SetNull)
+
+  photos  HousePhoto[]
+  history HouseHistory[]
+  schemeItems NumberingSchemeItem[]
+  plates      HousePlate[]
+  cases       HouseCase[]
+
+  @@index([street])
+  @@index([ward])
+  @@index([status])
+  @@index([reviewStage])
+  @@index([wardId])
+  @@index([streetId])
+  @@index([surveyAssignmentId])
+  @@map("house")
+}
+
+/// Ảnh hiện trạng đính kèm hồ sơ số nhà.
+model HousePhoto {
+  id      String    @id @default(uuid())
+  houseId String
+  house   House     @relation(fields: [houseId], references: [id], onDelete: Cascade)
+  url     String
+  type    PhotoType @default(CONDITION)
+
+  createdAt DateTime @default(now())
+
+  @@index([houseId])
+  @@map("house_photo")
+}
+
+/// Lịch sử thay đổi hồ sơ số nhà (ai, khi nào, đổi những gì).
+model HouseHistory {
+  id      Int    @id @default(autoincrement())
+  houseId String
+  house   House  @relation(fields: [houseId], references: [id], onDelete: Cascade)
+
+  action  String // CREATE | UPDATE
+  /// Danh sách field đã đổi: [{ field, old, new }]
+  changes Json?
+
+  changedById String?
+  changedBy   User?   @relation("HouseChangedBy", fields: [changedById], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+
+  @@index([houseId])
+  @@map("house_history")
+}
+
+// ============================================================
+//  Phase 6 — Danh mục địa chỉ chuẩn hoá (IV. Quản lý dữ liệu địa chỉ)
+//  5 bảng danh mục dùng chung toàn hệ thống, phạm vi 1 tỉnh Tây Ninh
+//  (không mô hình đa tỉnh). Cột text tự do cũ trên House (`street`,
+//  `ward`, `district`) được GIỮ NGUYÊN song song ở bước này (additive)
+//  để không phá luồng MVP đang chạy; các cột FK (*Id) trên House là lớp
+//  chuẩn hoá mới, hiện tại tùy chọn. Khi dữ liệu qua danh mục đã ổn định,
+//  một migration sau (Phase 6b) sẽ bắt buộc FK và bỏ cột text cũ.
+// ============================================================
+
+/// Quận/huyện — Tây Ninh hiện là tỉnh 1 cấp (tỉnh → xã/phường trực tiếp,
+/// không còn cấp huyện thật), bảng này giữ để tương thích địa chỉ cũ/
+/// lịch sử và phòng trường hợp cần lại, không bắt buộc phải gán cho Ward.
+model District {
+  id        String   @id @default(uuid())
+  name      String   @unique
+  code      String?  @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  wards  Ward[]
+  houses House[]
+
+  @@map("address_district")
+}
+
+/// Xã/phường.
+model Ward {
+  id         String    @id @default(uuid())
+  name       String
+  code       String?   @unique
+  districtId String?
+  district   District? @relation(fields: [districtId], references: [id], onDelete: SetNull)
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+
+  hamlets Hamlet[]
+  streets Street[]
+  houses  House[]
+  numberingSchemes NumberingScheme[]
+  surveyZones      SurveyZone[]
+
+  @@unique([name, districtId])
+  @@map("address_ward")
+}
+
+/// Thôn/ấp/tổ dân phố — luôn thuộc 1 xã/phường.
+model Hamlet {
+  id        String   @id @default(uuid())
+  name      String
+  wardId    String
+  ward      Ward     @relation(fields: [wardId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  houses House[]
+
+  @@unique([name, wardId])
+  @@map("address_hamlet")
+}
+
+/// Đường/phố — có thể chưa gán xã/phường (một số đường thực tế đi qua
+/// nhiều xã/phường, MVP chọn gán 1 xã/phường chính hoặc để trống).
+model Street {
+  id        String   @id @default(uuid())
+  name      String
+  wardId    String?
+  ward      Ward?    @relation(fields: [wardId], references: [id], onDelete: SetNull)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  alleys Alley[]
+  houses House[]
+  numberingSchemes NumberingScheme[]
+
+  @@unique([name, wardId])
+  @@map("address_street")
+}
+
+/// Hẻm/ngõ — luôn thuộc 1 đường/phố.
+model Alley {
+  id        String   @id @default(uuid())
+  name      String
+  streetId  String
+  street    Street   @relation(fields: [streetId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  houses House[]
+
+  @@unique([name, streetId])
+  @@map("address_alley")
+}
+
+// ============================================================
+//  Phase 7 — Lập phương án đánh số (V. Đánh số nhà)
+//  Quy trình tách biệt với việc sửa 1 nhà đơn lẻ ở `houses` module: soạn
+//  phương án cho 1 tuyến đường → sinh số tự động (chẵn/lẻ hoặc liên tục)
+//  → kiểm tra trùng/thiếu/sai thứ tự → trình duyệt → ADMIN phê duyệt (lúc
+//  này mới ghi đè House.houseNumber hàng loạt, có lưu HouseHistory như sửa
+//  tay). Coi APPROVED là đã khoá — không cho sửa nữa (REJECTED sửa lại được,
+//  quay về DRAFT khi trình lại).
+// ============================================================
+
+enum NumberingSchemeStatus {
+  DRAFT
+  SUBMITTED
+  APPROVED
+  REJECTED
+}
+
+/// Bên đường của 1 nhà trong phương án — chỉ có ý nghĩa khi `oddEvenSplit=true`.
+enum NumberingSide {
+  ODD // Số lẻ
+  EVEN // Số chẵn
+  NONE // Không phân biệt (dùng khi oddEvenSplit=false)
+}
+
+/// 1 phương án đánh số cho 1 tuyến đường.
+model NumberingScheme {
+  id   String @id @default(uuid())
+  name String // Tên phương án, vd "Đánh số Cách Mạng Tháng Tám — đoạn 1"
+
+  streetId String
+  street   Street @relation(fields: [streetId], references: [id], onDelete: Restrict)
+  /// Chép lại từ street.wardId lúc tạo — tiện lọc/hiển thị, không phải nguồn sự thật.
+  wardId   String?
+  ward     Ward?  @relation(fields: [wardId], references: [id], onDelete: SetNull)
+
+  /// Mô tả phạm vi/điểm đầu-điểm cuối/hướng đánh số (tự do nhập ở MVP).
+  description String?
+
+  oddEvenSplit Boolean @default(true)
+  startNumber  Int     @default(1)
+  step         Int     @default(2)
+
+  status NumberingSchemeStatus @default(DRAFT)
+
+  createdById String?
+  createdBy   User?   @relation("SchemeCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  submittedAt DateTime?
+
+  approvedById   String?
+  approvedBy     User?   @relation("SchemeApprovedBy", fields: [approvedById], references: [id], onDelete: SetNull)
+  approvedAt     DateTime?
+  rejectedReason String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  items NumberingSchemeItem[]
+
+  @@index([streetId])
+  @@index([status])
+  @@map("numbering_scheme")
+}
+
+/// 1 nhà trong phương án đánh số, kèm vị trí/thứ tự và số đề xuất.
+model NumberingSchemeItem {
+  id       String          @id @default(uuid())
+  schemeId String
+  scheme   NumberingScheme @relation(fields: [schemeId], references: [id], onDelete: Cascade)
+  houseId  String
+  house    House           @relation(fields: [houseId], references: [id], onDelete: Cascade)
+
+  side          NumberingSide @default(NONE)
+  /// Thứ tự dọc theo tuyến trong phạm vi 1 side — cán bộ tự sắp, dùng để sinh số.
+  sequenceOrder Int
+  /// Do "Sinh số tự động" điền, cán bộ có thể sửa tay đè lên trước khi trình duyệt.
+  proposedNumber String?
+  note           String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([schemeId, houseId])
+  @@index([schemeId])
+  @@map("numbering_scheme_item")
+}
+
+// ============================================================
+//  Phase 8 — Biển số nhà như tài sản quản lý riêng (VI. Quản lý biển số nhà)
+//  Tách khỏi `House.qrCode` (giữ nguyên cho trang in tem hiện có, xem
+//  `houses.service.ts`/`/houses/:id/label`) — mỗi House có 0..n HousePlate
+//  theo thời gian (lịch sử cấp/thu hồi/cấp đổi/cấp lại), tại 1 thời điểm chỉ
+//  1 biển ở trạng thái ISSUED/INSTALLED được coi là "biển đang hiệu lực"
+//  (suy ra bằng truy vấn, không cần cột FK riêng trên House). MVP không làm
+//  quản lý kho/mẫu/sản xuất biển (6.1, 6.6-6.9 trong tài liệu nghiệp vụ) —
+//  biển luôn được cấp thẳng cho 1 nhà cụ thể, không qua kho biển vô danh.
+// ============================================================
+
+enum PlateStatus {
+  ISSUED // Đã cấp, chưa xác nhận gắn tại hiện trường
+  INSTALLED // Đã gắn tại hiện trường
+  REVOKED // Đã thu hồi (thay bằng biển khác hoặc huỷ)
+}
+
+enum PlateIssueReason {
+  NEW // Cấp mới
+  REPLACEMENT // Cấp đổi (thay biển đang hiệu lực bằng biển mới)
+  REISSUE // Cấp lại (biển cũ mất/hỏng)
+}
+
+/// 1 biển số vật lý đã cấp cho 1 nhà — có thể có nhiều dòng theo thời gian
+/// cho cùng 1 House (lịch sử cấp/thu hồi/cấp đổi/cấp lại).
+model HousePlate {
+  id        String @id @default(uuid())
+  /// Mã in lên biển + mã hoá QR, vd "TN-P-9F3A21B4" — khác dải với House.qrCode.
+  plateCode String @unique
+
+  houseId String
+  house   House  @relation(fields: [houseId], references: [id], onDelete: Cascade)
+
+  status      PlateStatus       @default(ISSUED)
+  issueReason PlateIssueReason  @default(NEW)
+
+  issuedAt   DateTime @default(now())
+  issuedById String?
+  issuedBy   User?    @relation("PlateIssuedBy", fields: [issuedById], references: [id], onDelete: SetNull)
+
+  installedAt     DateTime?
+  installedById   String?
+  installedBy     User?   @relation("PlateInstalledBy", fields: [installedById], references: [id], onDelete: SetNull)
+  /// Ảnh chụp hiện trường sau khi gắn (mobile, nhóm 7.5) — đường dẫn giống HousePhoto.url.
+  installPhotoUrl String?
+
+  /// Ghi nhận "chưa gắn" + lý do (mobile, nhóm 7.7-7.8) — status vẫn ISSUED, chỉ là ghi chú tạm.
+  notInstalledAt     DateTime?
+  notInstalledReason String?
+
+  revokedAt     DateTime?
+  revokedById   String?
+  revokedBy     User?   @relation("PlateRevokedBy", fields: [revokedById], references: [id], onDelete: SetNull)
+  revokedReason String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([houseId])
+  @@index([status])
+  @@map("house_plate")
+}
+
+// ============================================================
+//  Phase 9 — Khảo sát có tổ chức (VII. Quản lý khảo sát thực địa)
+//  Đợt khảo sát (SurveyCampaign) → phân vùng theo Xã/Phường (SurveyZone,
+//  KHÔNG vẽ polygon — dùng luôn danh mục Ward của Phase 6) → giao nhiệm vụ
+//  cho 1 SURVEYOR (SurveyAssignment). Quyết định #5: KHÔNG bắt buộc phải có
+//  nhiệm vụ mới được tạo House trên mobile — `House.surveyAssignmentId` chỉ
+//  là liên kết tùy chọn để tính tiến độ, không chặn luồng khảo sát tự do
+//  hiện có. Vòng đời assignment: ASSIGNED → IN_PROGRESS (SURVEYOR tự bấm bắt
+//  đầu) → SUBMITTED (tự bấm gửi duyệt) → COMPLETED / NEEDS_REVISIT (ADMIN/
+//  CADASTRAL duyệt cả đợt, tách khỏi việc duyệt từng House ở `houses` module).
+// ============================================================
+
+enum CampaignStatus {
+  DRAFT
+  ACTIVE
+  COMPLETED
+}
+
+model SurveyCampaign {
+  id          String   @id @default(uuid())
+  name        String
+  description String?
+  startDate   DateTime?
+  endDate     DateTime?
+  status      CampaignStatus @default(DRAFT)
+
+  createdById String?
+  createdBy   User?    @relation("CampaignCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  zones SurveyZone[]
+
+  @@index([status])
+  @@map("survey_campaign")
+}
+
+/// Phân vùng trong 1 đợt khảo sát — gán theo Xã/Phường có sẵn (không vẽ polygon riêng).
+model SurveyZone {
+  id         String @id @default(uuid())
+  campaignId String
+  campaign   SurveyCampaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+
+  name        String
+  wardId      String?
+  ward        Ward?   @relation(fields: [wardId], references: [id], onDelete: SetNull)
+  description String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  assignments SurveyAssignment[]
+
+  @@index([campaignId])
+  @@map("survey_zone")
+}
+
+enum AssignmentStatus {
+  ASSIGNED
+  IN_PROGRESS
+  SUBMITTED
+  COMPLETED
+  NEEDS_REVISIT
+}
+
+/// Giao 1 phân vùng cho 1 cán bộ khảo sát (SURVEYOR).
+model SurveyAssignment {
+  id     String     @id @default(uuid())
+  zoneId String
+  zone   SurveyZone @relation(fields: [zoneId], references: [id], onDelete: Cascade)
+
+  assigneeId String
+  assignee   User   @relation("AssignmentAssignee", fields: [assigneeId], references: [id], onDelete: Cascade)
+
+  dueDate DateTime?
+  status  AssignmentStatus @default(ASSIGNED)
+  /// Ghi chú lúc giao việc (vd hướng dẫn thêm cho khu vực này).
+  note    String?
+
+  submittedAt  DateTime?
+  reviewedById String?
+  reviewedBy   User?     @relation("AssignmentReviewedBy", fields: [reviewedById], references: [id], onDelete: SetNull)
+  reviewedAt   DateTime?
+  /// Lý do khi ADMIN/CADASTRAL yêu cầu khảo sát lại (NEEDS_REVISIT).
+  reviewNote   String?
+
+  createdById String?
+  createdBy   User?   @relation("AssignmentCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  houses House[]
+
+  @@index([zoneId])
+  @@index([assigneeId])
+  @@index([status])
+  @@map("survey_assignment")
+}
+
+// ============================================================
+//  Phase 10 — Hồ sơ – quy trình (IX. Quản lý hồ sơ – quy trình)
+//  Lớp theo dõi hành chính MỎNG bọc ngoài luồng House/NumberingScheme/
+//  SurveyAssignment/HousePlate đã có ở Phase 6-9 — KHÔNG viết lại các quy
+//  trình đó, chỉ liên kết (houseId) + 1 nhãn trạng thái tuyến tính cho biết
+//  hồ sơ đang ở bước nào, và 1 dòng thời gian (CaseEvent) để "theo dõi lịch
+//  sử xử lý" (9.12). Tiến/lùi trạng thái là thao tác thủ công của cán bộ,
+//  không có gate nghiệp vụ phức tạp như NumberingScheme (đã có validate ở
+//  module riêng của nó rồi).
+// ============================================================
+
+enum CaseStatus {
+  RECEIVED // Tiếp nhận
+  ASSIGNED // Phân công xử lý
+  REVIEWING // Thẩm định
+  SURVEYING // Khảo sát
+  NUMBERING // Lập phương án đánh số
+  APPROVED // Đã duyệt / cấp số
+  PLATE_ISSUED // Đã cấp biển
+  COMPLETED // Trả kết quả
+  REJECTED // Từ chối
+}
+
+enum CaseRequestType {
+  NEW // Cấp số nhà mới
+  CHANGE // Điều chỉnh/đổi số
+  REISSUE // Cấp lại (biển/hồ sơ mất, hỏng)
+}
+
+/// Hồ sơ hành chính "xin cấp số nhà" — bọc ngoài, liên kết tới House khi đã xác định được.
+model HouseCase {
+  id         String @id @default(uuid())
+  /// Số hồ sơ hiển thị cho dân, vd "HS-2026-000001" — sinh tuần tự theo năm.
+  caseNumber String @unique
+
+  applicantName  String
+  applicantPhone String?
+  requestType    CaseRequestType @default(NEW)
+  /// Mô tả yêu cầu / địa chỉ dự kiến — tự do nhập, dùng trước khi có House chính thức.
+  description    String?
+
+  status CaseStatus @default(RECEIVED)
+
+  houseId String?
+  house   House?  @relation(fields: [houseId], references: [id], onDelete: SetNull)
+
+  assignedToId String?
+  assignedTo   User?   @relation("CaseAssignedTo", fields: [assignedToId], references: [id], onDelete: SetNull)
+
+  rejectedReason String?
+
+  createdById String?
+  createdBy   User?   @relation("CaseCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  events CaseEvent[]
+
+  @@index([status])
+  @@index([houseId])
+  @@map("house_case")
+}
+
+/// Dòng thời gian xử lý hồ sơ (9.12) — 1 dòng cho mỗi lần đổi trạng thái/gán/liên kết/ghi chú.
+model CaseEvent {
+  id     Int       @id @default(autoincrement())
+  caseId String
+  case   HouseCase @relation(fields: [caseId], references: [id], onDelete: Cascade)
+
+  action String // RECEIVED | ASSIGNED | STATUS_CHANGED | LINKED_HOUSE | REJECTED | REOPENED | NOTE
+  note   String?
+  fromStatus CaseStatus?
+  toStatus   CaseStatus?
+
+  actorId String?
+  actor   User?   @relation("CaseEventActor", fields: [actorId], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+
+  @@index([caseId])
+  @@map("house_case_event")
+}

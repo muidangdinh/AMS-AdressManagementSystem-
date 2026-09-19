@@ -1,0 +1,862 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Hệ Thống Quản Lý Số Nhà Tập Trung - GIS</title>
+    
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Leaflet CSS & JS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+    <!-- FontAwesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" />
+
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+
+    <style>
+        body {
+            font-family: 'Plus Jakarta Sans', sans-serif;
+        }
+        #map {
+            height: 100%;
+            width: 100%;
+            z-index: 1;
+        }
+        /* Custom Scrollbar */
+        ::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #f1f5f9;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #cbd5e1;
+            border-radius: 4px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #94a3b8;
+        }
+        .leaflet-popup-content-wrapper {
+            border-radius: 12px;
+            padding: 4px;
+            box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1);
+        }
+        .custom-marker {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 50%;
+            color: white;
+            font-weight: bold;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.3);
+            border: 2px solid white;
+            transition: all 0.2s ease;
+        }
+        .custom-marker:hover {
+            transform: scale(1.15);
+        }
+    </style>
+</head>
+<body class="bg-slate-100 h-screen flex flex-col overflow-hidden text-slate-800">
+
+    <!-- 1. HEADER NGAO DU & THANH CÔNG CỤ TẬP TRUNG -->
+    <header class="bg-slate-900 text-white h-16 px-6 flex items-center justify-between shrink-0 shadow-lg z-20">
+        <!-- Logo & Title -->
+        <div class="flex items-center space-x-3">
+            <div class="bg-blue-600 p-2.5 rounded-lg flex items-center justify-center text-white shadow-md">
+                <i class="fa-solid fa-map-location-dot text-xl"></i>
+            </div>
+            <div>
+                <h1 class="text-lg font-bold tracking-wide leading-tight">HỆ THỐNG QUẢN LÝ SỐ NHÀ TẬP TRUNG (GIS)</h1>
+                <p class="text-xs text-slate-400 font-medium">Trung tâm Dữ liệu Đô thị - Tuyến đường thử nghiệm: <span class="text-amber-400 font-semibold">Trần Nhân Tông</span></p>
+            </div>
+        </div>
+
+        <!-- Quick Stats -->
+        <div class="hidden xl:flex items-center space-x-6 text-sm">
+            <div class="flex items-center space-x-2 bg-slate-800/80 px-3 py-1.5 rounded-lg border border-slate-700">
+                <span class="w-2.5 h-2.5 rounded-full bg-blue-500"></span>
+                <span class="text-slate-300">Tổng số nhà:</span>
+                <span id="stat-total" class="font-bold text-white">0</span>
+            </div>
+            <div class="flex items-center space-x-2 bg-slate-800/80 px-3 py-1.5 rounded-lg border border-slate-700">
+                <span class="w-2.5 h-2.5 rounded-full bg-emerald-500"></span>
+                <span class="text-slate-300">Đã cấp biển/QR:</span>
+                <span id="stat-approved" class="font-bold text-emerald-400">0</span>
+            </div>
+            <div class="flex items-center space-x-2 bg-slate-800/80 px-3 py-1.5 rounded-lg border border-slate-700">
+                <span class="w-2.5 h-2.5 rounded-full bg-amber-500"></span>
+                <span class="text-slate-300">Chờ duyệt:</span>
+                <span id="stat-pending" class="font-bold text-amber-400">0</span>
+            </div>
+            <div class="flex items-center space-x-2 bg-slate-800/80 px-3 py-1.5 rounded-lg border border-slate-700">
+                <span class="w-2.5 h-2.5 rounded-full bg-rose-500"></span>
+                <span class="text-slate-300">Cần hiệu chỉnh:</span>
+                <span id="stat-adjust" class="font-bold text-rose-400">0</span>
+            </div>
+        </div>
+
+        <!-- Actions & Profile -->
+        <div class="flex items-center space-x-3">
+            <button onclick="openAddModal()" class="bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-lg text-sm font-semibold flex items-center space-x-2 transition shadow-md">
+                <i class="fa-solid fa-plus"></i>
+                <span class="hidden sm:inline">Thêm số nhà mới</span>
+            </button>
+            <div class="h-8 w-px bg-slate-700 mx-1"></div>
+            <div class="flex items-center space-x-2 cursor-pointer p-1 rounded-lg hover:bg-slate-800">
+                <img src="https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100&auto=format&fit=crop&q=80" class="w-9 h-9 rounded-full object-cover border-2 border-blue-500" alt="Avatar">
+                <div class="hidden md:block text-left text-xs">
+                    <p class="font-semibold text-slate-200">Cán bộ Địa chính</p>
+                    <p class="text-slate-400">Quận Hai Bà Trưng</p>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <!-- 2. NỘI DUNG CHÍNH (KHÔNG GIAN LÀM VIỆC TẬP TRUNG) -->
+    <div class="flex flex-1 overflow-hidden relative">
+        
+        <!-- SIDEBAR TRÁI: DANH SÁCH NHÀ & BỘ LỌC -->
+        <aside class="w-full md:w-[420px] bg-white border-r border-slate-200 flex flex-col shrink-0 z-10 shadow-lg">
+            
+            <!-- Header bộ lọc -->
+            <div class="p-4 bg-slate-50 border-b border-slate-200 space-y-3">
+                <!-- Thanh tìm kiếm -->
+                <div class="relative">
+                    <i class="fa-solid fa-magnifying-glass absolute left-3.5 top-3 text-slate-400 text-sm"></i>
+                    <input type="text" id="search-input" onkeyup="filterHouses()" placeholder="Tìm tên chủ nhà, số nhà, mã QR..." 
+                           class="w-full pl-10 pr-4 py-2 bg-white border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition shadow-sm">
+                </div>
+
+                <!-- Các bộ lọc nhanh -->
+                <div class="grid grid-cols-2 gap-2">
+                    <div>
+                        <label class="block text-[11px] font-bold text-slate-500 uppercase mb-1">Tuyến đường</label>
+                        <select id="filter-street" onchange="filterHouses()" class="w-full bg-white border border-slate-300 rounded-md py-1.5 px-2 text-xs font-semibold text-slate-700 focus:ring-2 focus:ring-blue-500">
+                            <option value="ALL">-- Tất cả đường --</option>
+                            <option value="Trần Nhân Tông" selected>Trần Nhân Tông</option>
+                            <option value="Nguyễn Du">Nguyễn Du</option>
+                            <option value="Lê Duẩn">Lê Duẩn</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-[11px] font-bold text-slate-500 uppercase mb-1">Dãy số (Chẵn/Lẻ)</label>
+                        <select id="filter-side" onchange="filterHouses()" class="w-full bg-white border border-slate-300 rounded-md py-1.5 px-2 text-xs font-semibold text-slate-700 focus:ring-2 focus:ring-blue-500">
+                            <option value="ALL">-- Tất cả dãy số --</option>
+                            <option value="CHAN">Dãy Chẵn (Bên phải)</option>
+                            <option value="LE">Dãy Lẻ (Bên trái)</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-1 gap-2 mt-2">
+                    <div>
+                        <label class="block text-[11px] font-bold text-slate-500 uppercase mb-1">Trạng thái phê duyệt</label>
+                        <select id="filter-status" onchange="filterHouses()" class="w-full bg-white border border-slate-300 rounded-md py-1.5 px-2 text-xs font-semibold text-slate-700 focus:ring-2 focus:ring-blue-500">
+                            <option value="ALL">-- Tất cả trạng thái --</option>
+                            <option value="Đã cấp biển">Đã cấp biển & QR</option>
+                            <option value="Chờ duyệt">Chờ duyệt cấp</option>
+                            <option value="Cần hiệu chỉnh">Cần hiệu chỉnh</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="flex items-center justify-between text-xs text-slate-500 pt-1">
+                    <span>Hiển thị: <strong id="visible-count" class="text-slate-800">0</strong> / <span id="total-count">0</span> công trình</span>
+                    <button onclick="resetFilters()" class="text-blue-600 hover:underline font-medium"><i class="fa-solid fa-rotate-left mr-1"></i>Đặt lại</button>
+                </div>
+            </div>
+
+            <!-- Danh sách cuộn -->
+            <div id="house-list" class="flex-1 overflow-y-auto p-3 space-y-2.5">
+                <!-- Dynamic Content Generated via JavaScript -->
+            </div>
+            
+            <!-- Footer danh sách -->
+            <div class="p-3 bg-slate-50 border-t border-slate-200 text-center text-xs text-slate-500">
+                <i class="fa-solid fa-circle-info mr-1 text-blue-500"></i> Bấm vào ô danh sách để định vị trực tiếp trên bản đồ
+            </div>
+        </aside>
+
+        <!-- KANBAN MAP AREA (BẢN ĐỒ KHÔNG GIAN GIS) -->
+        <main class="flex-1 relative flex flex-col">
+            
+            <!-- Nút điều khiển nhanh bản đồ -->
+            <div class="absolute top-4 right-4 z-[500] bg-white rounded-lg shadow-md p-1.5 border border-slate-200 flex space-x-1">
+                <button onclick="setMapLayer('street')" id="btn-layer-street" class="px-3 py-1.5 rounded text-xs font-semibold bg-blue-600 text-white shadow">Bản đồ giao thông</button>
+                <button onclick="setMapLayer('satellite')" id="btn-layer-sat" class="px-3 py-1.5 rounded text-xs font-semibold text-slate-600 hover:bg-slate-100">Bản đồ vệ tinh</button>
+                <button onclick="resetMapView()" class="px-3 py-1.5 rounded text-xs font-semibold text-slate-600 hover:bg-slate-100 border-l border-slate-200 ml-1" title="Về tâm đường Trần Nhân Tông">
+                    <i class="fa-solid fa-crosshairs text-blue-600 mr-1"></i> Căn giữa
+                </button>
+            </div>
+
+            <!-- Leaflet Container -->
+            <div id="map"></div>
+
+            <!-- PANEL CHI TIẾT SỐ NHÀ (Drawer trượt từ bên phải) -->
+            <div id="detail-drawer" class="absolute top-0 right-0 h-full w-full sm:w-[450px] bg-white shadow-2xl z-[600] transform translate-x-full transition-transform duration-300 ease-in-out border-l border-slate-200 flex flex-col">
+                <div class="p-4 bg-slate-900 text-white flex items-center justify-between">
+                    <div class="flex items-center space-x-2">
+                        <i class="fa-solid fa-house-circle-check text-blue-400 text-lg"></i>
+                        <h2 class="font-bold text-base">Chi Tiết Hồ Sơ Số Nhà</h2>
+                    </div>
+                    <button onclick="closeDetailDrawer()" class="text-slate-400 hover:text-white p-1 text-lg">
+                        <i class="fa-solid fa-xmark"></i>
+                    </button>
+                </div>
+
+                <div id="drawer-content" class="p-5 flex-1 overflow-y-auto space-y-5">
+                    <!-- Nội dung chi tiết được load động bằng JS -->
+                </div>
+
+                <div class="p-4 bg-slate-50 border-t border-slate-200 flex space-x-2">
+                    <button onclick="alert('Tính năng in thẻ QR đã sẵn sàng kết nối máy in chuyên dụng!')" class="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white py-2 rounded-lg text-xs font-bold flex items-center justify-center space-x-2">
+                        <i class="fa-solid fa-qrcode"></i>
+                        <span>In Mã QR Số Nhà</span>
+                    </button>
+                    <button onclick="editCurrentHouse()" class="flex-1 bg-blue-600 hover:bg-blue-700 text-white py-2 rounded-lg text-xs font-bold flex items-center justify-center space-x-2">
+                        <i class="fa-solid fa-pen-to-square"></i>
+                        <span>Cập Nhật Thông Tin</span>
+                    </button>
+                </div>
+            </div>
+
+        </main>
+    </div>
+
+    <!-- MODAL THÊM / CHỈNH SỬA SỐ NHÀ MỚI -->
+    <div id="add-modal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[1000] flex items-center justify-center hidden p-4">
+        <div class="bg-white rounded-xl shadow-2xl w-full max-w-lg overflow-hidden border border-slate-200 animate-fadeIn">
+            <div class="p-4 bg-slate-900 text-white flex items-center justify-between">
+                <h3 class="font-bold text-base flex items-center space-x-2">
+                    <i class="fa-solid fa-map-pin text-blue-400"></i>
+                    <span id="modal-title">Cấp Biển Số Nhà Mới</span>
+                </h3>
+                <button onclick="closeAddModal()" class="text-slate-400 hover:text-white">
+                    <i class="fa-solid fa-xmark text-lg"></i>
+                </button>
+            </div>
+
+            <form id="house-form" onsubmit="handleFormSubmit(event)" class="p-5 space-y-4">
+                <input type="hidden" id="form-id">
+
+                <div>
+                    <label class="block text-xs font-bold text-slate-700 uppercase mb-1">Tên đường / Phố <span class="text-rose-500">*</span></label>
+                    <input type="text" id="form-street" value="Trần Nhân Tông" required class="w-full border border-slate-300 rounded-lg p-2 text-sm focus:ring-2 focus:ring-blue-500">
+                </div>
+
+                <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <label class="block text-xs font-bold text-slate-700 uppercase mb-1">Số nhà gán mới <span class="text-rose-500">*</span></label>
+                        <input type="text" id="form-number" placeholder="Ví dụ: 18A" required class="w-full border border-slate-300 rounded-lg p-2 text-sm focus:ring-2 focus:ring-blue-500">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold text-slate-700 uppercase mb-1">Phường / Xã <span class="text-rose-500">*</span></label>
+                        <select id="form-ward" class="w-full border border-slate-300 rounded-lg p-2 text-sm focus:ring-2 focus:ring-blue-500">
+                            <option value="Phường Nguyễn Du">Phường Nguyễn Du</option>
+                            <option value="Phường Lê Đại Hành">Phường Lê Đại Hành</option>
+                            <option value="Phường Phạm Đình Hổ">Phường Phạm Đình Hổ</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <label class="block text-xs font-bold text-slate-700 uppercase mb-1">Họ tên chủ sở hữu / Đơn vị</label>
+                        <input type="text" id="form-owner" placeholder="Nhập tên chủ nhà" class="w-full border border-slate-300 rounded-lg p-2 text-sm focus:ring-2 focus:ring-blue-500">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold text-slate-700 uppercase mb-1">Loại công trình</label>
+                        <select id="form-type" class="w-full border border-slate-300 rounded-lg p-2 text-sm focus:ring-2 focus:ring-blue-500">
+                            <option value="Nhà ở riêng lẻ">Nhà ở riêng lẻ</option>
+                            <option value="Cửa hàng kinh doanh">Cửa hàng kinh doanh</option>
+                            <option value="Tòa nhà văn phòng">Tòa nhà văn phòng</option>
+                            <option value="Chung cư đô thị">Chung cư đô thị</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <label class="block text-xs font-bold text-slate-700 uppercase mb-1">Vĩ độ (Latitude)</label>
+                        <input type="number" step="any" id="form-lat" value="21.0175" required class="w-full border border-slate-300 rounded-lg p-2 text-sm font-mono focus:ring-2 focus:ring-blue-500">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold text-slate-700 uppercase mb-1">Kinh độ (Longitude)</label>
+                        <input type="number" step="any" id="form-lng" value="105.8485" required class="w-full border border-slate-300 rounded-lg p-2 text-sm font-mono focus:ring-2 focus:ring-blue-500">
+                    </div>
+                </div>
+
+                <div>
+                    <label class="block text-xs font-bold text-slate-700 uppercase mb-1">Trạng thái phê duyệt</label>
+                    <select id="form-status" class="w-full border border-slate-300 rounded-lg p-2 text-sm focus:ring-2 focus:ring-blue-500">
+                        <option value="Đã cấp biển">Đã cấp biển & Mã QR</option>
+                        <option value="Chờ duyệt">Chờ duyệt thẩm định</option>
+                        <option value="Cần hiệu chỉnh">Cần điều chỉnh số</option>
+                    </select>
+                </div>
+
+                <div class="pt-3 border-t border-slate-200 flex justify-end space-x-2">
+                    <button type="button" onclick="closeAddModal()" class="px-4 py-2 bg-slate-200 text-slate-700 rounded-lg text-sm font-semibold hover:bg-slate-300">Hủy bỏ</button>
+                    <button type="submit" class="px-5 py-2 bg-blue-600 text-white rounded-lg text-sm font-semibold hover:bg-blue-700 shadow">Lưu Cơ Sở Dữ Liệu</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- SCRIPT XỬ LÝ LOGIC BẢN ĐỒ VÀ DỮ LIỆU -->
+    <script>
+        // DỮ LIỆU SỐ NHÀ ĐƯỜNG TRẦN NHÂN TÔNG (CĂN CHỈNH SÁT 2 BÊN LỀ ĐƯỜNG MẶT PHỐ)
+        let houseData = [
+            // --- DÃY SỐ LẺ (PHÍA BẮC / SÁT LỀ ĐƯỜNG BÊN TRÁI HƯỚNG TÂY -> ĐÔNG) ---
+            {
+                id: 1, number: "1", street: "Trần Nhân Tông", ward: "Phường Nguyễn Du", district: "Quận Hai Bà Trưng, Hà Nội",
+                owner: "Cửa hàng Thời trang Lê", phone: "0912.111.001", type: "Cửa hàng kinh doanh", floors: 4, area: "65.0 m²",
+                status: "Đã cấp biển", lat: 21.01761, lng: 105.84650, qrCode: "QR-TNT-001", updatedAt: "10/01/2026",
+                img: "https://images.unsplash.com/photo-1568605117036-5fe5e7bab0b7?w=500&auto=format&fit=crop&q=80"
+            },
+            {
+                id: 3, number: "3", street: "Trần Nhân Tông", ward: "Phường Nguyễn Du", district: "Quận Hai Bà Trưng, Hà Nội",
+                owner: "Nguyễn Minh Châu", phone: "0912.111.003", type: "Nhà ở riêng lẻ", floors: 3, area: "58.5 m²",
+                status: "Đã cấp biển", lat: 21.01760, lng: 105.84710, qrCode: "QR-TNT-003", updatedAt: "12/01/2026",
+                img: "https://images.unsplash.com/photo-1570129477492-45c003edd2be?w=500&auto=format&fit=crop&q=80"
+            },
+            {
+                id: 5, number: "5", street: "Trần Nhân Tông", ward: "Phường Nguyễn Du", district: "Quận Hai Bà Trưng, Hà Nội",
+                owner: "Hiệu thuốc Trung Tâm", phone: "0912.111.005", type: "Cửa hàng kinh doanh", floors: 5, area: "72.0 m²",
+                status: "Đã cấp biển", lat: 21.01759, lng: 105.84770, qrCode: "QR-TNT-005", updatedAt: "15/01/2026",
+                img: "https://images.unsplash.com/photo-1600585154340-be6161a56a0c?w=500&auto=format&fit=crop&q=80"
+            },
+            {
+                id: 7, number: "7A", street: "Trần Nhân Tông", ward: "Phường Nguyễn Du", district: "Quận Hai Bà Trưng, Hà Nội",
+                owner: "Phạm Khánh Lâm", phone: "0912.111.007", type: "Nhà ở riêng lẻ", floors: 4, area: "80.0 m²",
+                status: "Chờ duyệt", lat: 21.01758, lng: 105.84830, qrCode: "QR-TNT-007A-PENDING", updatedAt: "01/02/2026",
+                img: "https://images.unsplash.com/photo-1580587771525-78b9dba3b914?w=500&auto=format&fit=crop&q=80"
+            },
+            {
+                id: 9, number: "9", street: "Trần Nhân Tông", ward: "Phường Nguyễn Du", district: "Quận Hai Bà Trưng, Hà Nội",
+                owner: "Công ty Vàng Bạc SJC", phone: "024.3942.8888", type: "Cửa hàng kinh doanh", floors: 6, area: "135.0 m²",
+                status: "Đã cấp biển", lat: 21.01757, lng: 105.84890, qrCode: "QR-TNT-009", updatedAt: "10/02/2026",
+                img: "https://images.unsplash.com/photo-1542314831-068cd1dbfeeb?w=500&auto=format&fit=crop&q=80"
+            },
+            {
+                id: 11, number: "11", street: "Trần Nhân Tông", ward: "Phường Lê Đại Hành", district: "Quận Hai Bà Trưng, Hà Nội",
+                owner: "Trần Văn Bình", phone: "0912.111.011", type: "Nhà ở riêng lẻ", floors: 3, area: "60.0 m²",
+                status: "Đã cấp biển", lat: 21.01756, lng: 105.84950, qrCode: "QR-TNT-011", updatedAt: "18/02/2026",
+                img: "https://images.unsplash.com/photo-1598228723793-52759bba239c?w=500&auto=format&fit=crop&q=80"
+            },
+            {
+                id: 13, number: "13", street: "Trần Nhân Tông", ward: "Phường Lê Đại Hành", district: "Quận Hai Bà Trưng, Hà Nội",
+                owner: "Nha Khoa Quốc Tế", phone: "0912.111.013", type: "Cửa hàng kinh doanh", floors: 5, area: "95.0 m²",
+                status: "Đã cấp biển", lat: 21.01755, lng: 105.85010, qrCode: "QR-TNT-013", updatedAt: "20/02/2026",
+                img: "https://images.unsplash.com/photo-1568605117036-5fe5e7bab0b7?w=500&auto=format&fit=crop&q=80"
+            },
+            {
+                id: 15, number: "15", street: "Trần Nhân Tông", ward: "Phường Lê Đại Hành", district: "Quận Hai Bà Trưng, Hà Nội",
+                owner: "Tập đoàn Vàng PNJ", phone: "024.3942.1122", type: "Cửa hàng kinh doanh", floors: 5, area: "120.0 m²",
+                status: "Đã cấp biển", lat: 21.01754, lng: 105.85070, qrCode: "QR-TNT-015", updatedAt: "22/02/2026",
+                img: "https://images.unsplash.com/photo-1600585154340-be6161a56a0c?w=500&auto=format&fit=crop&q=80"
+            },
+            {
+                id: 17, number: "17", street: "Trần Nhân Tông", ward: "Phường Phạm Đình Hổ", district: "Quận Hai Bà Trưng, Hà Nội",
+                owner: "Lê Thị Thu Thảo (Tách thửa)", phone: "0912.111.017", type: "Nhà ở riêng lẻ", floors: 2, area: "42.0 m²",
+                status: "Cần hiệu chỉnh", lat: 21.01753, lng: 105.85130, qrCode: "QR-TNT-017-ERR", updatedAt: "01/03/2026",
+                img: "https://images.unsplash.com/photo-1580587771525-78b9dba3b914?w=500&auto=format&fit=crop&q=80"
+            },
+            {
+                id: 19, number: "19", street: "Trần Nhân Tông", ward: "Phường Phạm Đình Hổ", district: "Quận Hai Bà Trưng, Hà Nội",
+                owner: "Quán Cà Phê Phố", phone: "0912.111.019", type: "Cửa hàng kinh doanh", floors: 4, area: "88.0 m²",
+                status: "Đã cấp biển", lat: 21.01752, lng: 105.85190, qrCode: "QR-TNT-019", updatedAt: "05/03/2026",
+                img: "https://images.unsplash.com/photo-1570129477492-45c003edd2be?w=500&auto=format&fit=crop&q=80"
+            },
+            {
+                id: 21, number: "21", street: "Trần Nhân Tông", ward: "Phường Phạm Đình Hổ", district: "Quận Hai Bà Trưng, Hà Nội",
+                owner: "Hoàng Gia Bảo", phone: "0912.111.021", type: "Nhà ở riêng lẻ", floors: 4, area: "70.0 m²",
+                status: "Chờ duyệt", lat: 21.01751, lng: 105.85250, qrCode: "QR-TNT-021-PENDING", updatedAt: "10/03/2026",
+                img: "https://images.unsplash.com/photo-1598228723793-52759bba239c?w=500&auto=format&fit=crop&q=80"
+            },
+
+            // --- DÃY SỐ CHẮN (PHÍA NAM / SÁT LỀ ĐƯỜNG BÊN PHẢI HƯỚNG TÂY -> ĐÔNG) ---
+            {
+                id: 2, number: "2", street: "Trần Nhân Tông", ward: "Phường Nguyễn Du", district: "Quận Hai Bà Trưng, Hà Nội",
+                owner: "Ngân hàng TMCP Quốc Dân", phone: "024.3800.2222", type: "Tòa nhà văn phòng", floors: 8, area: "250.0 m²",
+                status: "Đã cấp biển", lat: 21.01729, lng: 105.84650, qrCode: "QR-TNT-002", updatedAt: "05/01/2026",
+                img: "https://images.unsplash.com/photo-1486406146926-c627a92ad1ab?w=500&auto=format&fit=crop&q=80"
+            },
+            {
+                id: 4, number: "4", street: "Trần Nhân Tông", ward: "Phường Nguyễn Du", district: "Quận Hai Bà Trưng, Hà Nội",
+                owner: "Đỗ Tuấn Anh", phone: "0904.222.004", type: "Nhà ở riêng lẻ", floors: 3, area: "62.0 m²",
+                status: "Đã cấp biển", lat: 21.01728, lng: 105.84710, qrCode: "QR-TNT-004", updatedAt: "08/01/2026",
+                img: "https://images.unsplash.com/photo-1568605117036-5fe5e7bab0b7?w=500&auto=format&fit=crop&q=80"
+            },
+            {
+                id: 6, number: "6", street: "Trần Nhân Tông", ward: "Phường Nguyễn Du", district: "Quận Hai Bà Trưng, Hà Nội",
+                owner: "Công ty Lữ Hành Đô Thị", phone: "024.3971.0006", type: "Cửa hàng kinh doanh", floors: 4, area: "90.0 m²",
+                status: "Đã cấp biển", lat: 21.01727, lng: 105.84770, qrCode: "QR-TNT-006", updatedAt: "12/01/2026",
+                img: "https://images.unsplash.com/photo-1542314831-068cd1dbfeeb?w=500&auto=format&fit=crop&q=80"
+            },
+            {
+                id: 8, number: "8", street: "Trần Nhân Tông", ward: "Phường Nguyễn Du", district: "Quận Hai Bà Trưng, Hà Nội",
+                owner: "Trịnh Thị Tuyết", phone: "0904.222.008", type: "Nhà ở riêng lẻ", floors: 4, area: "75.0 m²",
+                status: "Chờ duyệt", lat: 21.01726, lng: 105.84830, qrCode: "QR-TNT-008-PENDING", updatedAt: "18/01/2026",
+                img: "https://images.unsplash.com/photo-1570129477492-45c003edd2be?w=500&auto=format&fit=crop&q=80"
+            },
+            {
+                id: 10, number: "10", street: "Trần Nhân Tông", ward: "Phường Nguyễn Du", district: "Quận Hai Bà Trưng, Hà Nội",
+                owner: "Nhà hàng Cơm Niêu Phố", phone: "024.3942.0010", type: "Cửa hàng kinh doanh", floors: 3, area: "110.0 m²",
+                status: "Đã cấp biển", lat: 21.01725, lng: 105.84890, qrCode: "QR-TNT-010", updatedAt: "25/01/2026",
+                img: "https://images.unsplash.com/photo-1600585154340-be6161a56a0c?w=500&auto=format&fit=crop&q=80"
+            },
+            {
+                id: 12, number: "12A", street: "Trần Nhân Tông", ward: "Phường Lê Đại Hành", district: "Quận Hai Bà Trưng, Hà Nội",
+                owner: "Nguyễn Văn Hoài", phone: "0912.345.678", type: "Nhà ở riêng lẻ", floors: 4, area: "75.5 m²",
+                status: "Đã cấp biển", lat: 21.01724, lng: 105.84950, qrCode: "QR-TNT-012A", updatedAt: "10/02/2026",
+                img: "https://images.unsplash.com/photo-1568605117036-5fe5e7bab0b7?w=500&auto=format&fit=crop&q=80"
+            },
+            {
+                id: 14, number: "14", street: "Trần Nhân Tông", ward: "Phường Lê Đại Hành", district: "Quận Hai Bà Trưng, Hà Nội",
+                owner: "Khách sạn Rồng Vàng", phone: "024.3822.9999", type: "Cửa hàng kinh doanh", floors: 8, area: "210.5 m²",
+                status: "Đã cấp biển", lat: 21.01723, lng: 105.85010, qrCode: "QR-TNT-014", updatedAt: "15/02/2026",
+                img: "https://images.unsplash.com/photo-1542314831-068cd1dbfeeb?w=500&auto=format&fit=crop&q=80"
+            },
+            {
+                id: 16, number: "16", street: "Trần Nhân Tông", ward: "Phường Lê Đại Hành", district: "Quận Hai Bà Trưng, Hà Nội",
+                owner: "Phùng Mạnh Hùng", phone: "0904.222.016", type: "Nhà ở riêng lẻ", floors: 3, area: "54.0 m²",
+                status: "Cần hiệu chỉnh", lat: 21.01722, lng: 105.85070, qrCode: "QR-TNT-016-ERR", updatedAt: "20/02/2026",
+                img: "https://images.unsplash.com/photo-1580587771525-78b9dba3b914?w=500&auto=format&fit=crop&q=80"
+            },
+            {
+                id: 18, number: "18", street: "Trần Nhân Tông", ward: "Phường Phạm Đình Hổ", district: "Quận Hai Bà Trưng, Hà Nội",
+                owner: "Showroom Trang Sức Cao Cấp", phone: "024.3971.0018", type: "Cửa hàng kinh doanh", floors: 5, area: "140.0 m²",
+                status: "Đã cấp biển", lat: 21.01721, lng: 105.85130, qrCode: "QR-TNT-018", updatedAt: "25/02/2026",
+                img: "https://images.unsplash.com/photo-1600585154340-be6161a56a0c?w=500&auto=format&fit=crop&q=80"
+            },
+            {
+                id: 20, number: "20", street: "Trần Nhân Tông", ward: "Phường Phạm Đình Hổ", district: "Quận Hai Bà Trưng, Hà Nội",
+                owner: "Tòa nhà Văn phòng & Dịch vụ Đô thị", phone: "024.3971.8888", type: "Tòa nhà văn phòng", floors: 12, area: "450.0 m²",
+                status: "Đã cấp biển", lat: 21.01720, lng: 105.85190, qrCode: "QR-TNT-020", updatedAt: "01/03/2026",
+                img: "https://images.unsplash.com/photo-1486406146926-c627a92ad1ab?w=500&auto=format&fit=crop&q=80"
+            },
+            {
+                id: 22, number: "22", street: "Trần Nhân Tông", ward: "Phường Phạm Đình Hổ", district: "Quận Hai Bà Trưng, Hà Nội",
+                owner: "Vũ Quang Vinh", phone: "0904.222.022", type: "Nhà ở riêng lẻ", floors: 4, area: "82.0 m²",
+                status: "Chờ duyệt", lat: 21.01719, lng: 105.85250, qrCode: "QR-TNT-022-PENDING", updatedAt: "05/03/2026",
+                img: "https://images.unsplash.com/photo-1598228723793-52759bba239c?w=500&auto=format&fit=crop&q=80"
+            }
+        ];
+
+        let map, streetTileLayer, satelliteTileLayer;
+        let mapMarkers = {};
+        let selectedHouseId = null;
+
+        // KHỞI TẠO BẢN ĐỒ KHI TẢI TRANG
+        window.onload = function() {
+            initMap();
+            renderHouseList(houseData);
+            updateStats();
+        };
+
+        function initMap() {
+            // Tọa độ tâm đường Trần Nhân Tông
+            const centerLat = 21.01740;
+            const centerLng = 105.84950;
+
+            map = L.map('map', {
+                zoomControl: false
+            }).setView([centerLat, centerLng], 18);
+
+            // Nền bản đồ giao thông OpenStreetMap
+            streetTileLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                maxZoom: 19,
+                attribution: '&copy; OpenStreetMap contributors | GIS Số Nhà'
+            }).addTo(map);
+
+            // Nền bản đồ vệ tinh Esri
+            satelliteTileLayer = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+                maxZoom: 18,
+                attribution: 'Tiles &copy; Esri &mdash; Source: Esri, i-cubed, USDA, USGS, AEX, GeoEye, Getmapping, Aerogrid, IGN, IGP, UPR-EGP, and the GIS User Community'
+            });
+
+            // Vẽ đường tim đường Trần Nhân Tông giúp nhận diện mặt đường rõ nét
+            const streetLineCoords = [
+                [21.01745, 105.84600],
+                [21.01735, 105.85300]
+            ];
+            L.polyline(streetLineCoords, {
+                color: '#2563eb',
+                weight: 3,
+                opacity: 0.5,
+                dashArray: '6, 6'
+            }).addTo(map);
+
+            // Lớp Zoom control bên phải dưới
+            L.control.zoom({ position: 'bottomright' }).addTo(map);
+
+            // Hiển thị Marker lên bản đồ
+            renderMarkers(houseData);
+        }
+
+        // ĐỔI NỀN BẢN ĐỒ VỆ TINH / GIAO THÔNG
+        function setMapLayer(type) {
+            const btnStreet = document.getElementById('btn-layer-street');
+            const btnSat = document.getElementById('btn-layer-sat');
+
+            if (type === 'satellite') {
+                map.removeLayer(streetTileLayer);
+                map.addLayer(satelliteTileLayer);
+                btnSat.className = "px-3 py-1.5 rounded text-xs font-semibold bg-blue-600 text-white shadow";
+                btnStreet.className = "px-3 py-1.5 rounded text-xs font-semibold text-slate-600 hover:bg-slate-100";
+            } else {
+                map.removeLayer(satelliteTileLayer);
+                map.addLayer(streetTileLayer);
+                btnStreet.className = "px-3 py-1.5 rounded text-xs font-semibold bg-blue-600 text-white shadow";
+                btnSat.className = "px-3 py-1.5 rounded text-xs font-semibold text-slate-600 hover:bg-slate-100";
+            }
+        }
+
+        // RESET VIEW BẢN ĐỒ
+        function resetMapView() {
+            map.setView([21.0175, 105.8495], 17);
+        }
+
+        // RENDER MARKERS LÊN BẢN ĐỒ
+        function renderMarkers(data) {
+            // Xóa tất cả marker cũ
+            Object.values(mapMarkers).forEach(marker => map.removeLayer(marker));
+            mapMarkers = {};
+
+            data.forEach(item => {
+                let colorClass = "bg-emerald-500";
+                if (item.status === "Chờ duyệt") colorClass = "bg-amber-500";
+                if (item.status === "Cần hiệu chỉnh") colorClass = "bg-rose-500";
+
+                const customIcon = L.divIcon({
+                    className: 'custom-div-icon',
+                    html: `<div class="custom-marker w-8 h-8 ${colorClass}">${item.number}</div>`,
+                    iconSize: [32, 32],
+                    iconAnchor: [16, 16]
+                });
+
+                const marker = L.marker([item.lat, item.lng], { icon: customIcon }).addTo(map);
+                
+                // Popup ngắn
+                marker.bindPopup(`
+                    <div class="p-2 text-slate-800">
+                        <div class="text-xs text-blue-600 font-bold uppercase">${item.street}</div>
+                        <div class="font-extrabold text-base">Số ${item.number}</div>
+                        <div class="text-xs text-slate-600 mt-1"><i class="fa-solid fa-user mr-1"></i>${item.owner}</div>
+                        <div class="mt-2 text-right">
+                            <button onclick="selectHouse(${item.id})" class="text-xs bg-blue-600 text-white px-2.5 py-1 rounded hover:bg-blue-700 font-semibold">Xem chi tiết</button>
+                        </div>
+                    </div>
+                `);
+
+                marker.on('click', () => {
+                    selectHouse(item.id, false);
+                });
+
+                mapMarkers[item.id] = marker;
+            });
+        }
+
+        // RENDER DANH SÁCH BÊN SIDEBAR
+        function renderHouseList(data) {
+            const listContainer = document.getElementById('house-list');
+            document.getElementById('visible-count').innerText = data.length;
+            document.getElementById('total-count').innerText = houseData.length;
+
+            if (data.length === 0) {
+                listContainer.innerHTML = `
+                    <div class="p-8 text-center text-slate-400">
+                        <i class="fa-solid fa-folder-open text-4xl mb-2"></i>
+                        <p class="text-sm font-medium">Không tìm thấy địa chỉ số nhà phù hợp</p>
+                    </div>
+                `;
+                return;
+            }
+
+            let html = '';
+            data.forEach(item => {
+                let badgeStyle = "bg-emerald-100 text-emerald-800 border-emerald-200";
+                if (item.status === "Chờ duyệt") badgeStyle = "bg-amber-100 text-amber-800 border-amber-200";
+                if (item.status === "Cần hiệu chỉnh") badgeStyle = "bg-rose-100 text-rose-800 border-rose-200";
+
+                // Kiểm tra số nhà chẵn hay lẻ
+                const numOnly = parseInt(item.number);
+                const isEven = (!isNaN(numOnly) && numOnly % 2 === 0);
+                const sideBadge = isEven 
+                    ? `<span class="bg-blue-50 text-blue-700 border border-blue-200 px-1.5 py-0.5 rounded text-[10px] font-bold"><i class="fa-solid fa-arrow-right-long mr-1"></i>Số Chẵn (Phía Nam)</span>`
+                    : `<span class="bg-indigo-50 text-indigo-700 border border-indigo-200 px-1.5 py-0.5 rounded text-[10px] font-bold"><i class="fa-solid fa-arrow-left-long mr-1"></i>Số Lẻ (Phía Bắc)</span>`;
+
+                const isSelected = selectedHouseId === item.id ? "border-blue-500 bg-blue-50/50 ring-2 ring-blue-400/20" : "border-slate-200 bg-white hover:border-slate-300";
+
+                html += `
+                    <div onclick="selectHouse(${item.id})" class="p-3.5 rounded-xl border ${isSelected} transition cursor-pointer shadow-sm relative group">
+                        <div class="flex items-start justify-between mb-1">
+                            <div>
+                                <span class="text-[11px] font-bold text-slate-400 uppercase tracking-wider">${item.ward}</span>
+                                <h3 class="font-bold text-base text-slate-900 group-hover:text-blue-600">Số ${item.number} ${item.street}</h3>
+                            </div>
+                            <span class="px-2 py-0.5 rounded text-[11px] font-bold border ${badgeStyle}">${item.status}</span>
+                        </div>
+
+                        <div class="mb-2">
+                            ${sideBadge}
+                        </div>
+
+                        <div class="space-y-1 text-xs text-slate-600">
+                            <p class="truncate"><i class="fa-solid fa-user w-4 text-slate-400"></i> <span class="font-medium text-slate-700">${item.owner}</span></p>
+                            <p><i class="fa-solid fa-building w-4 text-slate-400"></i> ${item.type} &bull; ${item.floors} tầng (${item.area})</p>
+                            <p class="font-mono text-[11px] text-slate-400"><i class="fa-solid fa-qrcode w-4 text-slate-400"></i> Mã QR: ${item.qrCode}</p>
+                        </div>
+                    </div>
+                `;
+            });
+            listContainer.innerHTML = html;
+        }
+
+        // LỌC DỮ LIỆU SỐ NHÀ
+        function getFilteredData() {
+            const searchValue = document.getElementById('search-input').value.toLowerCase();
+            const streetValue = document.getElementById('filter-street').value;
+            const statusValue = document.getElementById('filter-status').value;
+            const sideValue = document.getElementById('filter-side') ? document.getElementById('filter-side').value : 'ALL';
+
+            return houseData.filter(item => {
+                const numOnly = parseInt(item.number);
+                const isEven = (!isNaN(numOnly) && numOnly % 2 === 0);
+
+                const matchSearch = item.number.toLowerCase().includes(searchValue) ||
+                                    item.owner.toLowerCase().includes(searchValue) ||
+                                    item.qrCode.toLowerCase().includes(searchValue);
+
+                const matchStreet = (streetValue === 'ALL') || (item.street === streetValue);
+                const matchStatus = (statusValue === 'ALL') || (item.status === statusValue);
+                const matchSide = (sideValue === 'ALL') || 
+                                  (sideValue === 'CHAN' && isEven) || 
+                                  (sideValue === 'LE' && !isEven);
+
+                return matchSearch && matchStreet && matchStatus && matchSide;
+            });
+        }
+
+        function filterHouses() {
+            const filtered = getFilteredData();
+            renderHouseList(filtered);
+            renderMarkers(filtered);
+        }
+
+        function resetFilters() {
+            document.getElementById('search-input').value = '';
+            document.getElementById('filter-street').value = 'Trần Nhân Tông';
+            if (document.getElementById('filter-side')) document.getElementById('filter-side').value = 'ALL';
+            document.getElementById('filter-status').value = 'ALL';
+            filterHouses();
+            resetMapView();
+        }
+
+        // CẬP NHẬT THỐNG KÊ TỔNG
+        function updateStats() {
+            document.getElementById('stat-total').innerText = houseData.length;
+            document.getElementById('stat-approved').innerText = houseData.filter(h => h.status === 'Đã cấp biển').length;
+            document.getElementById('stat-pending').innerText = houseData.filter(h => h.status === 'Chờ duyệt').length;
+            document.getElementById('stat-adjust').innerText = houseData.filter(h => h.status === 'Cần hiệu chỉnh').length;
+        }
+
+        // CHỌN VÀ HIỂN THỊ CHI TIẾT SỐ NHÀ
+        function selectHouse(id, flyToMap = true) {
+            selectedHouseId = id;
+            const house = houseData.find(h => h.id === id);
+            if (!house) return;
+
+            // Cập nhật lại giao diện danh sách bên trái
+            renderHouseList(getFilteredData());
+
+            // Căn chỉnh bản đồ tới vị trí nhà được chọn
+            if (flyToMap && map) {
+                map.flyTo([house.lat, house.lng], 19, {
+                    animate: true,
+                    duration: 1
+                });
+                if (mapMarkers[id]) {
+                    mapMarkers[id].openPopup();
+                }
+            }
+
+            // Điền thông tin vào Panel Chi Tiết (Drawer)
+            const drawer = document.getElementById('detail-drawer');
+            const drawerContent = document.getElementById('drawer-content');
+
+            let badgeStyle = "bg-emerald-100 text-emerald-800 border-emerald-200";
+            if (house.status === "Chờ duyệt") badgeStyle = "bg-amber-100 text-amber-800 border-amber-200";
+            if (house.status === "Cần hiệu chỉnh") badgeStyle = "bg-rose-100 text-rose-800 border-rose-200";
+
+            drawerContent.innerHTML = `
+                <div class="rounded-xl overflow-hidden shadow-sm border border-slate-200 relative">
+                    <img src="${house.img}" alt="Ảnh công trình" class="w-full h-48 object-cover">
+                    <div class="absolute top-3 right-3 px-2.5 py-1 rounded-full text-xs font-bold border ${badgeStyle} shadow-md backdrop-blur-md">
+                        ${house.status}
+                    </div>
+                </div>
+
+                <div class="space-y-1">
+                    <span class="text-xs font-bold text-blue-600 uppercase tracking-wider">${house.ward} &bull; ${house.district}</span>
+                    <h3 class="text-2xl font-extrabold text-slate-900">Số ${house.number} ${house.street}</h3>
+                    <p class="text-xs text-slate-500"><i class="fa-solid fa-clock mr-1"></i>Cập nhật lần cuối: ${house.updatedAt}</p>
+                </div>
+
+                <div class="bg-slate-50 rounded-xl p-4 border border-slate-200 space-y-3">
+                    <h4 class="font-bold text-xs uppercase text-slate-500 tracking-wider">Thông tin chủ sở hữu / Đơn vị</h4>
+                    <div class="grid grid-cols-2 gap-2 text-sm">
+                        <div>
+                            <p class="text-xs text-slate-400">Tên chủ sở hữu</p>
+                            <p class="font-semibold text-slate-800">${house.owner}</p>
+                        </div>
+                        <div>
+                            <p class="text-xs text-slate-400">Số điện thoại</p>
+                            <p class="font-semibold text-slate-800">${house.phone}</p>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="bg-slate-50 rounded-xl p-4 border border-slate-200 space-y-3">
+                    <h4 class="font-bold text-xs uppercase text-slate-500 tracking-wider">Đặc điểm công trình</h4>
+                    <div class="grid grid-cols-3 gap-2 text-sm">
+                        <div>
+                            <p class="text-xs text-slate-400">Loại nhà</p>
+                            <p class="font-semibold text-slate-800 text-xs">${house.type}</p>
+                        </div>
+                        <div>
+                            <p class="text-xs text-slate-400">Số tầng</p>
+                            <p class="font-semibold text-slate-800">${house.floors} tầng</p>
+                        </div>
+                        <div>
+                            <p class="text-xs text-slate-400">Diện tích</p>
+                            <p class="font-semibold text-slate-800">${house.area}</p>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="bg-slate-50 rounded-xl p-4 border border-slate-200 space-y-3">
+                    <h4 class="font-bold text-xs uppercase text-slate-500 tracking-wider">Tọa độ GIS & Định danh QR Code</h4>
+                    <div class="flex items-center space-x-3 bg-white p-3 rounded-lg border border-slate-200">
+                        <div class="bg-slate-900 text-white p-2.5 rounded-lg text-2xl font-bold">
+                            <i class="fa-solid fa-qrcode"></i>
+                        </div>
+                        <div class="flex-1 min-w-0">
+                            <p class="font-mono text-xs font-bold text-slate-800 truncate">${house.qrCode}</p>
+                            <p class="text-[11px] text-slate-500 font-mono">GPS: ${house.lat.toFixed(5)}, ${house.lng.toFixed(5)}</p>
+                        </div>
+                    </div>
+                </div>
+            `;
+
+            // Mở Drawer bên phải
+            drawer.classList.remove('translate-x-full');
+        }
+
+        // ĐÓNG PANEL CHI TIẾT
+        function closeDetailDrawer() {
+            const drawer = document.getElementById('detail-drawer');
+            drawer.classList.add('translate-x-full');
+            selectedHouseId = null;
+            renderHouseList(getFilteredData());
+        }
+
+        // MODAL THÊM SỐ NHÀ MỚI
+        function openAddModal() {
+            document.getElementById('modal-title').innerText = "Cấp Biển Số Nhà Mới";
+            document.getElementById('house-form').reset();
+            document.getElementById('form-id').value = '';
+            document.getElementById('add-modal').classList.remove('hidden');
+        }
+
+        function closeAddModal() {
+            document.getElementById('add-modal').classList.add('hidden');
+        }
+
+        function editCurrentHouse() {
+            if (!selectedHouseId) return;
+            const house = houseData.find(h => h.id === selectedHouseId);
+            if (!house) return;
+
+            document.getElementById('modal-title').innerText = "Hiệu Chỉnh Hồ Sơ Số Nhà";
+            document.getElementById('form-id').value = house.id;
+            document.getElementById('form-street').value = house.street;
+            document.getElementById('form-number').value = house.number;
+            document.getElementById('form-ward').value = house.ward;
+            document.getElementById('form-owner').value = house.owner;
+            document.getElementById('form-type').value = house.type;
+            document.getElementById('form-lat').value = house.lat;
+            document.getElementById('form-lng').value = house.lng;
+            document.getElementById('form-status').value = house.status;
+
+            document.getElementById('add-modal').classList.remove('hidden');
+        }
+
+        function handleFormSubmit(e) {
+            e.preventDefault();
+            const id = document.getElementById('form-id').value;
+            const number = document.getElementById('form-number').value;
+            const street = document.getElementById('form-street').value;
+            const ward = document.getElementById('form-ward').value;
+            const owner = document.getElementById('form-owner').value || "Chưa cập nhật";
+            const type = document.getElementById('form-type').value;
+            const lat = parseFloat(document.getElementById('form-lat').value);
+            const lng = parseFloat(document.getElementById('form-lng').value);
+            const status = document.getElementById('form-status').value;
+
+            if (id) {
+                // Edit
+                const index = houseData.findIndex(h => h.id == id);
+                if (index !== -1) {
+                    houseData[index] = {
+                        ...houseData[index],
+                        number, street, ward, owner, type, lat, lng, status,
+                        updatedAt: new Date().toLocaleDateString('vi-VN')
+                    };
+                }
+            } else {
+                // Add new
+                const newHouse = {
+                    id: Date.now(),
+                    number,
+                    street,
+                    ward,
+                    district: "Quận Hai Bà Trưng, Hà Nội",
+                    owner,
+                    phone: "0900.000.000",
+                    type,
+                    floors: 3,
+                    area: "65.0 m²",
+                    status,
+                    lat,
+                    lng,
+                    qrCode: `QR-TNT-${number}`,
+                    updatedAt: new Date().toLocaleDateString('vi-VN'),
+                    img: "https://images.unsplash.com/photo-1568605117036-5fe5e7bab0b7?w=500&auto=format&fit=crop&q=80"
+                };
+                houseData.unshift(newHouse);
+            }
+
+            closeAddModal();
+            filterHouses();
+            updateStats();
+
+            if (id) {
+                selectHouse(parseInt(id));
+            } else if (houseData.length > 0) {
+                selectHouse(houseData[0].id);
+            }
+        }
+    </script>
+</body>
+</html>

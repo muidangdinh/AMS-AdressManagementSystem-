@@ -1,0 +1,717 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Ứng Dụng Khảo Sát Số Nhà Thực Địa - GIS Mobile</title>
+    
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Leaflet CSS & JS for GPS Map -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+    <!-- FontAwesome 6 Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" />
+
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+
+    <style>
+        body {
+            font-family: 'Plus Jakarta Sans', sans-serif;
+            -webkit-tap-highlight-color: transparent;
+            user-select: none;
+        }
+        #mini-map, #full-map {
+            width: 100%;
+            height: 100%;
+            z-index: 1;
+        }
+        .leaflet-popup-content-wrapper {
+            border-radius: 12px;
+            padding: 4px;
+        }
+        /* Custom scrollbars */
+        ::-webkit-scrollbar {
+            width: 4px;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #cbd5e1;
+            border-radius: 4px;
+        }
+        .safe-bottom {
+            padding-bottom: env(safe-area-inset-bottom, 16px);
+        }
+    </style>
+</head>
+<body class="bg-slate-900 flex justify-center items-center min-h-screen text-slate-800 antialiased">
+
+    <!-- Mobile Screen Frame Container -->
+    <div class="w-full max-w-md h-[100vh] sm:h-[844px] bg-slate-100 sm:rounded-[40px] shadow-2xl flex flex-col overflow-hidden relative border-0 sm:border-[8px] sm:border-slate-800">
+        
+        <!-- STATUS BAR & HEADER -->
+        <header class="bg-blue-700 text-white pt-3 pb-3 px-4 shrink-0 shadow-md relative z-20">
+            <!-- Top Mobile Indicators -->
+            <div class="flex justify-between items-center text-[11px] font-semibold opacity-90 mb-2">
+                <span><i class="fa-solid fa-satellite-dish mr-1 text-emerald-300"></i>GPS Đã bật (±3m)</span>
+                <span id="network-status" class="bg-emerald-500/30 text-emerald-200 px-2 py-0.5 rounded-full border border-emerald-400/40 text-[10px]">
+                    <i class="fa-solid fa-wifi mr-1"></i>Trực tuyến
+                </span>
+            </div>
+
+            <!-- Header Action Title -->
+            <div class="flex items-center justify-between">
+                <div class="flex items-center space-x-2.5">
+                    <div class="w-9 h-9 rounded-xl bg-white/15 backdrop-blur-md flex items-center justify-center text-white border border-white/20">
+                        <i class="fa-solid fa-clipboard-user text-lg"></i>
+                    </div>
+                    <div>
+                        <h1 class="font-bold text-base leading-tight">Khảo Sát Thực Địa GIS</h1>
+                        <p class="text-[11px] text-blue-100">Chuyên viên: <span class="font-semibold text-yellow-300">Nguyễn Văn An</span></p>
+                    </div>
+                </div>
+
+                <button onclick="syncData()" class="bg-blue-800 hover:bg-blue-900 text-white p-2 rounded-lg text-xs flex items-center space-x-1 border border-blue-500/50 transition">
+                    <i id="sync-icon" class="fa-solid fa-rotate text-sm"></i>
+                    <span id="sync-count" class="bg-amber-500 text-slate-900 font-bold px-1.5 py-0.2 rounded-full text-[10px]">2</span>
+                </button>
+            </div>
+        </header>
+
+        <!-- Notification Toast -->
+        <div id="toast-msg" class="hidden absolute top-20 left-4 right-4 z-50 bg-slate-900/95 text-white text-xs px-4 py-3 rounded-xl shadow-xl flex items-center space-x-3 border border-slate-700 transition-all duration-300">
+            <i id="toast-icon" class="fa-solid fa-circle-check text-emerald-400 text-lg"></i>
+            <span id="toast-text" class="flex-1 font-medium">Lưu hồ sơ thành công!</span>
+        </div>
+
+        <!-- MAIN CONTENT AREA WITH TAB NAVIGATION -->
+        <main class="flex-1 overflow-y-auto relative bg-slate-50 pb-20">
+
+            <!-- TAB 1: FORM KHẢO SÁT MỚI -->
+            <section id="tab-survey" class="p-4 space-y-4">
+                
+                <!-- Quick Location Card -->
+                <div class="bg-white rounded-2xl p-3.5 shadow-sm border border-slate-200/80 space-y-3">
+                    <div class="flex items-center justify-between">
+                        <span class="text-xs font-bold text-blue-700 uppercase tracking-wide flex items-center">
+                            <i class="fa-solid fa-location-crosshairs mr-1.5 text-blue-600"></i>1. Tọa Độ GPS & Địa Chính
+                        </span>
+                        <button type="button" onclick="getCurrentGPS()" class="bg-blue-50 text-blue-700 hover:bg-blue-100 font-semibold px-2.5 py-1 rounded-lg text-xs flex items-center space-x-1 border border-blue-200">
+                            <i class="fa-solid fa-arrows-rotate text-[11px]"></i>
+                            <span>Cập nhật GPS</span>
+                        </button>
+                    </div>
+
+                    <!-- Map Preview Box -->
+                    <div class="h-36 rounded-xl overflow-hidden border border-slate-200 relative">
+                        <div id="mini-map"></div>
+                        <div class="absolute bottom-2 left-2 right-2 bg-slate-900/80 backdrop-blur-md text-white text-[11px] p-2 rounded-lg flex justify-between z-[400] font-mono border border-slate-700/50">
+                            <span>Vĩ độ: <strong id="disp-lat" class="text-emerald-400">21.01752</strong></span>
+                            <span>Kinh độ: <strong id="disp-lng" class="text-emerald-400">105.84890</strong></span>
+                        </div>
+                    </div>
+
+                    <!-- Land Parcel Info Grid -->
+                    <div class="grid grid-cols-2 gap-2.5 pt-1">
+                        <div>
+                            <label class="block text-[11px] font-bold text-slate-600 mb-1">Số Tờ Bản Đồ <span class="text-rose-500">*</span></label>
+                            <input type="text" id="input-so-to" placeholder="Ví dụ: 12" value="15" class="w-full bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 text-xs font-semibold focus:ring-2 focus:ring-blue-500 focus:bg-white outline-none">
+                        </div>
+                        <div>
+                            <label class="block text-[11px] font-bold text-slate-600 mb-1">Số Thửa Đất <span class="text-rose-500">*</span></label>
+                            <input type="text" id="input-so-thua" placeholder="Ví dụ: 108" value="84" class="w-full bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 text-xs font-semibold focus:ring-2 focus:ring-blue-500 focus:bg-white outline-none">
+                        </div>
+                    </div>
+
+                    <div>
+                        <label class="block text-[11px] font-bold text-slate-600 mb-1">Đường / Phố Dự Kiến</label>
+                        <input type="text" id="input-street" value="Trần Nhân Tông, Phường Nguyễn Du, HBT" class="w-full bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 text-xs text-slate-700 font-medium focus:ring-2 focus:ring-blue-500 focus:bg-white outline-none">
+                    </div>
+                </div>
+
+                <!-- Owner Information Card -->
+                <div class="bg-white rounded-2xl p-3.5 shadow-sm border border-slate-200/80 space-y-3">
+                    <span class="text-xs font-bold text-blue-700 uppercase tracking-wide flex items-center">
+                        <i class="fa-solid fa-user-shield mr-1.5 text-blue-600"></i>2. Thông Tin Chủ Hộ & Pháp Lý
+                    </span>
+
+                    <div>
+                        <label class="block text-[11px] font-bold text-slate-600 mb-1">Họ và Tên Chủ Hộ <span class="text-rose-500">*</span></label>
+                        <div class="relative">
+                            <i class="fa-solid fa-user absolute left-3 top-2.5 text-slate-400 text-xs"></i>
+                            <input type="text" id="input-owner" placeholder="Nhập tên chủ hộ..." value="Nguyễn Văn Hoàng" class="w-full pl-8 pr-3 py-2 bg-slate-50 border border-slate-300 rounded-lg text-xs font-semibold focus:ring-2 focus:ring-blue-500 focus:bg-white outline-none">
+                        </div>
+                    </div>
+
+                    <div class="grid grid-cols-2 gap-2.5">
+                        <div>
+                            <label class="block text-[11px] font-bold text-slate-600 mb-1">Số CCCD / CMND <span class="text-rose-500">*</span></label>
+                            <div class="relative">
+                                <i class="fa-solid fa-id-card absolute left-2.5 top-2.5 text-slate-400 text-xs"></i>
+                                <input type="text" id="input-cccd" placeholder="001092XXXXXX" value="001088019283" class="w-full pl-7 pr-2 py-2 bg-slate-50 border border-slate-300 rounded-lg text-xs font-mono font-semibold focus:ring-2 focus:ring-blue-500 focus:bg-white outline-none">
+                            </div>
+                        </div>
+                        <div>
+                            <label class="block text-[11px] font-bold text-slate-600 mb-1">Số Điện Thoại <span class="text-rose-500">*</span></label>
+                            <div class="relative">
+                                <i class="fa-solid fa-phone absolute left-2.5 top-2.5 text-slate-400 text-xs"></i>
+                                <input type="tel" id="input-phone" placeholder="0912xxxxxx" value="0912345678" class="w-full pl-7 pr-2 py-2 bg-slate-50 border border-slate-300 rounded-lg text-xs font-mono font-semibold focus:ring-2 focus:ring-blue-500 focus:bg-white outline-none">
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- House Status & Photo Capture Card -->
+                <div class="bg-white rounded-2xl p-3.5 shadow-sm border border-slate-200/80 space-y-3">
+                    <span class="text-xs font-bold text-blue-700 uppercase tracking-wide flex items-center">
+                        <i class="fa-solid fa-camera mr-1.5 text-blue-600"></i>3. Ảnh Hiện Trạng & Công Trình
+                    </span>
+
+                    <!-- Image Capture Section -->
+                    <div>
+                        <label class="block text-[11px] font-bold text-slate-600 mb-1.5">Ảnh Mặt Tiền Căn Nhà <span class="text-rose-500">*</span></label>
+                        
+                        <div class="grid grid-cols-2 gap-2">
+                            <!-- Image Preview Area -->
+                            <div id="photo-preview-box" class="h-28 bg-slate-100 rounded-xl border-2 border-dashed border-slate-300 flex flex-col items-center justify-center overflow-hidden relative">
+                                <img id="captured-img" src="https://images.unsplash.com/photo-1568605117036-5fe5e7bab0b7?w=500&auto=format&fit=crop&q=80" class="w-full h-full object-cover" alt="Ảnh căn nhà">
+                                <span id="photo-placeholder" class="hidden flex-col items-center text-slate-400">
+                                    <i class="fa-solid fa-image text-2xl mb-1"></i>
+                                    <span class="text-[10px]">Chưa chụp ảnh</span>
+                                </span>
+                            </div>
+
+                            <!-- Capture Control Buttons -->
+                            <div class="flex flex-col justify-between space-y-2">
+                                <button type="button" onclick="triggerCamera()" class="flex-1 bg-blue-600 hover:bg-blue-700 text-white rounded-xl p-2 text-xs font-bold flex flex-col items-center justify-center shadow-md active:scale-95 transition">
+                                    <i class="fa-solid fa-camera-retro text-lg mb-1"></i>
+                                    <span>Chụp Ảnh Mới</span>
+                                </button>
+                                <label class="bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-300 rounded-xl p-2 text-xs font-semibold flex items-center justify-center cursor-pointer">
+                                    <i class="fa-solid fa-folder-open mr-1.5 text-slate-500"></i> Chọn thư viện
+                                    <input type="file" accept="image/*" onchange="handleFileSelect(event)" class="hidden">
+                                </label>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Building Specifications -->
+                    <div class="grid grid-cols-2 gap-2.5">
+                        <div>
+                            <label class="block text-[11px] font-bold text-slate-600 mb-1">Số Nhà Đề Xuất</label>
+                            <input type="text" id="input-house-no" placeholder="Ví dụ: 18B" value="24" class="w-full bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 text-xs font-bold text-blue-700 focus:ring-2 focus:ring-blue-500 focus:bg-white outline-none">
+                        </div>
+                        <div>
+                            <label class="block text-[11px] font-bold text-slate-600 mb-1">Loại Công Trình</label>
+                            <select id="input-type" class="w-full bg-slate-50 border border-slate-300 rounded-lg px-2.5 py-2 text-xs font-medium focus:ring-2 focus:ring-blue-500 focus:bg-white outline-none">
+                                <option value="Nhà ở riêng lẻ" selected>Nhà ở riêng lẻ</option>
+                                <option value="Cửa hàng / Ki-ốt">Cửa hàng / Ki-ốt</option>
+                                <option value="Tòa nhà văn phòng">Tòa nhà văn phòng</option>
+                                <option value="Chung cư / Tập thể">Chung cư / Tập thể</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="grid grid-cols-2 gap-2.5">
+                        <div>
+                            <label class="block text-[11px] font-bold text-slate-600 mb-1">Số Tầng</label>
+                            <input type="number" id="input-floors" value="3" min="1" class="w-full bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 text-xs font-semibold focus:ring-2 focus:ring-blue-500 focus:bg-white outline-none">
+                        </div>
+                        <div>
+                            <label class="block text-[11px] font-bold text-slate-600 mb-1">Trạng Thái Biển Số</label>
+                            <select id="input-status" class="w-full bg-slate-50 border border-slate-300 rounded-lg px-2 py-2 text-xs font-medium focus:ring-2 focus:ring-blue-500 focus:bg-white outline-none">
+                                <option value="Chưa có biển">Chưa gắn biển số</option>
+                                <option value="Có biển cũ">Có biển số cũ</option>
+                                <option value="Đã gắn biển QR">Đã gắn biển QR</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div>
+                        <label class="block text-[11px] font-bold text-slate-600 mb-1">Ghi Chú Khảo Sát Thực Địa</label>
+                        <textarea id="input-note" rows="2" placeholder="Nhập ghi chú thêm về lối vào, tranh chấp, hẻm..." class="w-full bg-slate-50 border border-slate-300 rounded-lg p-2.5 text-xs focus:ring-2 focus:ring-blue-500 focus:bg-white outline-none">Nhà nằm sát mặt đường chính, lối đi thông thoáng.</textarea>
+                    </div>
+                </div>
+
+                <!-- Submit Action Buttons -->
+                <div class="pt-2 flex space-x-2">
+                    <button type="button" onclick="saveSurveyForm(false)" class="flex-1 bg-amber-500 hover:bg-amber-600 text-slate-900 py-3 rounded-xl font-bold text-xs flex items-center justify-center space-x-1.5 shadow-md active:scale-95 transition">
+                        <i class="fa-solid fa-floppy-disk"></i>
+                        <span>Lưu Tạm (Offline)</span>
+                    </button>
+                    <button type="button" onclick="saveSurveyForm(true)" class="flex-1 bg-blue-700 hover:bg-blue-800 text-white py-3 rounded-xl font-bold text-xs flex items-center justify-center space-x-1.5 shadow-md active:scale-95 transition">
+                        <i class="fa-solid fa-paper-plane"></i>
+                        <span>Lưu & Gửi Duyệt</span>
+                    </button>
+                </div>
+            </section>
+
+            <!-- TAB 2: DANH SÁCH ĐÃ KHẢO SÁT -->
+            <section id="tab-list" class="p-4 space-y-3 hidden">
+                <div class="flex items-center justify-between">
+                    <h2 class="font-bold text-sm text-slate-800">Danh Sách Căn Nhà Đã Khảo Sát</h2>
+                    <span id="list-badge-count" class="bg-blue-100 text-blue-700 font-extrabold text-xs px-2.5 py-0.5 rounded-full">0 hồ sơ</span>
+                </div>
+
+                <!-- Search box in list -->
+                <div class="relative">
+                    <i class="fa-solid fa-magnifying-glass absolute left-3 top-2.5 text-slate-400 text-xs"></i>
+                    <input type="text" id="search-list" onkeyup="renderHistoryList()" placeholder="Tìm tên chủ hộ, số thửa, số tờ..." class="w-full pl-8 pr-3 py-2 bg-white border border-slate-200 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-blue-500">
+                </div>
+
+                <!-- History Items Container -->
+                <div id="survey-history-items" class="space-y-2.5">
+                    <!-- Dynamic rendering via JS -->
+                </div>
+            </section>
+
+            <!-- TAB 3: BẢN ĐỒ KHU VỰC TOÀN CẢNH -->
+            <section id="tab-map" class="h-full w-full hidden relative">
+                <div id="full-map"></div>
+                <div class="absolute top-3 left-3 right-3 bg-white/90 backdrop-blur-md p-2.5 rounded-xl shadow-lg border border-slate-200 z-[500] flex justify-between items-center text-xs">
+                    <span class="font-bold text-slate-800"><i class="fa-solid fa-layer-group text-blue-600 mr-1.5"></i>Bản đồ vị trí thực địa</span>
+                    <button onclick="centerFullMap()" class="bg-blue-600 text-white px-2.5 py-1 rounded-lg font-semibold text-[11px]"><i class="fa-solid fa-crosshairs mr-1"></i>Về vị trí tôi</button>
+                </div>
+            </section>
+
+        </main>
+
+        <!-- CAMERA MODAL SIMULATION -->
+        <div id="camera-modal" class="fixed inset-0 bg-black/90 z-50 flex flex-col justify-between p-4 hidden">
+            <div class="flex justify-between items-center text-white">
+                <span class="text-xs font-semibold"><i class="fa-solid fa-camera mr-1"></i>Chế độ Chụp Ảnh Khảo Sát</span>
+                <button onclick="closeCamera()" class="text-white p-2 text-lg"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+
+            <!-- Viewfinder -->
+            <div class="relative flex-1 my-4 border-2 border-white/30 rounded-2xl overflow-hidden flex items-center justify-center bg-slate-900">
+                <img id="camera-feed" src="https://images.unsplash.com/photo-1600585154340-be6161a56a0c?w=600&auto=format&fit=crop&q=80" class="w-full h-full object-cover">
+                <div class="absolute inset-0 border-2 border-dashed border-emerald-400/60 pointer-events-none rounded-2xl m-4"></div>
+                <span class="absolute bottom-4 bg-black/60 text-emerald-300 font-mono text-[10px] px-3 py-1 rounded-full">GPS: 21.01752, 105.84890</span>
+            </div>
+
+            <!-- Shutter Button -->
+            <div class="flex items-center justify-around pb-4">
+                <button onclick="switchSamplePhoto()" class="text-white text-xs bg-slate-800 px-3 py-2 rounded-lg border border-slate-700">Đổi mẫu ảnh</button>
+                <button onclick="takeSnapShot()" class="w-16 h-16 rounded-full bg-white border-4 border-slate-300 shadow-xl flex items-center justify-center active:scale-90 transition">
+                    <div class="w-12 h-12 rounded-full bg-rose-600 border-2 border-white"></div>
+                </button>
+                <button onclick="closeCamera()" class="text-white text-xs bg-slate-800 px-3 py-2 rounded-lg border border-slate-700">Hủy</button>
+            </div>
+        </div>
+
+        <!-- BOTTOM NAVIGATION BAR -->
+        <nav class="bg-white border-t border-slate-200 h-16 px-4 flex items-center justify-around shrink-0 absolute bottom-0 left-0 right-0 z-30 safe-bottom">
+            <button onclick="switchTab('survey')" id="nav-survey" class="flex flex-col items-center justify-center w-1/3 text-blue-600 font-bold">
+                <i class="fa-solid fa-pen-to-square text-lg"></i>
+                <span class="text-[10px] mt-0.5">Khảo Sát</span>
+            </button>
+            <button onclick="switchTab('list')" id="nav-list" class="flex flex-col items-center justify-center w-1/3 text-slate-400 hover:text-slate-600 font-medium">
+                <i class="fa-solid fa-list-check text-lg"></i>
+                <span class="text-[10px] mt-0.5">Đã Lưu (<span id="nav-count">0</span>)</span>
+            </button>
+            <button onclick="switchTab('map')" id="nav-map" class="flex flex-col items-center justify-center w-1/3 text-slate-400 hover:text-slate-600 font-medium">
+                <i class="fa-solid fa-map-location-dot text-lg"></i>
+                <span class="text-[10px] mt-0.5">Bản Đồ</span>
+            </button>
+        </nav>
+
+    </div>
+
+    <!-- JAVASCRIPT LOGIC -->
+    <script>
+        // Sample predefined photos for camera simulator
+        const samplePhotos = [
+            "https://images.unsplash.com/photo-1568605117036-5fe5e7bab0b7?w=500&auto=format&fit=crop&q=80",
+            "https://images.unsplash.com/photo-1570129477492-45c003edd2be?w=500&auto=format&fit=crop&q=80",
+            "https://images.unsplash.com/photo-1600585154340-be6161a56a0c?w=500&auto=format&fit=crop&q=80",
+            "https://images.unsplash.com/photo-1580587771525-78b9dba3b914?w=500&auto=format&fit=crop&q=80"
+        ];
+        let currentPhotoIndex = 0;
+
+        // Default initial GPS coordinates (Trần Nhân Tông, Hà Nội)
+        let currentLat = 21.01752;
+        let currentLng = 105.84890;
+
+        let miniMap, fullMap, currentMarker, fullMapMarkers = [];
+
+        // Application state database (stored in localStorage)
+        let surveyRecords = JSON.parse(localStorage.getItem('gis_survey_records')) || [
+            {
+                id: 1,
+                owner: "Trần Văn Nam",
+                phone: "0988.123.456",
+                cccd: "001090012345",
+                soTo: "12",
+                soThua: "45",
+                street: "Trần Nhân Tông",
+                houseNo: "12",
+                type: "Cửa hàng / Ki-ốt",
+                floors: "4",
+                status: "Đã gắn biển QR",
+                note: "Đã kiểm tra đối chiếu sổ đỏ",
+                lat: 21.01760,
+                lng: 105.84710,
+                img: samplePhotos[1],
+                isSynced: true,
+                createdAt: "02/08/2026 09:30"
+            },
+            {
+                id: 2,
+                owner: "Lê Thị Hồng",
+                phone: "0912.888.999",
+                cccd: "001085098765",
+                soTo: "12",
+                soThua: "48",
+                street: "Trần Nhân Tông",
+                houseNo: "14A",
+                type: "Nhà ở riêng lẻ",
+                floors: "3",
+                status: "Chưa có biển",
+                note: "Cần cập nhật số thửa phụ",
+                lat: 21.01740,
+                lng: 105.84820,
+                img: samplePhotos[2],
+                isSynced: false,
+                createdAt: "03/08/2026 08:15"
+            }
+        ];
+
+        // INITIALIZATION
+        window.onload = function() {
+            initMiniMap();
+            renderHistoryList();
+            updateCounts();
+        };
+
+        function initMiniMap() {
+            miniMap = L.map('mini-map', { zoomControl: false }).setView([currentLat, currentLng], 17);
+            
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                maxZoom: 19
+            }).addTo(miniMap);
+
+            const redIcon = L.divIcon({
+                className: 'custom-pin',
+                html: `<div class="w-6 h-6 bg-rose-600 rounded-full border-2 border-white shadow-lg flex items-center justify-center text-white text-[10px]"><i class="fa-solid fa-crosshairs"></i></div>`,
+                iconSize: [24, 24],
+                iconAnchor: [12, 12]
+            });
+
+            currentMarker = L.marker([currentLat, currentLng], { icon: redIcon, draggable: true }).addTo(miniMap);
+
+            currentMarker.on('dragend', function(e) {
+                const pos = currentMarker.getLatLng();
+                currentLat = pos.lat;
+                currentLng = pos.lng;
+                document.getElementById('disp-lat').innerText = currentLat.toFixed(5);
+                document.getElementById('disp-lng').innerText = currentLng.toFixed(5);
+            });
+        }
+
+        function initFullMap() {
+            if (!fullMap) {
+                fullMap = L.map('full-map', { zoomControl: false }).setView([currentLat, currentLng], 17);
+                L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                    maxZoom: 19
+                }).addTo(fullMap);
+                L.control.zoom({ position: 'bottomright' }).addTo(fullMap);
+            }
+            
+            // Clear existing markers
+            fullMapMarkers.forEach(m => fullMap.removeLayer(m));
+            fullMapMarkers = [];
+
+            // Add pins from saved records
+            surveyRecords.forEach(rec => {
+                const badgeColor = rec.isSynced ? 'bg-emerald-600' : 'bg-amber-500';
+                const icon = L.divIcon({
+                    className: 'custom-house-pin',
+                    html: `<div class="w-7 h-7 ${badgeColor} text-white rounded-full border-2 border-white shadow-md flex items-center justify-center font-bold text-xs">${rec.houseNo || '?' }</div>`,
+                    iconSize: [28, 28],
+                    iconAnchor: [14, 14]
+                });
+
+                const m = L.marker([rec.lat, rec.lng], { icon: icon }).addTo(fullMap);
+                m.bindPopup(`
+                    <div class="p-1 text-slate-800 text-xs">
+                        <strong class="text-blue-700 font-bold text-sm">Số ${rec.houseNo} ${rec.street}</strong>
+                        <p class="mt-1"><i class="fa-solid fa-user text-slate-400 mr-1"></i>${rec.owner}</p>
+                        <p><i class="fa-solid fa-file-contract text-slate-400 mr-1"></i>Thửa: ${rec.soThua} / Tờ: ${rec.soTo}</p>
+                        <span class="inline-block mt-1 px-2 py-0.5 text-[10px] font-bold rounded ${rec.isSynced ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'}">
+                            ${rec.isSynced ? 'Đã đồng bộ' : 'Chờ đồng bộ'}
+                        </span>
+                    </div>
+                `);
+                fullMapMarkers.push(m);
+            });
+        }
+
+        // GPS LOCATION HANDLER
+        function getCurrentGPS() {
+            showToast("Đang kết nối vệ tinh GPS...", "info");
+
+            if (navigator.geolocation) {
+                navigator.geolocation.getCurrentPosition(
+                    (position) => {
+                        currentLat = position.coords.latitude;
+                        currentLng = position.coords.longitude;
+                        updateMapLocation();
+                        showToast("Đã định vị thành công vị trí hiện tại!", "success");
+                    },
+                    (error) => {
+                        // Simulated slight jitter for testing if browser location is denied
+                        currentLat += (Math.random() - 0.5) * 0.0005;
+                        currentLng += (Math.random() - 0.5) * 0.0005;
+                        updateMapLocation();
+                        showToast("Đã cập nhật tọa độ thực địa!", "success");
+                    }
+                );
+            } else {
+                showToast("Thiết bị không hỗ trợ Geolocation", "error");
+            }
+        }
+
+        function updateMapLocation() {
+            document.getElementById('disp-lat').innerText = currentLat.toFixed(5);
+            document.getElementById('disp-lng').innerText = currentLng.toFixed(5);
+            if (miniMap && currentMarker) {
+                miniMap.setView([currentLat, currentLng], 18);
+                currentMarker.setLatLng([currentLat, currentLng]);
+            }
+        }
+
+        // FORM SUBMIT HANDLER
+        function saveSurveyForm(isSyncedDirectly) {
+            const owner = document.getElementById('input-owner').value.trim();
+            const phone = document.getElementById('input-phone').value.trim();
+            const cccd = document.getElementById('input-cccd').value.trim();
+            const soTo = document.getElementById('input-so-to').value.trim();
+            const soThua = document.getElementById('input-so-thua').value.trim();
+
+            if (!owner || !phone || !cccd || !soTo || !soThua) {
+                showToast("Vui lòng nhập đầy đủ các trường bắt buộc (*)", "error");
+                return;
+            }
+
+            const newRecord = {
+                id: Date.now(),
+                owner: owner,
+                phone: phone,
+                cccd: cccd,
+                soTo: soTo,
+                soThua: soThua,
+                street: document.getElementById('input-street').value,
+                houseNo: document.getElementById('input-house-no').value || 'Chưa gán',
+                type: document.getElementById('input-type').value,
+                floors: document.getElementById('input-floors').value,
+                status: document.getElementById('input-status').value,
+                note: document.getElementById('input-note').value,
+                lat: currentLat,
+                lng: currentLng,
+                img: document.getElementById('captured-img').src,
+                isSynced: isSyncedDirectly,
+                createdAt: new Date().toLocaleString('vi-VN', { dateStyle: 'short', timeStyle: 'short' })
+            };
+
+            surveyRecords.unshift(newRecord);
+            localStorage.setItem('gis_survey_records', JSON.stringify(surveyRecords));
+
+            showToast(isSyncedDirectly ? "Đã gửi hồ sơ lên hệ thống thành công!" : "Đã lưu tạm hồ sơ ngoại tuyến (Offline)!", "success");
+
+            renderHistoryList();
+            updateCounts();
+
+            // Switch to list tab after 1s
+            setTimeout(() => {
+                switchTab('list');
+            }, 800);
+        }
+
+        // RENDER SURVEY HISTORY LIST
+        function renderHistoryList() {
+            const listContainer = document.getElementById('survey-history-items');
+            const keyword = document.getElementById('search-list').value.toLowerCase();
+
+            const filtered = surveyRecords.filter(r => 
+                r.owner.toLowerCase().includes(keyword) ||
+                r.soThua.toLowerCase().includes(keyword) ||
+                r.soTo.toLowerCase().includes(keyword) ||
+                r.cccd.toLowerCase().includes(keyword)
+            );
+
+            document.getElementById('list-badge-count').innerText = `${filtered.length} hồ sơ`;
+
+            if (filtered.length === 0) {
+                listContainer.innerHTML = `
+                    <div class="text-center py-10 text-slate-400 space-y-2">
+                        <i class="fa-solid fa-folder-open text-3xl"></i>
+                        <p class="text-xs">Chưa có dữ liệu khảo sát nào</p>
+                    </div>
+                `;
+                return;
+            }
+
+            let html = '';
+            filtered.forEach(item => {
+                const syncBadge = item.isSynced 
+                    ? `<span class="bg-emerald-100 text-emerald-800 text-[10px] font-extrabold px-2 py-0.5 rounded-full"><i class="fa-solid fa-check mr-1"></i>Đã đồng bộ</span>`
+                    : `<span class="bg-amber-100 text-amber-800 text-[10px] font-extrabold px-2 py-0.5 rounded-full"><i class="fa-solid fa-clock mr-1"></i>Chờ đồng bộ</span>`;
+
+                html += `
+                    <div class="bg-white rounded-xl p-3 border border-slate-200 shadow-sm space-y-2 relative">
+                        <div class="flex items-start justify-between">
+                            <div class="flex space-x-2.5">
+                                <img src="${item.img}" class="w-14 h-14 rounded-lg object-cover border border-slate-200" alt="House">
+                                <div>
+                                    <h3 class="font-bold text-xs text-slate-900">${item.owner}</h3>
+                                    <p class="text-[11px] text-blue-700 font-semibold">Số ${item.houseNo} ${item.street}</p>
+                                    <p class="text-[10px] text-slate-500 font-mono">Thửa số: <strong>${item.soThua}</strong> | Tờ bản đồ: <strong>${item.soTo}</strong></p>
+                                </div>
+                            </div>
+                            ${syncBadge}
+                        </div>
+
+                        <div class="bg-slate-50 rounded-lg p-2 text-[11px] text-slate-600 grid grid-cols-2 gap-1 font-mono">
+                            <div><i class="fa-solid fa-id-card text-slate-400 mr-1"></i>CCCD: ${item.cccd}</div>
+                            <div><i class="fa-solid fa-phone text-slate-400 mr-1"></i>SĐT: ${item.phone}</div>
+                        </div>
+
+                        <div class="flex justify-between items-center text-[10px] text-slate-400 pt-1 border-t border-slate-100">
+                            <span><i class="fa-solid fa-clock mr-1"></i>${item.createdAt}</span>
+                            <div class="space-x-2">
+                                <button onclick="deleteRecord(${item.id})" class="text-rose-500 font-semibold hover:underline"><i class="fa-solid fa-trash mr-1"></i>Xóa</button>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            });
+            listContainer.innerHTML = html;
+        }
+
+        function deleteRecord(id) {
+            surveyRecords = surveyRecords.filter(r => r.id !== id);
+            localStorage.setItem('gis_survey_records', JSON.stringify(surveyRecords));
+            renderHistoryList();
+            updateCounts();
+            showToast("Đã xóa hồ sơ thành công", "info");
+        }
+
+        function syncData() {
+            const unsynced = surveyRecords.filter(r => !r.isSynced);
+            if (unsynced.length === 0) {
+                showToast("Tất cả dữ liệu đã được đồng bộ!", "info");
+                return;
+            }
+
+            const icon = document.getElementById('sync-icon');
+            icon.classList.add('fa-spin');
+
+            setTimeout(() => {
+                surveyRecords.forEach(r => r.isSynced = true);
+                localStorage.setItem('gis_survey_records', JSON.stringify(surveyRecords));
+                icon.classList.remove('fa-spin');
+                renderHistoryList();
+                updateCounts();
+                showToast(`Đã đồng bộ thành công ${unsynced.length} hồ sơ thực địa!`, "success");
+            }, 1200);
+        }
+
+        function updateCounts() {
+            const unsyncedCount = surveyRecords.filter(r => !r.isSynced).length;
+            document.getElementById('sync-count').innerText = unsyncedCount;
+            document.getElementById('nav-count').innerText = surveyRecords.length;
+        }
+
+        // CAMERA SIMULATION LOGIC
+        function triggerCamera() {
+            document.getElementById('camera-modal').classList.remove('hidden');
+        }
+
+        function closeCamera() {
+            document.getElementById('camera-modal').classList.add('hidden');
+        }
+
+        function switchSamplePhoto() {
+            currentPhotoIndex = (currentPhotoIndex + 1) % samplePhotos.length;
+            document.getElementById('camera-feed').src = samplePhotos[currentPhotoIndex];
+        }
+
+        function takeSnapShot() {
+            const newImgSrc = document.getElementById('camera-feed').src;
+            document.getElementById('captured-img').src = newImgSrc;
+            closeCamera();
+            showToast("Đã chụp ảnh hiện trạng căn nhà!", "success");
+        }
+
+        function handleFileSelect(event) {
+            const file = event.target.files[0];
+            if (file) {
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    document.getElementById('captured-img').src = e.target.result;
+                    showToast("Đã tải ảnh lên thành công!", "success");
+                };
+                reader.readAsDataURL(file);
+            }
+        }
+
+        // TAB NAVIGATION SWITCHER
+        function switchTab(tabName) {
+            document.getElementById('tab-survey').classList.add('hidden');
+            document.getElementById('tab-list').classList.add('hidden');
+            document.getElementById('tab-map').classList.add('hidden');
+
+            document.getElementById('nav-survey').className = "flex flex-col items-center justify-center w-1/3 text-slate-400 font-medium";
+            document.getElementById('nav-list').className = "flex flex-col items-center justify-center w-1/3 text-slate-400 font-medium";
+            document.getElementById('nav-map').className = "flex flex-col items-center justify-center w-1/3 text-slate-400 font-medium";
+
+            if (tabName === 'survey') {
+                document.getElementById('tab-survey').classList.remove('hidden');
+                document.getElementById('nav-survey').className = "flex flex-col items-center justify-center w-1/3 text-blue-600 font-bold";
+                setTimeout(() => miniMap && miniMap.invalidateSize(), 200);
+            } else if (tabName === 'list') {
+                document.getElementById('tab-list').classList.remove('hidden');
+                document.getElementById('nav-list').className = "flex flex-col items-center justify-center w-1/3 text-blue-600 font-bold";
+            } else if (tabName === 'map') {
+                document.getElementById('tab-map').classList.remove('hidden');
+                document.getElementById('nav-map').className = "flex flex-col items-center justify-center w-1/3 text-blue-600 font-bold";
+                initFullMap();
+                setTimeout(() => fullMap && fullMap.invalidateSize(), 200);
+            }
+        }
+
+        function centerFullMap() {
+            if (fullMap) {
+                fullMap.flyTo([currentLat, currentLng], 18);
+            }
+        }
+
+        // TOAST NOTIFICATION HELPER
+        function showToast(message, type = "success") {
+            const toast = document.getElementById('toast-msg');
+            const icon = document.getElementById('toast-icon');
+            const text = document.getElementById('toast-text');
+
+            text.innerText = message;
+
+            if (type === "success") {
+                icon.className = "fa-solid fa-circle-check text-emerald-400 text-lg";
+            } else if (type === "error") {
+                icon.className = "fa-solid fa-triangle-exclamation text-rose-400 text-lg";
+            } else {
+                icon.className = "fa-solid fa-circle-info text-blue-400 text-lg";
+            }
+
+            toast.classList.remove('hidden');
+            setTimeout(() => {
+                toast.classList.add('hidden');
+            }, 2500);
+        }
+    </script>
+</body>
+</html>

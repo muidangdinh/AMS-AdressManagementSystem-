@@ -1,0 +1,168 @@
+'use client';
+
+import { useEffect, useRef, useState } from 'react';
+import L from 'leaflet';
+import 'leaflet/dist/leaflet.css';
+import { STATUS_COLOR, TAYNINH_CENTER, type HouseMapProps } from './map-types';
+
+/**
+ * Bản đồ GIS hiển thị số nhà (Phase 3 — I) — bản Leaflet dùng tile REST công khai của Esri
+ * ArcGIS (`server.arcgisonline.com`), KHÔNG cần đăng ký/API key/thẻ thanh toán nào — dùng
+ * làm phương án dự phòng khi chưa/không muốn kích hoạt billing Google Maps (xem
+ * `HouseMap.tsx`, wrapper chọn provider qua `NEXT_PUBLIC_MAP_PROVIDER`). Phải load qua
+ * next/dynamic({ ssr:false }) ở nơi gọi vì Leaflet cần `window`/`document`.
+ */
+export default function HouseMapLeaflet({
+  houses,
+  onSelectHouse,
+  onMapClick,
+  onMapRightClick,
+  flyToRequest,
+}: HouseMapProps) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const mapRef = useRef<L.Map | null>(null);
+  const streetLayerRef = useRef<L.TileLayer | null>(null);
+  const satelliteLayerRef = useRef<L.TileLayer | null>(null);
+  const markersRef = useRef<Record<string, L.Marker>>({});
+  const onSelectRef = useRef(onSelectHouse);
+  const onMapClickRef = useRef(onMapClick);
+  const onMapRightClickRef = useRef(onMapRightClick);
+  const [layer, setLayerState] = useState<'street' | 'satellite'>('street');
+
+  onSelectRef.current = onSelectHouse;
+  onMapClickRef.current = onMapClick;
+  onMapRightClickRef.current = onMapRightClick;
+
+  // Khởi tạo bản đồ đúng 1 lần
+  useEffect(() => {
+    if (!containerRef.current || mapRef.current) return;
+
+    const map = L.map(containerRef.current, { zoomControl: false }).setView(
+      TAYNINH_CENTER,
+      15,
+    );
+
+    // World_Street_Map (vector) không phủ chi tiết đều khắp thế giới như ảnh vệ tinh —
+    // tỉnh/thị trấn nhỏ như Tây Ninh thường hết dữ liệu thật ở zoom sâu, Esri trả về tile
+    // "Map data not yet available". `maxNativeZoom` giới hạn đúng mức zoom server còn dữ
+    // liệu thật; `maxZoom` (mức cho phép người dùng zoom) vẫn cao hơn — Leaflet tự phóng to
+    // tile cuối cùng còn dữ liệu thay vì hiện tile lỗi khi zoom sâu hơn mức đó.
+    const streetLayer = L.tileLayer(
+      'https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}',
+      { maxZoom: 19, maxNativeZoom: 15, attribution: 'Tiles &copy; Esri' },
+    ).addTo(map);
+
+    const satelliteLayer = L.tileLayer(
+      'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+      { maxZoom: 19, maxNativeZoom: 18, attribution: 'Tiles &copy; Esri' },
+    );
+
+    L.control.zoom({ position: 'bottomright' }).addTo(map);
+
+    map.on('click', (e: L.LeafletMouseEvent) => {
+      onMapClickRef.current?.(e.latlng.lat, e.latlng.lng);
+    });
+
+    // Chuột phải: chặn menu ngữ cảnh mặc định của trình duyệt, mở form thêm số nhà thay vào đó.
+    map.on('contextmenu', (e: L.LeafletMouseEvent) => {
+      L.DomEvent.preventDefault(e.originalEvent);
+      onMapRightClickRef.current?.(e.latlng.lat, e.latlng.lng);
+    });
+
+    mapRef.current = map;
+    streetLayerRef.current = streetLayer;
+    satelliteLayerRef.current = satelliteLayer;
+
+    return () => {
+      map.remove();
+      mapRef.current = null;
+    };
+  }, []);
+
+  // Đồng bộ marker mỗi khi danh sách số nhà thay đổi.
+  // Luôn xóa sạch rồi tạo lại toàn bộ (thay vì diff tăng dần): ở React 18
+  // Strict Mode (dev), effect khởi tạo map chạy 2 lần (mount giả lập →
+  // cleanup → mount thật), phá hủy rồi tạo lại instance map. Nếu chỉ diff
+  // theo id, markersRef sẽ giữ marker cũ trỏ vào map ĐÃ BỊ HỦY và code sẽ
+  // tưởng nhầm marker "đã tồn tại" nên bỏ qua .addTo(map mới) — marker biến
+  // mất trên map thật dù dữ liệu vẫn đúng. Rebuild toàn bộ tránh triệt để lỗi này.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+
+    Object.values(markersRef.current).forEach((m) => {
+      try {
+        m.remove();
+      } catch {
+        // Marker có thể đã gắn vào 1 map instance khác đã bị hủy — bỏ qua an toàn.
+      }
+    });
+    markersRef.current = {};
+
+    houses.forEach((h) => {
+      const color = STATUS_COLOR[h.status] ?? '#64748b';
+      const icon = L.divIcon({
+        className: 'custom-house-marker',
+        html: `<div style="width:28px;height:28px;border-radius:50%;background:${color};color:white;font-weight:bold;font-size:11px;display:flex;align-items:center;justify-content:center;border:2px solid white;box-shadow:0 2px 6px rgba(0,0,0,0.4);">${h.houseNumber}</div>`,
+        iconSize: [28, 28],
+        iconAnchor: [14, 14],
+      });
+
+      const marker = L.marker([h.latitude, h.longitude], { icon }).addTo(map);
+      marker.on('click', () => onSelectRef.current(h.id));
+      marker.bindPopup(
+        `<div style="font-size:12px;min-width:160px">` +
+        `<div style="font-weight:bold;color:#1d4ed8;text-transform:uppercase;font-size:10px">${h.street}</div>` +
+        `<div style="font-weight:800;font-size:14px">Số ${h.houseNumber}</div>` +
+        `<div style="color:#475569;margin-top:2px">${h.ownerName}</div>` +
+        `<div style="font-family:monospace;color:#94a3b8;font-size:10px;margin-top:2px">${h.qrCode}</div>` +
+        `</div>`,
+      );
+      markersRef.current[h.id] = marker;
+    });
+  }, [houses]);
+
+  // Bay tới vị trí khi flyToRequest đổi (click danh sách trong chế độ bản đồ)
+  useEffect(() => {
+    if (!flyToRequest || !mapRef.current) return;
+    mapRef.current.flyTo([flyToRequest.lat, flyToRequest.lng], 18, {
+      animate: true,
+      duration: 1,
+    });
+  }, [flyToRequest]);
+
+  function setLayer(type: 'street' | 'satellite') {
+    const map = mapRef.current;
+    if (!map || !streetLayerRef.current || !satelliteLayerRef.current) return;
+    if (type === 'satellite') {
+      map.removeLayer(streetLayerRef.current);
+      map.addLayer(satelliteLayerRef.current);
+    } else {
+      map.removeLayer(satelliteLayerRef.current);
+      map.addLayer(streetLayerRef.current);
+    }
+    setLayerState(type);
+  }
+
+  return (
+    <div className="relative h-full w-full">
+      <div ref={containerRef} className="h-full w-full" />
+      <div className="absolute top-3 right-3 z-[500] bg-white rounded-lg shadow-md p-1 border border-slate-200 flex space-x-1 text-xs">
+        <button
+          onClick={() => setLayer('street')}
+          className={`px-2.5 py-1.5 rounded font-semibold transition ${layer === 'street' ? 'bg-blue-600 text-white' : 'text-slate-600 hover:bg-slate-100'
+            }`}
+        >
+          Giao thông
+        </button>
+        <button
+          onClick={() => setLayer('satellite')}
+          className={`px-2.5 py-1.5 rounded font-semibold transition ${layer === 'satellite' ? 'bg-blue-600 text-white' : 'text-slate-600 hover:bg-slate-100'
+            }`}
+        >
+          Vệ tinh
+        </button>
+      </div>
+    </div>
+  );
+}

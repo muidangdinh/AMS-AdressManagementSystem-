@@ -1,0 +1,24 @@
+{
+  "name": "tayninh-gis",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Hệ thống GIS Đánh số & Gắn biển số nhà - Tây Ninh (Phase 0 - MVP skeleton)",
+  "workspaces": [
+    "apps/api",
+    "apps/web",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev:api": "npm run start:dev --workspace @tayninh/api",
+    "dev:web": "npm run dev --workspace @tayninh/web",
+    "build": "npm run build --workspaces --if-present",
+    "db:up": "docker compose up -d postgres",
+    "db:down": "docker compose down",
+    "prisma:migrate": "npm run prisma:migrate --workspace @tayninh/api",
+    "prisma:generate": "npm run prisma:generate --workspace @tayninh/api",
+    "backup": "bash scripts/backup.sh"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

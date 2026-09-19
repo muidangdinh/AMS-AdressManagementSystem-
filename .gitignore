@@ -1,0 +1,38 @@
+# Dependencies
+node_modules/
+.pnp
+.pnp.js
+
+# Build outputs
+dist/
+.next/
+out/
+build/
+
+# Environment
+.env
+.env.local
+.env.*.local
+!.env.example
+
+# Uploads (dữ liệu người dùng lưu trên host — không commit)
+uploads/*
+!uploads/.gitkeep
+
+# Backups
+backups/*
+!backups/.gitkeep
+
+# Logs
+*.log
+npm-debug.log*
+
+# Prisma
+apps/api/prisma/*.db
+
+# OS / editor
+.DS_Store
+.vscode/
+.idea/
+*.swp
+.gstack/

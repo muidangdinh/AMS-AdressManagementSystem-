@@ -1,0 +1,131 @@
+version: "3.9"
+
+# ============================================================
+#  Tây Ninh GIS - Docker Compose
+#  Cấu trúc theo mẫu triển khai chung của các dự án trên server tỉnh
+#  (env_file dùng chung, container_name rõ ràng, mạng nội bộ + mạng
+#  "proxy" NGOÀI để dùng chung 1 reverse proxy với các dự án khác
+#  đã có trên server — vd EDMS — thay vì mở port trực tiếp ra ngoài).
+#
+#  Dùng nhanh khi phát triển (chỉ chạy DB, còn api/web chạy bằng npm
+#  trực tiếp trên host — xem README.md):
+#     docker compose up -d postgres
+#
+#  Chạy toàn bộ stack đóng gói (khi triển khai lên server tỉnh, đứng
+#  sau reverse proxy dùng chung qua mạng "proxy"):
+#     docker compose --profile full up -d --build
+#
+#  ⚠️ Mạng "proxy" (web_server_default) là mạng NGOÀI — phải đã tồn tại
+#  sẵn trên server (do stack reverse proxy/dự án khác tạo ra, giống EDMS)
+#  trước khi chạy lệnh trên, nếu không compose báo lỗi "network ...
+#  declared as external, but could not be found". Cấu hình routing của
+#  reverse proxy (domain -> tayninh_api:3001 / tayninh_web:3000) làm ở
+#  phía stack reverse proxy, không thuộc file này.
+# ============================================================
+
+services:
+  # --- PostgreSQL 16 + PostGIS: lưu dữ liệu ngay trên host qua volume ---
+  postgres:
+    image: postgis/postgis:16-3.4
+    container_name: tayninh_postgres
+    restart: unless-stopped
+
+    env_file:
+      - .env
+
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-tayninh}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-tayninh_secret_change_me}
+      POSTGRES_DB: ${POSTGRES_DB:-tayninh_gis}
+
+    # Giữ port ra host — quy trình dev hiện tại chạy api/web bằng npm
+    # trực tiếp trên host (không qua Docker), cần kết nối tới DB này
+    # qua localhost. Khi triển khai thật (--profile full), api chạy
+    # trong cùng mạng "tayninh" nên vẫn kết nối được dù có port này hay không.
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+
+    networks:
+      - tayninh
+
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-tayninh} -d ${POSTGRES_DB:-tayninh_gis}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # --- Backend NestJS (chỉ chạy khi bật profile "full") ---
+  api:
+    image: tayninh-api:latest
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    container_name: tayninh_api
+    restart: unless-stopped
+    profiles: ["full"]
+
+    env_file:
+      - .env
+
+    environment:
+      # Trong mạng docker, host DB là "postgres" (tên service)
+      DATABASE_URL: postgresql://${POSTGRES_USER:-tayninh}:${POSTGRES_PASSWORD:-tayninh_secret_change_me}@postgres:5432/${POSTGRES_DB:-tayninh_gis}?schema=public
+      API_PORT: 4002
+      CORS_ORIGIN: ${CORS_ORIGIN:-http://localhost:3000}
+      UPLOAD_DIR: /app/uploads
+      JWT_SECRET: ${JWT_SECRET:?Phải đặt JWT_SECRET trong .env trước khi chạy}
+      JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-8h}
+
+    volumes:
+      - ./uploads:/app/uploads
+
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+    # Không mở port ra host — đứng sau reverse proxy dùng chung qua
+    # mạng "proxy" (giống mẫu EDMS: backend/frontend không có "ports:").
+    networks:
+      - tayninh
+      - proxy
+
+  # --- Frontend Next.js (chỉ chạy khi bật profile "full") ---
+  web:
+    image: tayninh-web:latest
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+    container_name: tayninh_web
+    restart: unless-stopped
+    profiles: ["full"]
+
+    env_file:
+      - .env
+
+    environment:
+      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:3001}
+
+    depends_on:
+      - api
+
+    networks:
+      - tayninh
+      - proxy
+
+volumes:
+  pg_data:
+    driver: local
+
+networks:
+  # Mạng nội bộ dự án — postgres <-> api <-> web nói chuyện với nhau qua tên service.
+  tayninh:
+    driver: bridge
+
+  # Mạng reverse proxy dùng CHUNG với các dự án khác trên cùng server
+  # (vd EDMS) — phải được tạo sẵn từ trước bởi stack reverse proxy.
+  proxy:
+    external: true
+    name: web_server_default
