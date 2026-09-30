@@ -49,6 +49,7 @@ export default function HouseMapGoogle({
   const mapRef = useRef<google.maps.Map | null>(null);
   const [layer, setLayer] = useState<'street' | 'satellite'>('street');
   const [activeHouseId, setActiveHouseId] = useState<string | null>(null);
+  const [myLocation, setMyLocation] = useState<{ lat: number; lng: number } | null>(null);
 
   const onMapClickRef = useRef(onMapClick);
   const onMapRightClickRef = useRef(onMapRightClick);
@@ -77,6 +78,9 @@ export default function HouseMapGoogle({
     if (!flyToRequest || !mapRef.current) return;
     mapRef.current.panTo({ lat: flyToRequest.lat, lng: flyToRequest.lng });
     mapRef.current.setZoom(18);
+    if (flyToRequest.myLocation) {
+      setMyLocation({ lat: flyToRequest.lat, lng: flyToRequest.lng });
+    }
   }, [flyToRequest]);
 
   function toggleLayer(type: 'street' | 'satellite') {
@@ -136,6 +140,22 @@ export default function HouseMapGoogle({
               }}
             />
           ))}
+
+          {myLocation && (
+            <MarkerF
+              position={myLocation}
+              icon={{
+                path: google.maps.SymbolPath.CIRCLE,
+                scale: 8,
+                fillColor: '#2563eb',
+                fillOpacity: 1,
+                strokeColor: '#ffffff',
+                strokeWeight: 3,
+              }}
+              title="Vị trí của bạn"
+              zIndex={1000}
+            />
+          )}
 
           {activeHouse && (
             <InfoWindowF

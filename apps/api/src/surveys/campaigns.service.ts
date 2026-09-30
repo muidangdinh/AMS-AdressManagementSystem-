@@ -41,7 +41,23 @@ export class CampaignsService {
       },
     });
     if (!campaign) throw new NotFoundException('Không tìm thấy đợt khảo sát');
-    return campaign;
+    // Phase 11 Đợt 2b — gắn `revisitPending` (số nhà còn cờ khảo sát lại) cho từng nhiệm vụ lồng bằng ĐÚNG 1 truy vấn nhóm.
+    const assignmentIds = campaign.zones.flatMap((z) => z.assignments.map((a) => a.id));
+    const groups = assignmentIds.length
+      ? await this.prisma.house.groupBy({
+          by: ['surveyAssignmentId'],
+          where: { surveyAssignmentId: { in: assignmentIds }, revisitReason: { not: null } },
+          _count: { _all: true },
+        })
+      : [];
+    const pending = new Map(groups.map((g) => [g.surveyAssignmentId, g._count._all]));
+    return {
+      ...campaign,
+      zones: campaign.zones.map((z) => ({
+        ...z,
+        assignments: z.assignments.map((a) => ({ ...a, revisitPending: pending.get(a.id) ?? 0 })),
+      })),
+    };
   }
 
   private async findOneOrThrow(id: string) {

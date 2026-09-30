@@ -14,6 +14,7 @@ import { useAuth } from '@/lib/auth-context';
 import { ApiError } from '@/lib/api';
 import { casesApi } from '@/lib/cases-api';
 import { ButtonSpinner, EmptyState, FIELD_CLASS, FormField, FormSection, PageHeader } from '@/components/ui';
+import { isOverdue } from '@/lib/deadline';
 
 const STATUS_BADGE: Record<CaseStatus, string> = {
   [CaseStatus.RECEIVED]: 'bg-slate-100 text-slate-700 border-slate-200',
@@ -56,7 +57,7 @@ export default function CasesPage() {
   }, [load]);
 
   const [createOpen, setCreateOpen] = useState(false);
-  const [form, setForm] = useState({ applicantName: '', applicantPhone: '', description: '' });
+  const [form, setForm] = useState({ applicantName: '', applicantPhone: '', description: '', dueDate: '' });
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
 
@@ -69,6 +70,7 @@ export default function CasesPage() {
         applicantName: form.applicantName,
         applicantPhone: form.applicantPhone || undefined,
         description: form.description || undefined,
+        dueDate: form.dueDate || undefined,
       });
       router.push(`/houses/cases/${c.id}`);
     } catch (err) {
@@ -162,7 +164,13 @@ export default function CasesPage() {
                   onClick={() => router.push(`/houses/cases/${c.id}`)}
                   className="cursor-pointer hover:bg-blue-50/50 transition-colors"
                 >
-                  <td className="px-4 py-3 font-mono font-bold text-slate-900">{c.caseNumber}</td>
+                  <td className="px-4 py-3 font-mono font-bold text-slate-900">{c.caseNumber}
+                    {isOverdue(c.dueDate) && c.status !== CaseStatus.COMPLETED && c.status !== CaseStatus.REJECTED && (
+                      <span className="ml-2 px-1.5 py-0.5 rounded text-[10px] font-bold bg-rose-100 text-rose-700 border border-rose-200 font-sans">
+                        Quá hạn
+                      </span>
+                    )}
+                  </td>
                   <td className="px-4 py-3">{c.applicantName}</td>
                   <td className="px-4 py-3 text-xs">{CASE_REQUEST_TYPE_LABELS[c.requestType]}</td>
                   <td className="px-4 py-3">
@@ -221,6 +229,14 @@ export default function CasesPage() {
                     value={form.description}
                     onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))}
                     rows={3}
+                    className={FIELD_CLASS}
+                  />
+                </FormField>
+                <FormField label="Hạn xử lý">
+                  <input
+                    type="date"
+                    value={form.dueDate}
+                    onChange={(e) => setForm((f) => ({ ...f, dueDate: e.target.value }))}
                     className={FIELD_CLASS}
                   />
                 </FormField>

@@ -1,4 +1,11 @@
-import type { AssignmentStatus, SurveyAssignment } from '@tayninh/shared';
+import type {
+  AssignmentHouse,
+  AssignmentIssueKind,
+  AssignmentStatus,
+  HouseSummary,
+  ResurveyHouseRequest,
+  SurveyAssignment,
+} from '@tayninh/shared';
 import { apiFetch } from './api';
 
 /**
@@ -22,4 +29,40 @@ export function startAssignment(id: string): Promise<SurveyAssignment> {
 
 export function submitAssignment(id: string): Promise<SurveyAssignment> {
   return apiFetch<SurveyAssignment>(`/api/survey-assignments/${id}/submit`, { method: 'POST' });
+}
+
+/**
+ * Phase 11 Đợt 2 — báo vấn đề hiện trường (`ISSUE`) hoặc xin hỗ trợ (`HELP`) tới người giao việc.
+ * Không đổi trạng thái nhiệm vụ. Trả về nhiệm vụ kèm dòng thời gian (`events`).
+ */
+export function reportAssignmentIssue(
+  id: string,
+  kind: AssignmentIssueKind,
+  note: string,
+): Promise<SurveyAssignment> {
+  return apiFetch<SurveyAssignment>(`/api/survey-assignments/${id}/issues`, {
+    method: 'POST',
+    body: JSON.stringify({ kind, note }),
+  });
+}
+
+/**
+ * Phase 11 Đợt 2b — nhà của nhiệm vụ. `revisitOnly` = chỉ các nhà còn cờ "cần khảo sát lại".
+ * Cán bộ khảo sát chỉ xem được nhiệm vụ của chính mình.
+ */
+export function fetchAssignmentHouses(id: string, revisitOnly = false): Promise<AssignmentHouse[]> {
+  return apiFetch<AssignmentHouse[]>(`/api/survey-assignments/${id}/houses${revisitOnly ? '?revisit=true' : ''}`);
+}
+
+/** Chi tiết 1 nhà (điền sẵn form khi sửa lại) — cần có mạng. */
+export function fetchHouse(id: string): Promise<HouseSummary> {
+  return apiFetch<HouseSummary>(`/api/houses/${id}`);
+}
+
+/**
+ * Sửa lại đúng nhà bị yêu cầu khảo sát lại (thay vì tạo nhà mới trùng). Chỉ được khi nhà đang có cờ, thuộc
+ * nhiệm vụ của mình và nhiệm vụ đang thực hiện; sửa xong server tự xoá cờ. Cần có mạng.
+ */
+export function resurveyHouse(id: string, body: ResurveyHouseRequest): Promise<HouseSummary> {
+  return apiFetch<HouseSummary>(`/api/houses/${id}/resurvey`, { method: 'POST', body: JSON.stringify(body) });
 }

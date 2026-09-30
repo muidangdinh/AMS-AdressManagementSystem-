@@ -72,6 +72,9 @@ model User {
   casesCreated  HouseCase[]  @relation("CaseCreatedBy")
   casesAssigned HouseCase[]  @relation("CaseAssignedTo")
   caseEvents    CaseEvent[]  @relation("CaseEventActor")
+  notificationsReceived Notification[] @relation("NotificationRecipient")
+  notificationsSent     Notification[] @relation("NotificationActor")
+  assignmentEvents      SurveyAssignmentEvent[] @relation("AssignmentEventActor")
 
   @@map("app_user")
 }
@@ -195,6 +198,9 @@ model House {
   area         Float? // m2
 
   status HouseStatus @default(PENDING)
+  /// Ngày nhà được cấp số (chuyển sang APPROVED) — tự ghi ở service khi đổi trạng thái, xoá khi
+  /// rời khỏi APPROVED. NULL với nhà đã duyệt từ trước khi có cột này (không có dữ liệu lịch sử).
+  approvedAt DateTime?
   qrCode String      @unique // Chuỗi định danh, vd "TN-3F9A21B4"
 
   latitude  Float
@@ -217,6 +223,12 @@ model House {
   reviewStage HouseReviewStage  @default(PROPOSED)
   /// Ghi chú khảo sát tự do (mobile SurveyScreen) — trước đây bị giữ local, không gửi lên API.
   note        String?
+
+  /// Phase 11 Đợt 2b — lý do người duyệt yêu cầu KHẢO SÁT LẠI riêng nhà này (chọn từng nhà khi bấm "Yêu
+  /// cầu khảo sát lại" ở nhiệm vụ). NULL = không bị yêu cầu. Cán bộ khảo sát chỉ sửa được nhà đang có cờ này
+  /// (POST /houses/:id/resurvey), sửa xong cờ được xoá. KHÔNG đổi `status` (tránh đụng luồng gắn biển/dashboard).
+  revisitReason      String?
+  revisitRequestedAt DateTime?
 
   createdById String?
   createdBy   User?   @relation("HouseCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
@@ -599,6 +611,9 @@ model SurveyAssignment {
   status  AssignmentStatus @default(ASSIGNED)
   /// Ghi chú lúc giao việc (vd hướng dẫn thêm cho khu vực này).
   note    String?
+  /// Chỉ tiêu: số nhà dự kiến cần khảo sát trong nhiệm vụ (Phase 11 Đợt 2). Tiến độ % = số nhà đã
+  /// tạo (`houses`) ÷ chỉ tiêu. Để trống = không đặt chỉ tiêu, chỉ hiện số nhà đã khảo sát.
+  targetCount Int?
 
   submittedAt  DateTime?
   reviewedById String?
@@ -614,6 +629,7 @@ model SurveyAssignment {
   updatedAt DateTime @updatedAt
 
   houses House[]
+  events SurveyAssignmentEvent[]
 
   @@index([zoneId])
   @@index([assigneeId])
@@ -672,6 +688,9 @@ model HouseCase {
 
   rejectedReason String?
 
+  /// Hạn xử lý (ngày) — Phase 11, dùng cho nhắc nhở sắp/quá hạn. Hạn thực tế = 23:59 giờ VN của ngày này.
+  dueDate DateTime?
+
   createdById String?
   createdBy   User?   @relation("CaseCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
 
@@ -703,4 +722,75 @@ model CaseEvent {
 
   @@index([caseId])
   @@map("house_case_event")
+}
+
+// ============================================================
+//  Phase 11 — Thông báo & nhắc nhở (giao việc)
+//  Lớp thông báo trong app dùng chung cho Task/SurveyAssignment/HouseCase.
+//  `dedupeKey` (unique) bảo đảm mỗi mốc nhắc của job định kỳ chỉ sinh 1 lần.
+// ============================================================
+
+enum NotificationType {
+  ASSIGNED // Được giao việc mới
+  STATUS_CHANGED // Đổi trạng thái
+  DUE_SOON // Sắp đến hạn
+  OVERDUE // Quá hạn
+  REMINDER // Nhắc thủ công
+  ISSUE_REPORTED // Báo vấn đề / yêu cầu hỗ trợ
+}
+
+enum NotificationEntity {
+  TASK
+  SURVEY_ASSIGNMENT
+  HOUSE_CASE
+}
+
+model Notification {
+  id     String @id @default(uuid())
+  userId String
+  user   User   @relation("NotificationRecipient", fields: [userId], references: [id], onDelete: Cascade)
+
+  type       NotificationType
+  entityType NotificationEntity
+  entityId   String
+
+  title String
+  body  String?
+  /// Đường dẫn trên web để mở đối tượng liên quan.
+  link  String?
+
+  actorId String?
+  actor   User?   @relation("NotificationActor", fields: [actorId], references: [id], onDelete: SetNull)
+
+  readAt    DateTime?
+  dedupeKey String?   @unique
+  createdAt DateTime  @default(now())
+
+  @@index([userId, readAt])
+  @@index([createdAt])
+  @@index([entityType, entityId])
+  @@map("notification")
+}
+
+/// Dòng thời gian của nhiệm vụ khảo sát (Phase 11 Đợt 2) — mỗi lần giao/bắt đầu/gửi duyệt/nghiệm thu/
+/// yêu cầu khảo sát lại và mỗi lần cán bộ báo vấn đề/xin hỗ trợ là 1 dòng. Theo mẫu `CaseEvent`.
+/// `action`: CREATED | STARTED | SUBMITTED | COMPLETED | REVISIT_REQUESTED | ISSUE_REPORTED | HELP_REQUESTED.
+/// Báo vấn đề/xin hỗ trợ KHÔNG đổi trạng thái nhiệm vụ (BR-78).
+model SurveyAssignmentEvent {
+  id           Int              @id @default(autoincrement())
+  assignmentId String
+  assignment   SurveyAssignment @relation(fields: [assignmentId], references: [id], onDelete: Cascade)
+
+  action     String
+  note       String?
+  fromStatus AssignmentStatus?
+  toStatus   AssignmentStatus?
+
+  actorId String?
+  actor   User?   @relation("AssignmentEventActor", fields: [actorId], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+
+  @@index([assignmentId])
+  @@map("survey_assignment_event")
 }

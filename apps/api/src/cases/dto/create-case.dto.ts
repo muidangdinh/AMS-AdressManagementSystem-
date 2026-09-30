@@ -1,4 +1,4 @@
-import { IsEnum, IsOptional, IsString, MinLength } from 'class-validator';
+import { IsDateString, IsEnum, IsOptional, IsString, MinLength } from 'class-validator';
 import { CaseRequestType } from '@prisma/client';
 
 export class CreateCaseDto {
@@ -17,4 +17,9 @@ export class CreateCaseDto {
   @IsOptional()
   @IsString()
   description?: string;
+
+  /** Hạn xử lý (YYYY-MM-DD) — Phase 11. */
+  @IsOptional()
+  @IsDateString()
+  dueDate?: string;
 }

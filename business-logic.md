@@ -124,6 +124,7 @@ Ký hiệu: **✔** được phép · **✘** bị từ chối (HTTP 403) · **�
 | Xem danh sách & chi tiết hồ sơ số nhà | ✔ | ✔ | ✔ | ✘ |
 | **Tạo mới** hồ sơ số nhà | ✔ | ✔ | **✔** | ✘ |
 | **Sửa** hồ sơ số nhà | ✔ | ✔ | **✘** | ✘ |
+| Sửa lại nhà **bị yêu cầu khảo sát lại** *(Phase 11 Đợt 2b, BR-85)* | ✘ *(dùng Sửa)* | ✘ *(dùng Sửa)* | **✔** *(chỉ nhà bị đánh dấu, nhiệm vụ của mình)* | ✘ |
 | Tải ảnh lên hồ sơ | ✔ | ✔ | **✔** | ✘ |
 | Xoá ảnh của hồ sơ | ✔ | ✔ | ✘ | ✘ |
 | Xem bản đồ, tra cứu theo bán kính | ✔ | ✔ | ✔ | ✘ |
@@ -574,6 +575,53 @@ tiếng Việt. Tối đa **5.000 dòng** mỗi lần xuất — vượt ngưỡ
 | **Nhật ký thao tác** | Ghi **mọi** thao tác thay đổi dữ liệu trên toàn hệ thống: ai, khi nào, chức năng nào, địa chỉ IP, nội dung gửi lên |
 | Che dữ liệu nhạy cảm trong nhật ký | Mật khẩu, mã phiên và **số CCCD/CMND** luôn bị thay bằng `***` |
 
+### QT-09 — Thông báo và nhắc nhở giao việc *(mới — Phase 11, Đợt 1)*
+
+**Mục đích:** người được giao việc biết ngay khi có việc mới, sắp đến hạn hoặc quá hạn; người giao biết tiến độ
+mà không phải mở từng màn hình. Kênh **thông báo trong ứng dụng** (chuông trên web, chuông + màn *Thông Báo*
+trên mobile, lấy bằng truy vấn định kỳ mỗi 60 giây). **Chưa có** thông báo đẩy khi ứng dụng đóng, email hay SMS.
+
+**Áp dụng cho:** nhiệm vụ khảo sát (QT-02) và hồ sơ hành chính (QT-05).
+
+| Sự kiện | Người nhận | Thời điểm |
+|---|---|---|
+| **Được giao** | Cán bộ được giao nhiệm vụ khảo sát / được phân công hồ sơ | Ngay khi giao |
+| **Đổi trạng thái** | Người giao: khi cán bộ *bắt đầu* hoặc *gửi duyệt*. Cán bộ khảo sát: khi được *nghiệm thu* hoặc bị *yêu cầu khảo sát lại* (kèm lý do) | Ngay khi thao tác |
+| **Sắp đến hạn** | Người nhận việc | Một lần khi còn ≤ 24 giờ (tham số `REMINDER_DUE_SOON_HOURS`) |
+| **Quá hạn** | Người nhận việc: mỗi ngày một lần. Người giao: một lần duy nhất | Job quét mỗi 10 phút |
+| **Nhắc thủ công** | Người nhận việc | Khi ADMIN/CADASTRAL bấm nút **Nhắc** |
+| **Báo vấn đề / cần hỗ trợ** *(Đợt 2)* | Người giao việc (nếu không còn người giao thì toàn bộ ADMIN/CADASTRAL đang hoạt động) | Khi cán bộ khảo sát gửi từ mobile |
+
+**Hạn xử lý:** là một *ngày*; hạn thực tế là **23:59 giờ Việt Nam** của ngày đó. Hồ sơ hành chính có thêm ô
+*Hạn xử lý* (tuỳ chọn). Việc đã hoàn tất / bị từ chối không còn bị nhắc hạn. **Đổi hạn thì chu kỳ nhắc tính lại.**
+
+
+**Nâng cấp nhiệm vụ khảo sát *(Phase 11 Đợt 2)*:**
+
+- **Chỉ tiêu và tiến độ %:** khi giao nhiệm vụ có thể đặt *Chỉ tiêu (số nhà)*. Tiến độ = số nhà đã khảo sát
+  và gắn vào nhiệm vụ ÷ chỉ tiêu (hiện thanh % trên web và mobile). Không đặt chỉ tiêu thì chỉ hiện số nhà đã khảo sát.
+- **Nhật ký nhiệm vụ:** mọi thao tác (giao, bắt đầu, gửi duyệt, nghiệm thu, yêu cầu khảo sát lại, báo vấn đề, xin hỗ trợ)
+  được ghi thành một dòng có người thực hiện, thời điểm và ghi chú; xem trên web (nút *Nhật ký*) và mobile (biểu tượng đồng hồ).
+  Nhiệm vụ tạo trước đợt này được điền sẵn các mốc *giao / gửi duyệt / duyệt* từ dữ liệu cũ; **không có mốc *bắt đầu*** vì
+  hệ thống trước đây không lưu.
+- **Báo vấn đề / cần hỗ trợ:** cán bộ khảo sát bấm biểu tượng cờ trên nhiệm vụ của mình, chọn loại và nhập nội dung. Người
+  giao nhận thông báo ngay; **trạng thái nhiệm vụ không đổi**.
+
+
+**Khảo sát lại đúng nhà bị lỗi *(Phase 11 Đợt 2b)*:**
+
+Trước đây, khi người duyệt bấm *Yêu cầu khảo sát lại*, cán bộ khảo sát **không có cách sửa nhà đã gửi** (chỉ tạo được nhà mới,
+theo BR-14), nên điền lại sẽ sinh ra **nhà trùng** và làm tiến độ tăng sai. Nay:
+
+1. Khi bấm *Yêu cầu khảo sát lại* trên web, người duyệt **tick từng nhà có lỗi** kèm lý do riêng (bỏ trống = dùng lý do chung).
+   Không tick nhà nào = **khảo sát lại chung**: cán bộ thêm nhà còn thiếu như trước.
+2. Nhà được tick bị đánh dấu "cần khảo sát lại" (không đổi trạng thái duyệt của nhà). Cán bộ nhận thông báo kèm số nhà; thẻ nhiệm vụ trên mobile
+   hiện **"Khảo sát lại (N nhà)"**.
+3. Cán bộ bấm *Bắt đầu khảo sát lại*, bấm thẻ **Khảo sát lại** → chọn nhà → tab *Khảo Sát* mở ở **chế độ sửa lại**: form điền sẵn thông tin nhà,
+   cán bộ sửa, chụp/chọn thêm ảnh, bấm **Lưu & Gửi (sửa lại)**. Chức năng này **cần có mạng** (không lưu nháp offline).
+4. Sửa xong: cờ được xoá, lịch sử nhà ghi rõ trường nào đổi, nhật ký nhiệm vụ ghi "Đã khảo sát lại nhà …". **Số nhà đã khảo sát của nhiệm vụ
+   không đổi** (không tạo nhà mới). Còn nhà chưa sửa thì **chưa gửi duyệt lại được**.
+
 ---
 
 ## 7. QUY TẮC NGHIỆP VỤ (BUSINESS RULES)
@@ -671,6 +719,24 @@ Ký hiệu cột **Mức**: 🔴 *Hệ thống cưỡng chế* (vi phạm bị c
 | BR-59 | Nhật ký **che** mật khẩu, mã phiên và số CCCD/CMND bằng `***` | 🔴 |
 | BR-60 | Ghi nhật ký thất bại **không được** làm hỏng thao tác nghiệp vụ của người dùng | 🔴 |
 | BR-61 | **Ảnh đã tải lên truy cập được không cần đăng nhập** (theo đường dẫn tệp) — quyết định có chủ đích, coi ảnh mặt tiền tương đương ảnh đường phố | ⚪ |
+
+### 7.6b Thông báo và nhắc nhở *(mới — Phase 11)*
+
+| Mã | Quy tắc | Mức |
+|---|---|---|
+| BR-74 | Hạn xử lý là một ngày; hạn thực tế là 23:59 giờ Việt Nam của ngày đó (áp dụng cho nhiệm vụ khảo sát và hồ sơ hành chính) | 🔴 |
+| BR-75 | Nhắc "sắp đến hạn" đúng 1 lần khi còn ≤ 24 giờ; nhắc "quá hạn" cho người nhận 1 lần/ngày, báo người giao 1 lần duy nhất; đổi hạn thì tính lại. Chạy lại job không sinh thông báo trùng | 🔴 |
+| BR-76 | Nhắc thủ công chỉ ADMIN/CADASTRAL; cùng một việc chỉ nhắc tối đa 1 lần / 15 phút (lần thứ hai trong 15 phút bị từ chối); hồ sơ chưa phân công cho ai thì không nhắc được | 🔴 |
+| BR-77 | Không gửi thông báo cho chính người vừa thực hiện thao tác | 🔴 |
+| BR-78 | Cán bộ được giao báo vấn đề / xin hỗ trợ trên nhiệm vụ của mình (mọi trạng thái trừ *Đã hoàn tất*); nội dung 1–1000 ký tự; chỉ ghi nhật ký và báo người giao, **không đổi trạng thái nhiệm vụ** | 🔴 |
+| BR-79 | Mỗi người chỉ đọc và đánh dấu đã đọc thông báo **của mình**; thông báo đã đọc được giữ 90 ngày rồi tự xoá | 🔴 |
+| BR-80 | Gửi thông báo thất bại không làm hỏng thao tác nghiệp vụ đã thành công (giao việc, gửi duyệt…) | 🔴 |
+| BR-81 | Thao tác "đánh dấu đã đọc" không ghi vào nhật ký hệ thống (không có giá trị truy vết, tránh rác) | ⚪ |
+| BR-82 | Chỉ tiêu nhiệm vụ là số nguyên từ 1 đến 100.000, tuỳ chọn; chỉ đặt/sửa/bỏ được khi nhiệm vụ còn *Đã giao* (theo BR-46). Tiến độ % = số nhà đã tạo trong nhiệm vụ ÷ chỉ tiêu, **có thể vượt 100%** nếu khảo sát nhiều hơn chỉ tiêu | 🔴 |
+| BR-83 | Mỗi chuyển trạng thái của nhiệm vụ khảo sát ghi 1 dòng nhật ký **cùng lúc** với việc đổi trạng thái (không có trường hợp đổi trạng thái mà thiếu nhật ký) | 🔴 |
+| BR-84 | Nhiệm vụ còn nhà mang cờ "cần khảo sát lại" chưa sửa thì **không gửi duyệt được** (trả lỗi nêu số nhà còn lại) | 🔴 |
+| BR-85 | Cán bộ khảo sát chỉ sửa được nhà khi: nhà đang có cờ khảo sát lại **và** thuộc nhiệm vụ của chính mình **và** nhiệm vụ đang *Đang khảo sát* (đã bấm *Bắt đầu khảo sát lại*); chỉ sửa được thông tin và thêm ảnh, **không** đổi được trạng thái duyệt / giai đoạn phân loại / nhiệm vụ. Đây là ngoại lệ có kiểm soát của BR-14; *sửa nhà nói chung* vẫn chỉ ADMIN/CADASTRAL | 🔴 |
+| BR-86 | Yêu cầu khảo sát lại: mọi nhà được chọn phải thuộc đúng nhiệm vụ đó (sai ⇒ từ chối); không chọn nhà nào = khảo sát lại chung; việc đánh dấu nhà và đổi trạng thái nhiệm vụ diễn ra trọn gói | 🔴 |
 
 ### 7.7 Ngưỡng và giới hạn hệ thống
 
@@ -944,6 +1010,7 @@ Tiền tố chung `/api`. Cột **Quyền**: `*` = mọi vai trò đã đăng nh
 | | `GET /houses/:id/public` | **PUB** | Thông tin tra cứu công khai |
 | | `POST /houses` | ADMIN, CADASTRAL, **SURVEYOR** | Tạo hồ sơ *(điểm mobile đồng bộ nháp)* |
 | | `PATCH /houses/:id` | ADMIN, CADASTRAL | Sửa hồ sơ |
+| | `POST /houses/:id/resurvey` | **SURVEYOR** | Sửa lại đúng nhà bị yêu cầu khảo sát lại (BR-85) — Phase 11 Đợt 2b |
 | | `POST /houses/:id/photos` | ADMIN, CADASTRAL, **SURVEYOR** | Tải ảnh lên |
 | | `DELETE /houses/:id/photos/:photoId` | ADMIN, CADASTRAL | Xoá ảnh |
 | Phương án đánh số | `GET /numbering-schemes` · `/:id` · `/:id/validate` | `*` | Danh sách · Chi tiết · Kiểm tra |
@@ -958,11 +1025,18 @@ Tiền tố chung `/api`. Cột **Quyền**: `*` = mọi vai trò đã đăng nh
 | | `GET /survey-assignments` · `/surveyors` | `*` · ADMIN, CADASTRAL | Nhiệm vụ · Danh sách cán bộ khảo sát |
 | | `POST` · `PATCH` · `DELETE /survey-assignments` | ADMIN, CADASTRAL | Giao, sửa, huỷ nhiệm vụ |
 | | `POST /:id/start` · `/:id/submit` | **SURVEYOR** | Bắt đầu · Gửi duyệt *(chỉ nhiệm vụ của mình)* |
+| | `POST /:id/issues` | **SURVEYOR** | Báo vấn đề / xin hỗ trợ *(chỉ nhiệm vụ của mình, không đổi trạng thái)* — Phase 11 Đợt 2 |
+| | `GET /:id/houses[?revisit=true]` | `*` *(SURVEYOR: chỉ nhiệm vụ của mình)* | Nhà của nhiệm vụ / nhà còn cờ khảo sát lại — Đợt 2b |
+| | `POST /:id/request-revisit` | ADMIN, CADASTRAL | Nay nhận thêm `houses[{houseId, reason?}]` để đánh dấu từng nhà — Đợt 2b |
 | | `POST /:id/complete` · `/:id/request-revisit` | ADMIN, CADASTRAL | Nghiệm thu · Yêu cầu khảo sát lại |
 | Hồ sơ hành chính | `GET /house-cases` · `/staff` · `/:id` | ADMIN, CADASTRAL | Danh sách · Cán bộ xử lý · Chi tiết |
 | | `POST` · `PATCH /:id` | ADMIN, CADASTRAL | Tiếp nhận · Cập nhật |
 | | `POST /:id/assign` `/link-house` `/advance` `/reject` `/reopen` `/notes` | ADMIN, CADASTRAL | Phân công · Liên kết nhà · Tiến bước · Từ chối · Mở lại · Ghi chú |
 | Báo cáo | `GET /dashboard/summary` · `/dashboard/mine` | `*` | Tổng quan hệ thống · Báo cáo nhanh cá nhân |
+| Thông báo | `GET /notifications` · `/unread-count` | `*` | Thông báo của chính mình *(Phase 11)* |
+| | `POST /notifications/:id/read` · `/read-all` | `*` | Đánh dấu đã đọc |
+| | `POST /notifications/remind` | ADMIN, CADASTRAL | Nhắc thủ công người nhận việc |
+| | `POST /notifications/run-reminders` | ADMIN | Chạy quét nhắc hạn ngay (kiểm thử/vận hành) |
 
 ### 12.3 Tài liệu liên quan
 
@@ -982,6 +1056,9 @@ Tiền tố chung `/api`. Cột **Quyền**: `*` = mọi vai trò đã đăng nh
 |---|---|---|---|
 | 1.0 | 18/09/2026 | Business Analyst | Baseline — mô tả nghiệp vụ hệ thống sau Phase 10, kèm phân tích khoảng trống và rủi ro vận hành |
 | 1.1 | 18/09/2026 | Business Analyst | Cập nhật theo đợt xử lý góp ý khách hàng 11/09/2026 (`BACKLOG.md`): loại công trình 6 giá trị, trường Ấp/Thôn thu thập trên cả web và mobile, chức vụ tài khoản, báo cáo dashboard hai mức xã→ấp (mobile), ngữ cảnh "xã đang làm việc" thay cho giả định một xã cố định |
+| 1.2 | 26/09/2026 | Business Analyst | Phase 11 Đợt 1: thông báo và nhắc nhở giao việc (QT-09, BR-74 đến BR-81), hạn xử lý cho hồ sơ hành chính, endpoint `/notifications` |
+| 1.3 | 26/09/2026 | Business Analyst | Phase 11 Đợt 2: chỉ tiêu và tiến độ %, nhật ký nhiệm vụ khảo sát, báo vấn đề / xin hỗ trợ (BR-78, BR-82, BR-83) |
+| 1.4 | 26/09/2026 | Business Analyst | Phase 11 Đợt 2b: khảo sát lại theo từng nhà thay vì tạo nhà mới trùng (BR-84, BR-85, BR-86; điều chỉnh BR-14) |
 
 ---
 

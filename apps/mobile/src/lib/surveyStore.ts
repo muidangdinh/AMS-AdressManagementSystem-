@@ -99,6 +99,29 @@ async function updateDraft(localId: string, patch: Partial<SurveyDraft>): Promis
 }
 
 /**
+ * Tải 1 ảnh lên hồ sơ nhà đã có (API chỉ nhận 1 file/request). Dùng chung cho đồng bộ nháp và cho chế độ
+ * "sửa lại nhà" (Phase 11 Đợt 2b).
+ */
+export async function uploadHousePhoto(
+  houseId: string,
+  photo: { uri: string; type: PhotoType },
+  fileName: string,
+): Promise<void> {
+  const formData = new FormData();
+  // React Native FormData nhận object { uri, type, name } cho file cục bộ.
+  formData.append('file', {
+    uri: photo.uri,
+    type: 'image/jpeg',
+    name: fileName,
+  } as unknown as Blob);
+  formData.append('type', photo.type);
+  await apiFetch(`/api/houses/${houseId}/photos`, {
+    method: 'POST',
+    body: formData,
+  });
+}
+
+/**
  * Đồng bộ 1 hồ sơ nháp lên server: tạo House qua API rồi upload ảnh (nếu có).
  * Dùng lại đúng API đã có ở Phase 2/3 (POST /api/houses, POST /api/houses/:id/photos).
  */
@@ -142,18 +165,7 @@ export async function syncDraft(draft: SurveyDraft): Promise<SurveyDraft> {
       ...(draft.photoUris ?? []).map((uri) => ({ uri, type: PhotoType.CONDITION })),
     ];
     for (const [index, { uri, type }] of uploads.entries()) {
-      const formData = new FormData();
-      // React Native FormData nhận object { uri, type, name } cho file cục bộ.
-      formData.append('file', {
-        uri,
-        type: 'image/jpeg',
-        name: `${draft.localId}-${index}.jpg`,
-      } as unknown as Blob);
-      formData.append('type', type);
-      await apiFetch(`/api/houses/${house.id}/photos`, {
-        method: 'POST',
-        body: formData,
-      });
+      await uploadHousePhoto(house.id, { uri, type }, `${draft.localId}-${index}.jpg`);
     }
 
     const updated: SurveyDraft = { ...draft, status: 'synced', remoteHouseId: house.id };

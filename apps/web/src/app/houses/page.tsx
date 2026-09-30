@@ -24,6 +24,7 @@ import {
   HouseHistoryEntry,
   HousePhotoChangeValue,
   HousePlate,
+  HouseUserRef,
   HouseStatus,
   HouseSummary,
   PaginatedResult,
@@ -138,6 +139,12 @@ const HouseMap = dynamic(() => import('@/components/HouseMap'), {
 });
 
 const PAGE_SIZE = 20;
+/** Cỡ mỗi lượt tải khi sắp xếp toàn bộ ở trình duyệt — bằng giới hạn pageSize tối đa của API. */
+const SORT_FETCH_PAGE_SIZE = 100;
+/** So sánh số nhà "tự nhiên": 2 < 10 < 12 < 12A < 12/3 (không so như chuỗi thuần "10" < "2"). */
+const HOUSE_NUMBER_COLLATOR = new Intl.Collator('vi', { numeric: true, sensitivity: 'base' });
+/** Dưới bề rộng này (breakpoint `md` của Tailwind) danh sách cạnh bản đồ nổi đè và mặc định ẩn. */
+const MOBILE_MAX_WIDTH = 768;
 /** Bán kính mặc định khi bấm vào bản đồ để tra cứu số nhà xung quanh (mét). */
 const NEARBY_RADIUS_METERS = 500;
 
@@ -250,6 +257,33 @@ const emptyForm: FormState = {
   note: '',
 };
 
+/** Tính cửa sổ 3 số trang liên tiếp quanh trang hiện tại (kẹp về biên khi gần đầu/cuối),
+ *  cùng cờ có cần hiện nút "Trang đầu"/"Trang cuối" và dấu "…" hay không. */
+function getPageWindow(current: number, total: number) {
+  let start: number;
+  let end: number;
+  if (total <= 3) {
+    start = 1;
+    end = total;
+  } else if (current <= 2) {
+    start = 1;
+    end = 3;
+  } else if (current >= total - 1) {
+    start = total - 2;
+    end = total;
+  } else {
+    start = current - 1;
+    end = current + 1;
+  }
+  return {
+    pages: Array.from({ length: end - start + 1 }, (_, i) => start + i),
+    showFirst: start > 1,
+    showFirstEllipsis: start > 2,
+    showLast: end < total,
+    showLastEllipsis: end < total - 1,
+  };
+}
+
 /**
  * Đọc `?focusId=&lat=&lng=` từ URL (đến từ Dashboard "Tra cứu nhanh") và bay
  * thẳng tới vị trí đó trên bản đồ. Tách riêng vì Next.js yêu cầu component
@@ -267,6 +301,50 @@ function FocusFromQuery({ onFocus }: { onFocus: (id: string, lat: number, lng: n
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  return null;
+}
+
+/**
+ * Đọc `?myLat=&myLng=&t=` từ URL (đến từ nút "Bản đồ số nhà" trên thanh nav —
+ * `houses/layout.tsx`) và bay tới vị trí GPS hiện tại của người dùng.
+ * Khác với `FocusFromQuery`: effect ở đây PHẢI phụ thuộc vào giá trị query
+ * (không chạy 1 lần lúc mount) vì nút bấm có thể được bấm nhiều lần ngay cả
+ * khi trang `/houses` không remount — `t` (nonce theo timestamp) đảm bảo bắn
+ * lại flyTo mỗi lần bấm dù toạ độ trùng lần trước.
+ */
+function LocateFromQuery({ onLocate }: { onLocate: (lat: number, lng: number, nonce: number) => void }) {
+  const searchParams = useSearchParams();
+  const myLat = searchParams.get('myLat');
+  const myLng = searchParams.get('myLng');
+  const t = searchParams.get('t');
+
+  useEffect(() => {
+    const lat = Number(myLat);
+    const lng = Number(myLng);
+    const nonce = Number(t);
+    if (Number.isFinite(lat) && Number.isFinite(lng) && Number.isFinite(nonce)) {
+      onLocate(lat, lng, nonce);
+    }
+  }, [myLat, myLng, t, onLocate]);
+
+  return null;
+}
+
+/**
+ * Đọc `?view=table` từ URL (đến từ link "Hồ sơ nhà" trên thanh nav —
+ * `houses/layout.tsx`) và ép về chế độ Bảng. Cần thiết vì đang đứng sẵn ở
+ * `/houses` (chế độ Bản đồ, do vừa bấm "Bản đồ số nhà"/tra cứu nhanh Dashboard)
+ * rồi bấm "Hồ sơ nhà" thì Next.js không remount trang (cùng route) — nếu không
+ * có tín hiệu này, `viewMode` cũ vẫn giữ nguyên là 'map' dù URL đã sạch query.
+ */
+function ResetToTableFromQuery({ onReset }: { onReset: () => void }) {
+  const searchParams = useSearchParams();
+  const view = searchParams.get('view');
+
+  useEffect(() => {
+    if (view === 'table') onReset();
+  }, [view, onReset]);
 
   return null;
 }
@@ -332,8 +410,13 @@ export default function HousesPage() {
   const [plateActionLoading, setPlateActionLoading] = useState(false);
   const [plateActionError, setPlateActionError] = useState<string | null>(null);
 
-  // Popup xem ảnh phóng to (click vào ảnh hiện trạng hoặc ảnh trong lịch sử)
-  const [lightboxUrl, setLightboxUrl] = useState<string | null>(null);
+  // Popup xem ảnh phóng to (click vào ảnh hiện trạng hoặc ảnh trong lịch sử) —
+  // kèm người upload + thời điểm upload để hiện chú thích dưới ảnh.
+  const [lightbox, setLightbox] = useState<{
+    url: string;
+    uploadedBy: HouseUserRef | null;
+    uploadedAt: string | null;
+  } | null>(null);
 
   // Modal thêm/sửa
   const [modalOpen, setModalOpen] = useState(false);
@@ -346,16 +429,56 @@ export default function HousesPage() {
 
   // Bản đồ (Phase 3)
   const [viewMode, setViewMode] = useState<'table' | 'map'>('table');
+  // Tham chiếu ổn định cho ResetToTableFromQuery — truyền hàm inline mỗi render sẽ khiến
+  // effect của nó chạy lại liên tục và ép viewMode về 'table' ngay cả khi vừa chuyển sang 'map'.
+  const [flyToRequest, setFlyToRequest] = useState<FlyToRequest | null>(null);
+  // Danh sách số nhà bên trái bản đồ — bật/tắt được; điện thoại (< md) mặc định ẩn vì chiếm gần hết màn hình.
+  const [mapListOpen, setMapListOpen] = useState(true);
+  // Thanh thống kê + bộ lọc phía trên — ở chế độ Bản đồ thu gọn được thành 1 dòng mảnh; điện
+  // thoại mặc định thu gọn (2 thanh xuống nhiều dòng, chiếm gần nửa màn hình).
+  const [topBarOpen, setTopBarOpen] = useState(true);
+  useEffect(() => {
+    if (window.innerWidth < MOBILE_MAX_WIDTH) {
+      setMapListOpen(false);
+      setTopBarOpen(false);
+    }
+  }, []);
+  const topBarCollapsed = viewMode === 'map' && !topBarOpen;
+  // Xoá luôn flyToRequest cũ: bản đồ mount lại mỗi lần chuyển sang chế độ Bản đồ, nếu còn
+  // giữ request cũ (vd vị trí GPS từ nút "Bản đồ số nhà") nó sẽ bay lại tới đó ngay lúc khởi tạo.
+  const resetToTable = useCallback(() => {
+    setViewMode('table');
+    setFlyToRequest(null);
+  }, []);
   const [mapHouses, setMapHouses] = useState<HouseMapPoint[]>([]);
   const [mapLoading, setMapLoading] = useState(false);
   const [mapError, setMapError] = useState<string | null>(null);
   const [nearbyResults, setNearbyResults] = useState<NearbyHouse[] | null>(null);
   const [nearbyLoading, setNearbyLoading] = useState(false);
-  const [flyToRequest, setFlyToRequest] = useState<FlyToRequest | null>(null);
 
   const housesAbortRef = useRef<AbortController | null>(null);
 
-  const fetchHouses = useCallback(async () => {
+  // Sắp xếp theo số nhà — API chưa hỗ trợ sắp xếp nên khi bật sẽ tải hết các nhà khớp bộ lọc
+  // (nhiều lượt × SORT_FETCH_PAGE_SIZE), sắp ở trình duyệt rồi tự chia trang. Kết quả được nhớ
+  // theo bộ lọc + chiều sắp → chuyển trang không phải tải lại.
+  const [sortDir, setSortDir] = useState<'asc' | 'desc' | null>(null);
+  const sortedCacheRef = useRef<{ key: string; items: HouseSummary[] } | null>(null);
+
+  const fetchHouses = useCallback(async ({ force = false }: { force?: boolean } = {}) => {
+    if (sortDir) {
+      const key = [search, streetId, wardId, status, sortDir].join('|');
+      const cached = sortedCacheRef.current;
+      if (!force && cached?.key === key) {
+        setData({
+          items: cached.items.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE),
+          total: cached.items.length,
+          page,
+          pageSize: PAGE_SIZE,
+        });
+        return;
+      }
+    }
+
     // Hủy request trước đó — tránh race condition khi gõ/xóa search nhanh
     // khiến response của filter cũ trả về sau và đè lên danh sách đúng.
     housesAbortRef.current?.abort();
@@ -365,6 +488,41 @@ export default function HousesPage() {
     setLoading(true);
     setListError(null);
     try {
+      if (sortDir) {
+        const fetchPage = (p: number) => {
+          const qs = new URLSearchParams();
+          qs.set('page', String(p));
+          qs.set('pageSize', String(SORT_FETCH_PAGE_SIZE));
+          if (search) qs.set('search', search);
+          if (streetId) qs.set('streetId', streetId);
+          if (wardId) qs.set('wardId', wardId);
+          if (status) qs.set('status', status);
+          return apiFetch<PaginatedResult<HouseSummary>>(`/api/houses?${qs.toString()}`, {
+            signal: controller.signal,
+          });
+        };
+        const first = await fetchPage(1);
+        const pageCount = Math.ceil(first.total / SORT_FETCH_PAGE_SIZE);
+        const rest = await Promise.all(
+          Array.from({ length: Math.max(0, pageCount - 1) }, (_, i) => fetchPage(i + 2)),
+        );
+        const all = [first, ...rest].flatMap((r) => r.items);
+        const dir = sortDir === 'asc' ? 1 : -1;
+        all.sort(
+          (a, b) =>
+            dir * HOUSE_NUMBER_COLLATOR.compare(a.houseNumber, b.houseNumber) ||
+            HOUSE_NUMBER_COLLATOR.compare(a.street, b.street),
+        );
+        sortedCacheRef.current = { key: [search, streetId, wardId, status, sortDir].join('|'), items: all };
+        setData({
+          items: all.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE),
+          total: all.length,
+          page,
+          pageSize: PAGE_SIZE,
+        });
+        return;
+      }
+
       const params = new URLSearchParams();
       params.set('page', String(page));
       params.set('pageSize', String(PAGE_SIZE));
@@ -383,7 +541,7 @@ export default function HousesPage() {
     } finally {
       if (housesAbortRef.current === controller) setLoading(false);
     }
-  }, [page, search, streetId, wardId, status]);
+  }, [page, search, streetId, wardId, status, sortDir]);
 
   useEffect(() => {
     fetchHouses();
@@ -495,6 +653,12 @@ export default function HousesPage() {
     setNearbyResults(null);
   }
 
+  /** Bấm 1 dòng trong danh sách cạnh bản đồ — trên điện thoại đóng danh sách để thấy bản đồ bay tới. */
+  function pickFromMapList(id: string, lat: number, lng: number) {
+    selectAndFlyTo(id, lat, lng);
+    if (window.innerWidth < MOBILE_MAX_WIDTH) setMapListOpen(false);
+  }
+
   function selectAndFlyTo(id: string, lat: number, lng: number) {
     openDetail(id);
     setFlyToRequest({ lat, lng, nonce: Date.now() });
@@ -505,6 +669,12 @@ export default function HousesPage() {
     setViewMode('map');
     selectAndFlyTo(id, lat, lng);
   }
+
+  /** Đến từ nút "Bản đồ số nhà" trên thanh nav — ép sang chế độ bản đồ, bay tới vị trí GPS hiện tại, vẽ marker. */
+  const focusMyLocation = useCallback((lat: number, lng: number, nonce: number) => {
+    setViewMode('map');
+    setFlyToRequest({ lat, lng, nonce, myLocation: true });
+  }, []);
 
   async function openDetail(id: string) {
     setSelectedId(id);
@@ -569,7 +739,7 @@ export default function HousesPage() {
       if (selectedId) {
         const updated = await apiFetch<HouseSummary>(`/api/houses/${selectedId}`);
         setDetail(updated);
-        await fetchHouses();
+        await fetchHouses({ force: true });
         await fetchStats();
       }
     } catch (err) {
@@ -695,7 +865,7 @@ export default function HousesPage() {
         });
       }
       setModalOpen(false);
-      await fetchHouses();
+      await fetchHouses({ force: true });
       await fetchStats();
       if (viewMode === 'map') await fetchMapHouses();
       await openDetail(house.id);
@@ -704,6 +874,20 @@ export default function HousesPage() {
     } finally {
       setSaving(false);
     }
+  }
+
+  /**
+   * Tra người upload 1 ảnh từ lịch sử đã tải (khớp mục PHOTO_ADD theo URL ảnh).
+   * Trả null khi không tra được — ảnh cũ, hoặc hồ sơ có nhiều thay đổi nên mục
+   * PHOTO_ADD đã rơi khỏi 20 bản ghi gần nhất mà API lịch sử trả về.
+   */
+  function findUploader(photoUrl: string): HouseUserRef | null {
+    const entry = history.find(
+      (h) =>
+        h.action === 'PHOTO_ADD' &&
+        h.changes?.some((c) => (c.new as HousePhotoChangeValue | null)?.url === photoUrl),
+    );
+    return entry?.changedBy ?? null;
   }
 
   async function handleUpload(e: React.ChangeEvent<HTMLInputElement>, type: PhotoType) {
@@ -737,14 +921,44 @@ export default function HousesPage() {
 
   const totalPages = data ? Math.max(1, Math.ceil(data.total / data.pageSize)) : 1;
 
+  // Nút chuyển Bảng/Bản đồ — dùng ở cả thanh bộ lọc đầy đủ lẫn dòng thu gọn.
+  const viewModeSwitch = (
+    <div className="flex rounded-lg border border-slate-300 overflow-hidden text-sm font-semibold">
+      <button
+        onClick={() => {
+          setViewMode('table');
+          setFlyToRequest(null);
+        }}
+        className={`px-3 py-2 transition ${
+          viewMode === 'table' ? 'bg-blue-600 text-white' : 'bg-white text-slate-600 hover:bg-slate-50'
+        }`}
+      >
+        Bảng
+      </button>
+      <button
+        onClick={() => {
+          setViewMode('map');
+          setFlyToRequest(null);
+        }}
+        className={`px-3 py-2 transition border-l border-slate-300 ${
+          viewMode === 'map' ? 'bg-blue-600 text-white' : 'bg-white text-slate-600 hover:bg-slate-50'
+        }`}
+      >
+        Bản đồ
+      </button>
+    </div>
+  );
+
   return (
     <div className="h-full flex flex-col">
       <Suspense fallback={null}>
         <FocusFromQuery onFocus={focusFromDashboard} />
+        <LocateFromQuery onLocate={focusMyLocation} />
+        <ResetToTableFromQuery onReset={resetToTable} />
       </Suspense>
 
-      {/* Thanh thống kê dashboard (Phase 5 — IX) */}
-      {stats && (
+      {/* Thanh thống kê dashboard (Phase 5 — IX) — ở chế độ Bản đồ có thể thu gọn cùng thanh bộ lọc. */}
+      {stats && !topBarCollapsed && (
         <div className="bg-slate-900 px-6 py-2 flex flex-wrap gap-x-5 gap-y-1 text-xs shrink-0">
           <div className="flex items-center gap-2">
             <span className="w-2 h-2 rounded-full bg-blue-500" />
@@ -770,6 +984,21 @@ export default function HousesPage() {
       )}
 
       {/* Thanh bộ lọc */}
+      {topBarCollapsed ? (
+        <div className="bg-white border-b border-slate-200 px-3 sm:px-6 py-2 flex items-center justify-between gap-2 shrink-0">
+          <button
+            type="button"
+            onClick={() => setTopBarOpen(true)}
+            className="flex items-center gap-1.5 text-sm font-semibold text-slate-600 hover:text-slate-900 px-2 py-1.5 rounded-lg hover:bg-slate-100"
+          >
+            ▾ Bộ lọc &amp; thống kê
+            {(search || wardId || streetId || status) && (
+              <span className="w-2 h-2 rounded-full bg-blue-600" title="Đang có bộ lọc" />
+            )}
+          </button>
+          {viewModeSwitch}
+        </div>
+      ) : (
       <div className="bg-white border-b border-slate-200 px-6 py-3 flex flex-wrap gap-3 items-end shrink-0">
         <div className="flex-1 min-w-[220px]">
           <label className="block text-[11px] font-bold text-slate-500 uppercase mb-1">
@@ -788,7 +1017,7 @@ export default function HousesPage() {
         </div>
         <div className="w-44">
           <label className="block text-[11px] font-bold text-slate-500 uppercase mb-1">
-            Phường/Xã
+            Ấp/thôn
           </label>
           <select
             value={wardId}
@@ -848,24 +1077,7 @@ export default function HousesPage() {
             ))}
           </select>
         </div>
-        <div className="flex rounded-lg border border-slate-300 overflow-hidden text-sm font-semibold">
-          <button
-            onClick={() => setViewMode('table')}
-            className={`px-3 py-2 transition ${
-              viewMode === 'table' ? 'bg-blue-600 text-white' : 'bg-white text-slate-600 hover:bg-slate-50'
-            }`}
-          >
-            Bảng
-          </button>
-          <button
-            onClick={() => setViewMode('map')}
-            className={`px-3 py-2 transition border-l border-slate-300 ${
-              viewMode === 'map' ? 'bg-blue-600 text-white' : 'bg-white text-slate-600 hover:bg-slate-50'
-            }`}
-          >
-            Bản đồ
-          </button>
-        </div>
+        {viewModeSwitch}
         <button
           onClick={handleExportExcel}
           disabled={exporting}
@@ -881,7 +1093,17 @@ export default function HousesPage() {
             + Thêm số nhà
           </button>
         )}
+        {viewMode === 'map' && (
+          <button
+            type="button"
+            onClick={() => setTopBarOpen(false)}
+            className="px-3 py-2 rounded-lg text-sm font-semibold text-slate-500 hover:text-slate-800 hover:bg-slate-100"
+          >
+            ▴ Thu gọn
+          </button>
+        )}
       </div>
+      )}
 
       {viewMode === 'table' ? (
       /* Bảng danh sách */
@@ -895,26 +1117,43 @@ export default function HousesPage() {
           <table className="w-full text-sm">
             <thead className="bg-slate-50 text-slate-500 text-xs uppercase">
               <tr>
-                <th className="text-left px-4 py-3">Số nhà</th>
-                <th className="text-left px-4 py-3">Đường</th>
-                <th className="text-left px-4 py-3">Phường/Xã</th>
+                <th className="text-left px-4 py-3">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      // Bấm lần lượt: bé → lớn, lớn → bé, bỏ sắp xếp (về thứ tự mới nhất như cũ).
+                      setSortDir((d) => (d === null ? 'asc' : d === 'asc' ? 'desc' : null));
+                      setPage(1);
+                    }}
+                    title="Sắp xếp theo số nhà"
+                    className="inline-flex items-center gap-1 uppercase hover:text-slate-800"
+                  >
+                    Số nhà
+                    <span className={sortDir ? 'text-blue-600' : 'text-slate-300'}>
+                      {sortDir === 'asc' ? '▲' : sortDir === 'desc' ? '▼' : '⇅'}
+                    </span>
+                  </button>
+                </th>
                 <th className="text-left px-4 py-3">Chủ sở hữu</th>
                 <th className="text-left px-4 py-3">Loại</th>
+                <th className="text-left px-4 py-3">Đường</th>
+                <th className="text-left px-4 py-3">Phường/Xã</th>
+                <th className="text-left px-4 py-3">Ngày cấp</th>
                 <th className="text-left px-4 py-3">Trạng thái</th>
-                <th className="text-left px-4 py-3">Mã QR</th>
+                {/* <th className="text-left px-4 py-3">Mã QR</th> */}
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
               {loading && (
                 <tr>
-                  <td colSpan={7} className="text-center py-8 text-slate-400">
+                  <td colSpan={8} className="text-center py-8 text-slate-400">
                     Đang tải…
                   </td>
                 </tr>
               )}
               {!loading && data?.items.length === 0 && (
                 <tr>
-                  <td colSpan={7} className="text-center py-8 text-slate-400">
+                  <td colSpan={8} className="text-center py-8 text-slate-400">
                     Không có hồ sơ nào phù hợp
                   </td>
                 </tr>
@@ -927,11 +1166,14 @@ export default function HousesPage() {
                     className="cursor-pointer hover:bg-blue-50/50"
                   >
                     <td className="px-4 py-3 font-bold text-slate-900">{house.houseNumber}</td>
-                    <td className="px-4 py-3">{house.street}</td>
-                    <td className="px-4 py-3">{house.ward}</td>
                     <td className="px-4 py-3">{house.ownerName}</td>
                     <td className="px-4 py-3 text-xs">
                       {BUILDING_TYPE_LABELS[house.buildingType]}
+                    </td>
+                    <td className="px-4 py-3">{house.street}</td>
+                    <td className="px-4 py-3">{house.ward}</td>
+                    <td className="px-4 py-3 text-xs text-slate-500">
+                      {house.approvedAt ? new Date(house.approvedAt).toLocaleDateString('vi-VN') : '—'}
                     </td>
                     <td className="px-4 py-3">
                       <span
@@ -945,9 +1187,9 @@ export default function HousesPage() {
                         {HOUSE_REVIEW_STAGE_LABELS[house.reviewStage]}
                       </span>
                     </td>
-                    <td className="px-4 py-3 font-mono text-xs text-slate-400">
+                    {/* <td className="px-4 py-3 font-mono text-xs text-slate-400">
                       {house.qrCode}
-                    </td>
+                    </td> */}
                   </tr>
                 ))}
             </tbody>
@@ -959,7 +1201,7 @@ export default function HousesPage() {
             <span>
               Tổng {data.total} hồ sơ — Trang {data.page}/{totalPages}
             </span>
-            <div className="space-x-2">
+            <div className="flex items-center gap-1.5">
               <button
                 disabled={page <= 1}
                 onClick={() => setPage((p) => p - 1)}
@@ -967,6 +1209,47 @@ export default function HousesPage() {
               >
                 Trước
               </button>
+
+              {(() => {
+                const { pages, showFirst, showFirstEllipsis, showLast, showLastEllipsis } =
+                  getPageWindow(page, totalPages);
+                return (
+                  <>
+                    {showFirst && (
+                      <button
+                        onClick={() => setPage(1)}
+                        className="px-3 py-1.5 rounded border border-slate-300 text-slate-600 hover:bg-slate-50"
+                      >
+                        Trang đầu
+                      </button>
+                    )}
+                    {showFirstEllipsis && <span className="px-1 text-slate-400">…</span>}
+                    {pages.map((p) => (
+                      <button
+                        key={p}
+                        onClick={() => setPage(p)}
+                        className={`px-3 py-1.5 rounded border text-sm font-semibold ${
+                          p === page
+                            ? 'bg-blue-600 border-blue-600 text-white'
+                            : 'border-slate-300 text-slate-600 hover:bg-slate-50'
+                        }`}
+                      >
+                        {p}
+                      </button>
+                    ))}
+                    {showLastEllipsis && <span className="px-1 text-slate-400">…</span>}
+                    {showLast && (
+                      <button
+                        onClick={() => setPage(totalPages)}
+                        className="px-3 py-1.5 rounded border border-slate-300 text-slate-600 hover:bg-slate-50"
+                      >
+                        Trang cuối
+                      </button>
+                    )}
+                  </>
+                );
+              })()}
+
               <button
                 disabled={page >= totalPages}
                 onClick={() => setPage((p) => p + 1)}
@@ -980,8 +1263,26 @@ export default function HousesPage() {
       </div>
       ) : (
       /* Bản đồ GIS (Phase 3) — danh sách gọn bên trái + bản đồ bên phải */
-      <div className="flex-1 flex overflow-hidden">
-        <aside className="w-80 shrink-0 border-r border-slate-200 bg-white overflow-y-auto p-3 space-y-2">
+      <div className="flex-1 flex overflow-hidden relative">
+        {/* Màn hình nhỏ (< md): danh sách nổi đè lên bản đồ và mặc định ẩn — nếu để cột cố định
+            320px thì chiếm gần hết bề ngang điện thoại. Từ md trở lên là cột bên trái như cũ. */}
+        <aside
+          className={`${
+            mapListOpen ? 'block' : 'hidden'
+          } absolute inset-y-0 left-0 z-[1100] w-72 max-w-[85%] shadow-xl md:static md:z-auto md:w-80 md:max-w-none md:shadow-none shrink-0 border-r border-slate-200 bg-white overflow-y-auto p-3 space-y-2`}
+        >
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-bold text-slate-500 uppercase">
+              Danh sách số nhà ({(nearbyResults ?? mapHouses).length})
+            </span>
+            <button
+              type="button"
+              onClick={() => setMapListOpen(false)}
+              className="text-xs font-semibold text-slate-500 hover:text-slate-800 px-2 py-1 rounded hover:bg-slate-100"
+            >
+              Ẩn ✕
+            </button>
+          </div>
           {mapError && (
             <div className="bg-rose-50 border border-rose-200 text-rose-700 rounded-lg p-3 text-sm">
               {mapError}
@@ -1018,7 +1319,7 @@ export default function HousesPage() {
               ? nearbyResults.map((h) => (
                   <div
                     key={h.id}
-                    onClick={() => selectAndFlyTo(h.id, h.latitude, h.longitude)}
+                    onClick={() => pickFromMapList(h.id, h.latitude, h.longitude)}
                     className="p-3 rounded-lg border border-slate-200 hover:border-blue-300 hover:bg-blue-50/50 cursor-pointer transition"
                   >
                     <div className="flex items-center justify-between">
@@ -1040,7 +1341,7 @@ export default function HousesPage() {
               : mapHouses.map((h) => (
                   <div
                     key={h.id}
-                    onClick={() => selectAndFlyTo(h.id, h.latitude, h.longitude)}
+                    onClick={() => pickFromMapList(h.id, h.latitude, h.longitude)}
                     className="p-3 rounded-lg border border-slate-200 hover:border-blue-300 hover:bg-blue-50/50 cursor-pointer transition"
                   >
                     <h3 className="font-bold text-sm text-slate-900">
@@ -1057,6 +1358,15 @@ export default function HousesPage() {
         </aside>
 
         <div className="flex-1 relative">
+          {!mapListOpen && (
+            <button
+              type="button"
+              onClick={() => setMapListOpen(true)}
+              className="absolute top-3 left-3 z-[1000] bg-white rounded-lg shadow-md border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+            >
+              ☰ Danh sách ({(nearbyResults ?? mapHouses).length})
+            </button>
+          )}
           <HouseMap
             houses={mapHouses}
             onSelectHouse={openDetail}
@@ -1123,65 +1433,6 @@ export default function HousesPage() {
                     </p>
                   </div>
 
-                  <div className="bg-slate-50 rounded-xl p-4 border border-slate-200 space-y-4">
-                    {(
-                      [
-                        { type: PhotoType.FACADE, label: 'Ảnh mặt tiền', uploadId: 'house-photo-upload-facade' },
-                        { type: PhotoType.PLATE, label: 'Ảnh biển số nhà', uploadId: 'house-photo-upload-plate' },
-                        { type: PhotoType.CONDITION, label: 'Ảnh khác', uploadId: 'house-photo-upload-condition' },
-                      ] as const
-                    ).map((group) => {
-                      const photos = detail.photos?.filter((p) => p.type === group.type) ?? [];
-                      return (
-                        <div key={group.type}>
-                          <div className="flex items-center justify-between">
-                            <h4 className="font-bold text-xs uppercase text-slate-500 tracking-wider">
-                              {group.label}
-                            </h4>
-                            {canEdit && (
-                              <label className="text-xs text-blue-600 font-semibold cursor-pointer hover:underline">
-                                {uploading ? 'Đang tải...' : '+ Tải ảnh lên'}
-                                <input
-                                  id={group.uploadId}
-                                  type="file"
-                                  accept="image/*"
-                                  className="hidden"
-                                  onChange={(e) => handleUpload(e, group.type)}
-                                  disabled={uploading}
-                                />
-                              </label>
-                            )}
-                          </div>
-                          {photos.length > 0 ? (
-                            <div className="grid grid-cols-3 gap-2 mt-2">
-                              {photos.map((photo) => (
-                                <div key={photo.id} className="relative group">
-                                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                                  <img
-                                    src={`${apiUrl}${photo.url}`}
-                                    alt="Ảnh công trình"
-                                    onClick={() => setLightboxUrl(`${apiUrl}${photo.url}`)}
-                                    className="w-full h-20 object-cover rounded-lg border border-slate-200 cursor-pointer hover:opacity-90 transition"
-                                  />
-                                  {canEdit && (
-                                    <button
-                                      onClick={() => handleDeletePhoto(photo.id)}
-                                      className="absolute top-1 right-1 bg-rose-600 text-white rounded-full w-5 h-5 text-xs opacity-0 group-hover:opacity-100 transition"
-                                    >
-                                      ×
-                                    </button>
-                                  )}
-                                </div>
-                              ))}
-                            </div>
-                          ) : (
-                            <p className="text-xs text-slate-400 mt-1">Chưa có ảnh</p>
-                          )}
-                        </div>
-                      );
-                    })}
-                  </div>
-
                   <div className="bg-slate-50 rounded-xl p-4 border border-slate-200 space-y-3">
                     <h4 className="font-bold text-xs uppercase text-slate-500 tracking-wider">
                       Chủ sở hữu
@@ -1200,10 +1451,8 @@ export default function HousesPage() {
                         <p className="font-semibold">{detail.ownerIdNumber || '—'}</p>
                       </div>
                     </div>
-                  </div>
 
-                  <div className="bg-slate-50 rounded-xl p-4 border border-slate-200 space-y-3">
-                    <h4 className="font-bold text-xs uppercase text-slate-500 tracking-wider">
+                    <h4 className="font-bold text-xs uppercase text-slate-500 tracking-wider border-t border-slate-200 pt-3">
                       Đặc điểm công trình
                     </h4>
                     <div className="grid grid-cols-3 gap-2 text-sm">
@@ -1252,6 +1501,71 @@ export default function HousesPage() {
                         Ghi chú: {detail.note}
                       </p>
                     )}
+                  </div>
+
+                  <div className="bg-slate-50 rounded-xl p-4 border border-slate-200 space-y-4">
+                    {(
+                      [
+                        { type: PhotoType.FACADE, label: 'Ảnh mặt tiền', uploadId: 'house-photo-upload-facade' },
+                        { type: PhotoType.PLATE, label: 'Ảnh biển số nhà', uploadId: 'house-photo-upload-plate' },
+                        { type: PhotoType.CONDITION, label: 'Ảnh khác', uploadId: 'house-photo-upload-condition' },
+                      ] as const
+                    ).map((group) => {
+                      const photos = detail.photos?.filter((p) => p.type === group.type) ?? [];
+                      return (
+                        <div key={group.type}>
+                          <div className="flex items-center justify-between">
+                            <h4 className="font-bold text-xs uppercase text-slate-500 tracking-wider">
+                              {group.label}
+                            </h4>
+                            {canEdit && (
+                              <label className="text-xs text-blue-600 font-semibold cursor-pointer hover:underline">
+                                {uploading ? 'Đang tải...' : '+ Tải ảnh lên'}
+                                <input
+                                  id={group.uploadId}
+                                  type="file"
+                                  accept="image/*"
+                                  className="hidden"
+                                  onChange={(e) => handleUpload(e, group.type)}
+                                  disabled={uploading}
+                                />
+                              </label>
+                            )}
+                          </div>
+                          {photos.length > 0 ? (
+                            <div className="grid grid-cols-3 gap-2 mt-2">
+                              {photos.map((photo) => (
+                                <div key={photo.id} className="relative group">
+                                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                                  <img
+                                    src={`${apiUrl}${photo.url}`}
+                                    alt="Ảnh công trình"
+                                    onClick={() =>
+                                      setLightbox({
+                                        url: `${apiUrl}${photo.url}`,
+                                        uploadedBy: findUploader(photo.url),
+                                        uploadedAt: photo.createdAt,
+                                      })
+                                    }
+                                    className="w-full h-20 object-cover rounded-lg border border-slate-200 cursor-pointer hover:opacity-90 transition"
+                                  />
+                                  {canEdit && (
+                                    <button
+                                      onClick={() => handleDeletePhoto(photo.id)}
+                                      className="absolute top-1 right-1 bg-rose-600 text-white rounded-full w-5 h-5 text-xs opacity-0 group-hover:opacity-100 transition"
+                                    >
+                                      ×
+                                    </button>
+                                  )}
+                                </div>
+                              ))}
+                            </div>
+                          ) : (
+                            <p className="text-xs text-slate-400 mt-1">Chưa có ảnh</p>
+                          )}
+                        </div>
+                      );
+                    })}
                   </div>
 
                   <div className="bg-slate-50 rounded-xl p-4 border border-slate-200 space-y-3">
@@ -1450,7 +1764,13 @@ export default function HousesPage() {
                                       <img
                                         src={`${apiUrl}${value.url}`}
                                         alt=""
-                                        onClick={() => setLightboxUrl(`${apiUrl}${value.url}`)}
+                                        onClick={() =>
+                                          setLightbox({
+                                            url: `${apiUrl}${value.url}`,
+                                            uploadedBy: h.changedBy,
+                                            uploadedAt: h.createdAt,
+                                          })
+                                        }
                                         className="w-10 h-10 object-cover rounded border border-slate-200 cursor-pointer hover:opacity-90 transition"
                                       />
                                     )}
@@ -1513,148 +1833,7 @@ export default function HousesPage() {
                 </div>
               )}
 
-              <FormSection title="Địa chỉ & Vị trí">
-                <div className="grid grid-cols-2 gap-3">
-                  <FormField label="Số nhà" required>
-                    <input
-                      id="house-form-houseNumber"
-                      required
-                      value={form.houseNumber}
-                      onChange={(e) => setForm((f) => ({ ...f, houseNumber: e.target.value }))}
-                      className={FIELD_CLASS}
-                    />
-                  </FormField>
-                  <AddressComboField
-                    label="Đường/Phố"
-                    required
-                    textValue={form.street}
-                    idValue={form.streetId}
-                    options={streets
-                      .filter((s) => !form.wardId || s.wardId === form.wardId)
-                      .map((s) => ({ id: s.id, name: s.name }))}
-                    onSelect={(opt) =>
-                      setForm((f) => ({
-                        ...f,
-                        streetId: opt?.id ?? '',
-                        street: opt?.name ?? f.street,
-                      }))
-                    }
-                    onManualText={(text) => setForm((f) => ({ ...f, streetId: '', street: text }))}
-                  />
-                </div>
-
-                <div className="grid grid-cols-2 gap-3">
-                  <AddressComboField
-                    label="Phường/Xã"
-                    required
-                    textValue={form.ward}
-                    idValue={form.wardId}
-                    options={wards.map((w) => ({ id: w.id, name: w.name }))}
-                    onSelect={(opt) =>
-                      setForm((f) => ({ ...f, wardId: opt?.id ?? '', ward: opt?.name ?? f.ward }))
-                    }
-                    onManualText={(text) => setForm((f) => ({ ...f, wardId: '', ward: text }))}
-                  />
-                  {/* TN-09 — Ấp/Thôn (góp ý khách hàng 11/09/2026). Chỉ có FK (không có cột chữ tự
-                      do song song như Đường/Phường ở schema.prisma) nên dùng select đơn giản, lọc
-                      theo Phường/Xã đã chọn — giống cách `streets` đang lọc theo `form.wardId`. */}
-                  <FormField label="Ấp/Thôn">
-                    <select
-                      value={form.hamletId}
-                      onChange={(e) => setForm((f) => ({ ...f, hamletId: e.target.value }))}
-                      className={FIELD_CLASS}
-                    >
-                      <option value="">-- Chọn --</option>
-                      {hamlets
-                        .filter((h) => !form.wardId || h.wardId === form.wardId)
-                        .map((h) => (
-                          <option key={h.id} value={h.id}>
-                            {h.name}
-                          </option>
-                        ))}
-                    </select>
-                  </FormField>
-                </div>
-
-                <div className="grid grid-cols-2 gap-3">
-                  <AddressComboField
-                    label="Quận/Huyện/TP"
-                    textValue={form.district}
-                    idValue={form.districtId}
-                    options={districts.map((d) => ({ id: d.id, name: d.name }))}
-                    onSelect={(opt) =>
-                      setForm((f) => ({
-                        ...f,
-                        districtId: opt?.id ?? '',
-                        district: opt?.name ?? f.district,
-                      }))
-                    }
-                    onManualText={(text) =>
-                      setForm((f) => ({ ...f, districtId: '', district: text }))
-                    }
-                  />
-                </div>
-
-                <div className="grid grid-cols-2 gap-3">
-                  <FormField label="Vĩ độ (Latitude)" required>
-                    <input
-                      id="house-form-latitude"
-                      required
-                      type="number"
-                      step="any"
-                      value={form.latitude}
-                      onChange={(e) => setForm((f) => ({ ...f, latitude: e.target.value }))}
-                      className={`${FIELD_CLASS} font-mono`}
-                    />
-                  </FormField>
-                  <FormField label="Kinh độ (Longitude)" required>
-                    <input
-                      id="house-form-longitude"
-                      required
-                      type="number"
-                      step="any"
-                      value={form.longitude}
-                      onChange={(e) => setForm((f) => ({ ...f, longitude: e.target.value }))}
-                      className={`${FIELD_CLASS} font-mono`}
-                    />
-                  </FormField>
-                </div>
-
-                <div className="grid grid-cols-3 gap-3">
-                  <FormField label="Số tờ bản đồ">
-                    <input
-                      id="house-form-soTo"
-                      value={form.soTo}
-                      onChange={(e) => setForm((f) => ({ ...f, soTo: e.target.value }))}
-                      className={FIELD_CLASS}
-                    />
-                  </FormField>
-                  <FormField label="Số thửa đất">
-                    <input
-                      id="house-form-soThua"
-                      value={form.soThua}
-                      onChange={(e) => setForm((f) => ({ ...f, soThua: e.target.value }))}
-                      className={FIELD_CLASS}
-                    />
-                  </FormField>
-                  <FormField label="Phía đường">
-                    <select
-                      id="house-form-side"
-                      value={form.side}
-                      onChange={(e) => setForm((f) => ({ ...f, side: e.target.value as NumberingSide }))}
-                      className={FIELD_CLASS}
-                    >
-                      {Object.values(NumberingSide).map((s) => (
-                        <option key={s} value={s}>
-                          {NUMBERING_SIDE_LABELS[s]}
-                        </option>
-                      ))}
-                    </select>
-                  </FormField>
-                </div>
-              </FormSection>
-
-              <FormSection title="Chủ sở hữu & Hiện trạng">
+              <FormSection title="Chủ sở hữu & Đặc điểm công trình">
                 <div className="grid grid-cols-2 gap-3">
                   <FormField label="Chủ sở hữu" required>
                     <input
@@ -1721,9 +1900,10 @@ export default function HousesPage() {
                     </select>
                   </FormField>
                 </div>
-              </FormSection>
 
-              <FormSection title="Công trình">
+                <h4 className="text-[11px] font-bold text-blue-700 uppercase tracking-wider border-t border-slate-200 pt-3">
+                  Đặc điểm công trình
+                </h4>
                 <div className="grid grid-cols-3 gap-3">
                   <FormField label="Loại công trình">
                     <select
@@ -1761,6 +1941,147 @@ export default function HousesPage() {
                       onChange={(e) => setForm((f) => ({ ...f, area: e.target.value }))}
                       className={FIELD_CLASS}
                     />
+                  </FormField>
+                </div>
+              </FormSection>
+
+              <FormSection title="Địa chỉ & Vị trí">
+                <div className="grid grid-cols-2 gap-3">
+                  <FormField label="Số nhà" required>
+                    <input
+                      id="house-form-houseNumber"
+                      required
+                      value={form.houseNumber}
+                      onChange={(e) => setForm((f) => ({ ...f, houseNumber: e.target.value }))}
+                      className={FIELD_CLASS}
+                    />
+                  </FormField>
+                  <AddressComboField
+                    label="Đường/Phố"
+                    required
+                    textValue={form.street}
+                    idValue={form.streetId}
+                    options={streets
+                      .filter((s) => !form.wardId || s.wardId === form.wardId)
+                      .map((s) => ({ id: s.id, name: s.name }))}
+                    onSelect={(opt) =>
+                      setForm((f) => ({
+                        ...f,
+                        streetId: opt?.id ?? '',
+                        street: opt?.name ?? f.street,
+                      }))
+                    }
+                    onManualText={(text) => setForm((f) => ({ ...f, streetId: '', street: text }))}
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <AddressComboField
+                    label="Phường/Xã"
+                    required
+                    textValue={form.ward}
+                    idValue={form.wardId}
+                    options={wards.map((w) => ({ id: w.id, name: w.name }))}
+                    onSelect={(opt) =>
+                      setForm((f) => ({ ...f, wardId: opt?.id ?? '', ward: opt?.name ?? f.ward }))
+                    }
+                    onManualText={(text) => setForm((f) => ({ ...f, wardId: '', ward: text }))}
+                  />
+                  {/* TN-09 — Ấp/Thôn (góp ý khách hàng 11/09/2026). Chỉ có FK (không có cột chữ tự
+                      do song song như Đường/Phường ở schema.prisma) nên dùng select đơn giản, lọc
+                      theo Phường/Xã đã chọn — giống cách `streets` đang lọc theo `form.wardId`. */}
+                  <FormField label="Ấp/Thôn">
+                    <select
+                      value={form.hamletId}
+                      onChange={(e) => setForm((f) => ({ ...f, hamletId: e.target.value }))}
+                      className={FIELD_CLASS}
+                    >
+                      <option value="">-- Chọn --</option>
+                      {hamlets
+                        .filter((h) => !form.wardId || h.wardId === form.wardId)
+                        .map((h) => (
+                          <option key={h.id} value={h.id}>
+                            {h.name}
+                          </option>
+                        ))}
+                    </select>
+                  </FormField>
+                </div>
+
+                {/* <div className="grid grid-cols-2 gap-3">
+                  <AddressComboField
+                    label="Quận/Huyện/TP"
+                    textValue={form.district}
+                    idValue={form.districtId}
+                    options={districts.map((d) => ({ id: d.id, name: d.name }))}
+                    onSelect={(opt) =>
+                      setForm((f) => ({
+                        ...f,
+                        districtId: opt?.id ?? '',
+                        district: opt?.name ?? f.district,
+                      }))
+                    }
+                    onManualText={(text) =>
+                      setForm((f) => ({ ...f, districtId: '', district: text }))
+                    }
+                  />
+                </div> */}
+
+                <div className="grid grid-cols-2 gap-3">
+                  <FormField label="Vĩ độ (Latitude)" required>
+                    <input
+                      id="house-form-latitude"
+                      required
+                      type="number"
+                      step="any"
+                      value={form.latitude}
+                      onChange={(e) => setForm((f) => ({ ...f, latitude: e.target.value }))}
+                      className={`${FIELD_CLASS} font-mono`}
+                    />
+                  </FormField>
+                  <FormField label="Kinh độ (Longitude)" required>
+                    <input
+                      id="house-form-longitude"
+                      required
+                      type="number"
+                      step="any"
+                      value={form.longitude}
+                      onChange={(e) => setForm((f) => ({ ...f, longitude: e.target.value }))}
+                      className={`${FIELD_CLASS} font-mono`}
+                    />
+                  </FormField>
+                </div>
+
+                <div className="grid grid-cols-3 gap-3">
+                  <FormField label="Số tờ bản đồ">
+                    <input
+                      id="house-form-soTo"
+                      value={form.soTo}
+                      onChange={(e) => setForm((f) => ({ ...f, soTo: e.target.value }))}
+                      className={FIELD_CLASS}
+                    />
+                  </FormField>
+                  <FormField label="Số thửa đất">
+                    <input
+                      id="house-form-soThua"
+                      value={form.soThua}
+                      onChange={(e) => setForm((f) => ({ ...f, soThua: e.target.value }))}
+                      className={FIELD_CLASS}
+                    />
+                  </FormField>
+                  <FormField label="Phía đường">
+                    <select
+                      id="house-form-side"
+                      value={form.side}
+                      onChange={(e) => setForm((f) => ({ ...f, side: e.target.value as NumberingSide }))}
+                      className={FIELD_CLASS}
+                    >
+                      {Object.values(NumberingSide).map((s) => (
+                        <option key={s} value={s}>
+                          {NUMBERING_SIDE_LABELS[s]}
+                        </option>
+                      ))}
+                    </select>
                   </FormField>
                 </div>
               </FormSection>
@@ -1836,26 +2157,43 @@ export default function HousesPage() {
         </div>
       )}
 
-      {/* Popup xem ảnh phóng to */}
-      {lightboxUrl && (
+      {/* Popup xem ảnh phóng to — kèm người upload & thời điểm upload */}
+      {lightbox && (
         <div
           className="fixed inset-0 z-[2000] bg-slate-950/80 flex items-center justify-center p-4"
-          onClick={() => setLightboxUrl(null)}
+          onClick={() => setLightbox(null)}
         >
           <button
-            onClick={() => setLightboxUrl(null)}
+            onClick={() => setLightbox(null)}
             className="absolute top-4 right-4 text-white text-3xl leading-none hover:text-slate-300"
             aria-label="Đóng"
           >
             ×
           </button>
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
-            src={lightboxUrl}
-            alt="Ảnh phóng to"
+          <div
+            className="flex flex-col items-center gap-3 max-h-full"
             onClick={(e) => e.stopPropagation()}
-            className="max-w-full max-h-full rounded-lg shadow-2xl object-contain"
-          />
+          >
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={lightbox.url}
+              alt="Ảnh phóng to"
+              className="max-w-full min-h-0 flex-1 rounded-lg shadow-2xl object-contain"
+            />
+            {(lightbox.uploadedBy || lightbox.uploadedAt) && (
+              <div className="shrink-0 bg-slate-900/90 text-slate-200 rounded-lg px-4 py-2 text-xs text-center">
+                Tải lên bởi{' '}
+                <span className="font-semibold text-white">
+                  {lightbox.uploadedBy
+                    ? `${lightbox.uploadedBy.fullName} (${USER_ROLE_LABELS[lightbox.uploadedBy.role]})`
+                    : 'không rõ'}
+                </span>
+                {lightbox.uploadedAt && (
+                  <> — {new Date(lightbox.uploadedAt).toLocaleString('vi-VN')}</>
+                )}
+              </div>
+            )}
+          </div>
         </div>
       )}
     </div>

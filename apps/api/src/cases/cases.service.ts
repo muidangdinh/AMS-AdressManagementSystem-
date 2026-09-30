@@ -1,5 +1,6 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
-import { CaseStatus, Prisma, Role } from '@prisma/client';
+import { CaseStatus, NotificationEntity, NotificationType, Prisma, Role } from '@prisma/client';
+import { NotificationsService } from '../notifications/notifications.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateCaseDto } from './dto/create-case.dto';
 import { UpdateCaseDto } from './dto/update-case.dto';
@@ -48,7 +49,10 @@ const ORDERED_STATUSES: CaseStatus[] = [
  */
 @Injectable()
 export class CasesService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly notifications: NotificationsService,
+  ) {}
 
   /**
    * Danh sách cán bộ xử lý được (ADMIN/CADASTRAL, đang hoạt động) cho dropdown "phân công".
@@ -140,6 +144,7 @@ export class CasesService {
           applicantPhone: dto.applicantPhone,
           requestType: dto.requestType,
           description: dto.description,
+          dueDate: dto.dueDate ? new Date(dto.dueDate) : undefined,
           createdById: userId,
         },
         include: CASE_INCLUDE,
@@ -151,9 +156,14 @@ export class CasesService {
 
   async update(id: string, dto: UpdateCaseDto) {
     await this.findOneOrThrow(id);
+    const { dueDate, ...rest } = dto;
     return this.prisma.houseCase.update({
       where: { id },
-      data: dto,
+      data: {
+        ...rest,
+        // null = xoá hạn; undefined = giữ nguyên.
+        ...(dueDate !== undefined && { dueDate: dueDate ? new Date(dueDate) : null }),
+      },
       include: CASE_INCLUDE,
     });
   }
@@ -177,6 +187,18 @@ export class CasesService {
         fromStatus: c.status,
         toStatus: updated.status,
       });
+      await this.notifications.notify(
+        {
+          userIds: [dto.assignedToId],
+          type: NotificationType.ASSIGNED,
+          entityType: NotificationEntity.HOUSE_CASE,
+          entityId: id,
+          title: `Bạn được phân công hồ sơ ${updated.caseNumber}`,
+          body: updated.applicantName,
+          actorId,
+        },
+        tx,
+      );
       return updated;
     });
   }

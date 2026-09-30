@@ -13,7 +13,7 @@ import { FIELD_CLASS, PageHeader, EmptyState, ButtonSpinner } from '@/components
 type TabKey = 'district' | 'ward' | 'hamlet' | 'street' | 'alley';
 
 const TABS: { key: TabKey; label: string }[] = [
-  { key: 'district', label: 'Quận/Huyện' },
+  // { key: 'district', label: 'Quận/Huyện' },
   { key: 'ward', label: 'Xã/Phường' },
   { key: 'hamlet', label: 'Thôn/Ấp/Tổ dân phố' },
   { key: 'street', label: 'Đường/Phố' },

@@ -1,10 +1,17 @@
-import { Injectable, Logger, NotFoundException } from '@nestjs/common';
+import {
+  ConflictException,
+  ForbiddenException,
+  Injectable,
+  Logger,
+  NotFoundException,
+} from '@nestjs/common';
 import { randomUUID } from 'crypto';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as QRCode from 'qrcode';
 import * as ExcelJS from 'exceljs';
 import {
+  AssignmentStatus,
   BuildingType,
   House,
   HouseStatus,
@@ -19,6 +26,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { getUploadRoot } from '../config/upload.config';
 import { CreateHouseDto } from './dto/create-house.dto';
 import { UpdateHouseDto } from './dto/update-house.dto';
+import { ResurveyHouseDto } from './dto/resurvey-house.dto';
 import { ListHousesQueryDto } from './dto/list-houses-query.dto';
 import { GeoJsonQueryDto } from './dto/geojson-query.dto';
 import { NearbyQueryDto } from './dto/nearby-query.dto';
@@ -499,6 +507,8 @@ export class HousesService {
           floors: dto.floors,
           area: dto.area,
           status: dto.status ?? undefined,
+          // Tạo nhà đã ở trạng thái duyệt sẵn (ADMIN nhập tay) — ghi luôn ngày cấp.
+          approvedAt: dto.status === HouseStatus.APPROVED ? new Date() : undefined,
           latitude: dto.latitude,
           longitude: dto.longitude,
           soTo: dto.soTo,
@@ -527,9 +537,8 @@ export class HousesService {
     return house;
   }
 
-  async update(id: string, dto: UpdateHouseDto, userId: string) {
-    const existing = await this.findOneOrThrow(id);
-
+  /** So sánh các trường được theo dõi với bản ghi hiện có → danh sách thay đổi cho HouseHistory. */
+  private diffTracked(existing: House, dto: UpdateHouseDto) {
     const changes: { field: string; old: unknown; new: unknown }[] = [];
     for (const field of TRACKED_FIELDS) {
       if (dto[field] === undefined) continue;
@@ -539,37 +548,63 @@ export class HousesService {
         changes.push({ field, old: oldValue, new: newValue });
       }
     }
+    return changes;
+  }
+
+  /** Dữ liệu cập nhật từ DTO — dùng chung cho `update` (ADMIN/CADASTRAL) và `resurvey` (SURVEYOR). */
+  private updateData(dto: UpdateHouseDto): Prisma.HouseUncheckedUpdateInput {
+    return {
+      houseNumber: dto.houseNumber,
+      street: dto.street,
+      ward: dto.ward,
+      district: dto.district,
+      districtId: dto.districtId,
+      wardId: dto.wardId,
+      hamletId: dto.hamletId,
+      streetId: dto.streetId,
+      alleyId: dto.alleyId,
+      ownerName: dto.ownerName,
+      ownerPhone: dto.ownerPhone,
+      ownerIdNumber: dto.ownerIdNumber,
+      buildingType: dto.buildingType,
+      floors: dto.floors,
+      area: dto.area,
+      status: dto.status,
+      latitude: dto.latitude,
+      longitude: dto.longitude,
+      soTo: dto.soTo,
+      soThua: dto.soThua,
+      usageStatus: dto.usageStatus,
+      plateNeed: dto.plateNeed,
+      side: dto.side,
+      reviewStage: dto.reviewStage,
+      note: dto.note,
+    };
+  }
+
+  /**
+   * Ngày cấp — tự ghi khi trạng thái chuyển VÀO APPROVED, tự xoá khi chuyển RA KHỎI APPROVED (tránh
+   * cột "Ngày cấp" hiện ngày cũ trong khi trạng thái không còn Đã duyệt). Không đổi `status` (`dto.status`
+   * undefined) thì giữ nguyên giá trị cũ.
+   */
+  private computeApprovedAt(
+    oldStatus: HouseStatus,
+    newStatus: HouseStatus | undefined,
+    oldApprovedAt: Date | null,
+  ): Date | null {
+    if (newStatus === undefined || newStatus === oldStatus) return oldApprovedAt;
+    return newStatus === HouseStatus.APPROVED ? new Date() : null;
+  }
+
+  async update(id: string, dto: UpdateHouseDto, userId: string) {
+    const existing = await this.findOneOrThrow(id);
+    const changes = this.diffTracked(existing, dto);
+    const approvedAt = this.computeApprovedAt(existing.status, dto.status, existing.approvedAt);
 
     const updated = await this.prisma.$transaction(async (tx) => {
       const result = await tx.house.update({
         where: { id },
-        data: {
-          houseNumber: dto.houseNumber,
-          street: dto.street,
-          ward: dto.ward,
-          district: dto.district,
-          districtId: dto.districtId,
-          wardId: dto.wardId,
-          hamletId: dto.hamletId,
-          streetId: dto.streetId,
-          alleyId: dto.alleyId,
-          ownerName: dto.ownerName,
-          ownerPhone: dto.ownerPhone,
-          ownerIdNumber: dto.ownerIdNumber,
-          buildingType: dto.buildingType,
-          floors: dto.floors,
-          area: dto.area,
-          status: dto.status,
-          latitude: dto.latitude,
-          longitude: dto.longitude,
-          soTo: dto.soTo,
-          soThua: dto.soThua,
-          usageStatus: dto.usageStatus,
-          plateNeed: dto.plateNeed,
-          side: dto.side,
-          reviewStage: dto.reviewStage,
-          note: dto.note,
-        },
+        data: { ...this.updateData(dto), approvedAt },
       });
 
       if (changes.length > 0) {
@@ -587,6 +622,59 @@ export class HousesService {
     });
 
     return updated;
+  }
+
+  /**
+   * Phase 11 Đợt 2b — SURVEYOR sửa lại đúng nhà bị người duyệt yêu cầu khảo sát lại (thay vì phải tạo nhà mới trùng).
+   * Điều kiện (BR-85): nhà đang có cờ `revisitReason`, thuộc nhiệm vụ CỦA CHÍNH cán bộ này, và nhiệm vụ đang
+   * IN_PROGRESS (cán bộ đã bấm "Bắt đầu khảo sát lại"). Sửa xong: xoá cờ, ghi lịch sử nhà + nhật ký nhiệm vụ.
+   * Tiến độ nhiệm vụ (số nhà) không đổi vì không tạo nhà mới.
+   */
+  async resurvey(id: string, dto: ResurveyHouseDto, userId: string) {
+    const house = await this.prisma.house.findUnique({
+      where: { id },
+      include: { surveyAssignment: true },
+    });
+    if (!house) throw new NotFoundException('Không tìm thấy hồ sơ số nhà');
+
+    const assignment = house.surveyAssignment;
+    if (!house.revisitReason || !assignment) {
+      throw new ForbiddenException('Nhà này không nằm trong yêu cầu khảo sát lại');
+    }
+    if (assignment.assigneeId !== userId) {
+      throw new ForbiddenException('Chỉ cán bộ được giao nhiệm vụ mới sửa lại được nhà này');
+    }
+    if (assignment.status !== AssignmentStatus.IN_PROGRESS) {
+      throw new ConflictException('Hãy bấm "Bắt đầu khảo sát lại" ở nhiệm vụ trước khi sửa nhà');
+    }
+
+    const changes = this.diffTracked(house, dto);
+    return this.prisma.$transaction(async (tx) => {
+      const result = await tx.house.update({
+        where: { id },
+        data: { ...this.updateData(dto), revisitReason: null, revisitRequestedAt: null },
+      });
+      await tx.houseHistory.create({
+        data: {
+          houseId: id,
+          action: 'RESURVEYED',
+          changes: [
+            ...changes,
+            { field: 'revisitReason', old: house.revisitReason, new: null },
+          ] as unknown as Prisma.InputJsonValue,
+          changedById: userId,
+        },
+      });
+      await tx.surveyAssignmentEvent.create({
+        data: {
+          assignmentId: assignment.id,
+          action: 'HOUSE_RESURVEYED',
+          actorId: userId,
+          note: `Đã khảo sát lại nhà ${result.houseNumber} ${result.street}`,
+        },
+      });
+      return result;
+    });
   }
 
   async addPhoto(houseId: string, file: Express.Multer.File, type: string | undefined, userId: string) {

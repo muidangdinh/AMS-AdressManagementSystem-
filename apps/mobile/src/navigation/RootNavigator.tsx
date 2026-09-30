@@ -4,6 +4,8 @@ import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import LoginScreen from '../screens/LoginScreen';
 import MainTabs from './MainTabs';
+import NotificationsScreen from '../screens/NotificationsScreen';
+import AccountScreen from '../screens/AccountScreen';
 import { useAuth } from '../lib/AuthContext';
 import { useAutoSync } from '../lib/useAutoSync';
 
@@ -25,7 +27,19 @@ export default function RootNavigator() {
     <NavigationContainer>
       <Stack.Navigator screenOptions={{ headerShown: false }}>
         {user ? (
-          <Stack.Screen name="Main" component={MainTabs} />
+          <>
+            <Stack.Screen name="Main" component={MainTabs} />
+            <Stack.Screen
+              name="Notifications"
+              component={NotificationsScreen}
+              options={{ headerShown: true, title: 'Thông Báo' }}
+            />
+            <Stack.Screen
+              name="Account"
+              component={AccountScreen}
+              options={{ headerShown: true, title: 'Tài khoản' }}
+            />
+          </>
         ) : (
           <Stack.Screen name="Login" component={LoginScreen} />
         )}

@@ -44,13 +44,13 @@ COPY packages/shared ./packages/shared
 ARG NEXT_PUBLIC_API_URL=https://rv.librasoft.vn
 ENV NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL}
 
-# Bản đồ GIS — cùng lý do phải truyền qua --build-arg như NEXT_PUBLIC_API_URL ở trên.
-# Mặc định "leaflet" (tile Esri công khai, không cần key/billing) — đổi "google" khi đã
-# có key + billing Google Cloud active (xem apps/web/src/components/HouseMap.tsx).
-ARG NEXT_PUBLIC_MAP_PROVIDER=leaflet
-ENV NEXT_PUBLIC_MAP_PROVIDER=${NEXT_PUBLIC_MAP_PROVIDER}
-ARG NEXT_PUBLIC_GOOGLE_MAPS_API_KEY=
-ENV NEXT_PUBLIC_GOOGLE_MAPS_API_KEY=${NEXT_PUBLIC_GOOGLE_MAPS_API_KEY}
+# Bản đồ GIS — chọn trong file apps/web/.env (NEXT_PUBLIC_MAP_PROVIDER = "leaflet" |
+# "google", NEXT_PUBLIC_GOOGLE_MAPS_API_KEY) — file được COPY vào cùng apps/web ở trên và
+# `next build` tự đọc. Cố ý KHÔNG đặt mặc định và KHÔNG dùng ENV ở đây: ENV sẽ ghi đè file .env.
+# Vẫn ghi đè tạm được khi cần: --build-arg NEXT_PUBLIC_MAP_PROVIDER=google ...
+# (xem apps/web/src/components/HouseMap.tsx). Không có file lẫn build-arg → Leaflet.
+ARG NEXT_PUBLIC_MAP_PROVIDER
+ARG NEXT_PUBLIC_GOOGLE_MAPS_API_KEY
 
 WORKDIR /app/apps/web
 RUN npm run build

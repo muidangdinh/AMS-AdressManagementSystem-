@@ -16,6 +16,8 @@ export interface FlyToRequest {
   lat: number;
   lng: number;
   nonce: number;
+  /** true khi đây là vị trí GPS hiện tại của người dùng — vẽ thêm marker "vị trí của bạn". */
+  myLocation?: boolean;
 }
 
 export interface HouseMapProps {

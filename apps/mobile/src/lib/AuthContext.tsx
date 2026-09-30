@@ -1,5 +1,5 @@
 import React, { createContext, useCallback, useContext, useEffect, useState } from 'react';
-import type { LoginRequest, LoginResponse, UserSummary } from '@tayninh/shared';
+import type { ChangePasswordRequest, LoginRequest, LoginResponse, UserSummary } from '@tayninh/shared';
 import { apiFetch, clearToken, getStoredUser, getToken, setStoredUser, setToken } from './api';
 
 type CurrentUser = Pick<UserSummary, 'id' | 'username' | 'fullName' | 'role' | 'unit' | 'position'>;
@@ -9,6 +9,8 @@ interface AuthContextValue {
   isLoading: boolean;
   login: (credentials: LoginRequest) => Promise<void>;
   logout: () => Promise<void>;
+  /** Tự đổi mật khẩu — server xác minh `currentPassword`, ném lỗi nếu sai. */
+  changePassword: (dto: ChangePasswordRequest) => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -41,8 +43,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setUser(null);
   }, []);
 
+  const changePassword = useCallback(async (dto: ChangePasswordRequest) => {
+    await apiFetch<void>('/api/auth/me/password', { method: 'PATCH', body: JSON.stringify(dto) });
+  }, []);
+
   return (
-    <AuthContext.Provider value={{ user, isLoading, login, logout }}>
+    <AuthContext.Provider value={{ user, isLoading, login, logout, changePassword }}>
       {children}
     </AuthContext.Provider>
   );

@@ -1,4 +1,5 @@
 import type {
+  AssignmentHouse,
   AssignmentStatus,
   CampaignStatus,
   CreateAssignmentRequest,
@@ -7,6 +8,7 @@ import type {
   SurveyAssignment,
   SurveyCampaign,
   SurveyZone,
+  RequestRevisitRequest,
   UpdateAssignmentRequest,
   UpdateCampaignRequest,
   UpdateZoneRequest,
@@ -37,6 +39,8 @@ export const zonesApi = {
 };
 
 export const assignmentsApi = {
+  /** Chi tiết kèm dòng thời gian (`events`) — Phase 11 Đợt 2. */
+  get: (id: string) => apiFetch<SurveyAssignment>(`/api/survey-assignments/${id}`),
   listSurveyors: () =>
     apiFetch<{ id: string; fullName: string; username: string }[]>(
       '/api/survey-assignments/surveyors',
@@ -54,11 +58,15 @@ export const assignmentsApi = {
   remove: (id: string) => apiFetch<void>(`/api/survey-assignments/${id}`, { method: 'DELETE' }),
   complete: (id: string) =>
     apiFetch<SurveyAssignment>(`/api/survey-assignments/${id}/complete`, { method: 'POST' }),
-  requestRevisit: (id: string, reviewNote: string) =>
+  /** Phase 11 Đợt 2b — kèm danh sách nhà cần khảo sát lại (bỏ trống = khảo sát lại chung). */
+  requestRevisit: (id: string, body: RequestRevisitRequest) =>
     apiFetch<SurveyAssignment>(`/api/survey-assignments/${id}/request-revisit`, {
       method: 'POST',
-      body: JSON.stringify({ reviewNote }),
+      body: JSON.stringify(body),
     }),
+  /** Nhà của nhiệm vụ; `revisitOnly` = chỉ nhà còn cờ khảo sát lại. */
+  listHouses: (id: string, revisitOnly = false) =>
+    apiFetch<AssignmentHouse[]>(`/api/survey-assignments/${id}/houses${revisitOnly ? '?revisit=true' : ''}`),
   listMine: (status?: AssignmentStatus) =>
     apiFetch<SurveyAssignment[]>(
       `/api/survey-assignments?mine=true${status ? `&status=${status}` : ''}`,

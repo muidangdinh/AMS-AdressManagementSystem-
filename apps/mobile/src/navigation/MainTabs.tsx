@@ -1,5 +1,5 @@
 import React from 'react';
-import { Text, TouchableOpacity } from 'react-native';
+import { View } from 'react-native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import DashboardScreen from '../screens/DashboardScreen';
@@ -8,34 +8,32 @@ import AssignmentsScreen from '../screens/AssignmentsScreen';
 import SurveyScreen from '../screens/SurveyScreen';
 import PlatesScreen from '../screens/PlatesScreen';
 import HistoryScreen from '../screens/HistoryScreen';
-import { useAuth } from '../lib/AuthContext';
+import NotificationBell from '../components/NotificationBell';
+import UserProfileMenu from '../components/UserProfileMenu';
 
 export type MainTabsParamList = {
   Dashboard: undefined;
   /** `focusId`/`lat`/`lng` — bay thẳng tới 1 vị trí khi được điều hướng từ Dashboard. */
   Map: { focusId: string; lat: number; lng: number } | undefined;
   Assignments: undefined;
-  Survey: undefined;
+  /** `resurveyHouseId` — vào chế độ sửa lại đúng nhà bị yêu cầu khảo sát lại (Phase 11 Đợt 2b). */
+  Survey: { resurveyHouseId?: string } | undefined;
   Plates: undefined;
   History: undefined;
 };
 
 const Tab = createBottomTabNavigator<MainTabsParamList>();
 
-function LogoutButton() {
-  const { logout } = useAuth();
-  return (
-    <TouchableOpacity onPress={logout} style={{ marginRight: 16 }}>
-      <Text style={{ color: '#2563eb', fontWeight: '700', fontSize: 13 }}>Đăng xuất</Text>
-    </TouchableOpacity>
-  );
-}
-
 export default function MainTabs() {
   return (
     <Tab.Navigator
       screenOptions={{
-        headerRight: () => <LogoutButton />,
+        headerRight: () => (
+          <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+            <NotificationBell />
+            <UserProfileMenu />
+          </View>
+        ),
         tabBarActiveTintColor: '#2563eb',
       }}
     >

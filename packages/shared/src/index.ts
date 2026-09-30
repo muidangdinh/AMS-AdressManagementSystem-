@@ -155,6 +155,32 @@ export interface UserSummary {
   isActive: boolean;
 }
 
+/** Body POST /api/users (ADMIN) — khớp CreateUserDto ở API. */
+export interface CreateUserRequest {
+  username: string;
+  password: string;
+  fullName: string;
+  role: UserRole;
+  unit?: string;
+  position?: string;
+}
+
+/** Body PATCH /api/users/:id (ADMIN) — khớp UpdateUserDto ở API; `password` để đặt lại mật khẩu. */
+export interface UpdateUserRequest {
+  fullName?: string;
+  role?: UserRole;
+  unit?: string;
+  position?: string;
+  isActive?: boolean;
+  password?: string;
+}
+
+/** Body PATCH /api/auth/me/password — tự đổi mật khẩu, phải kèm mật khẩu hiện tại. */
+export interface ChangePasswordRequest {
+  currentPassword: string;
+  newPassword: string;
+}
+
 /** Kết quả trả về của POST /api/auth/login. */
 export interface LoginResponse {
   accessToken: string;
@@ -234,6 +260,8 @@ export interface HouseSummary {
   floors?: number | null;
   area?: number | null;
   status: HouseStatus;
+  /** Ngày nhà được cấp số (chuyển sang APPROVED) — null nếu chưa duyệt, hoặc duyệt từ trước khi có trường này. */
+  approvedAt?: string | null;
   qrCode: string;
   latitude: number;
   longitude: number;
@@ -252,6 +280,8 @@ export interface HouseSummary {
   photos?: HousePhotoSummary[];
   /** Phase 9 — nhiệm vụ khảo sát đã tạo ra hồ sơ này, nếu có (tùy chọn, không bắt buộc). */
   surveyAssignmentId?: string | null;
+  /** Phase 11 Đợt 2b — lý do người duyệt yêu cầu khảo sát lại nhà này; null/thiếu = không bị yêu cầu. */
+  revisitReason?: string | null;
 }
 
 /** Tên tỉnh mặc định khi chưa tải được `/api/app-config` (TN-02) — dùng làm dự phòng cho `formatFullAddress`. */
@@ -663,11 +693,17 @@ export interface SurveyAssignment {
   reviewedBy?: { id: string; fullName: string; username: string } | null;
   reviewedAt?: string | null;
   reviewNote?: string | null;
+  /** Chỉ tiêu: số nhà dự kiến cần khảo sát (Phase 11 Đợt 2). Tiến độ % = _count.houses / targetCount. */
+  targetCount?: number | null;
   createdById?: string | null;
   createdBy?: { id: string; fullName: string; username: string } | null;
   createdAt: string;
   updatedAt: string;
   _count?: { houses: number };
+  /** Chỉ có ở GET /survey-assignments/:id — dòng thời gian, thứ tự thời gian tăng dần. */
+  events?: AssignmentEvent[];
+  /** Số nhà còn cờ "cần khảo sát lại" chưa sửa (Phase 11 Đợt 2b) — có ở danh sách và chi tiết nhiệm vụ. */
+  revisitPending?: number;
 }
 
 export interface CreateCampaignRequest {
@@ -695,9 +731,93 @@ export interface CreateAssignmentRequest {
   assigneeId: string;
   dueDate?: string;
   note?: string;
+  targetCount?: number;
 }
 
-export type UpdateAssignmentRequest = Partial<Pick<CreateAssignmentRequest, 'dueDate' | 'note'>>;
+export type UpdateAssignmentRequest = Partial<Pick<CreateAssignmentRequest, 'dueDate' | 'note'>> & {
+  /** Gửi null để bỏ chỉ tiêu. */
+  targetCount?: number | null;
+};
+
+// --- Phase 11 Đợt 2: dòng thời gian & báo vấn đề của nhiệm vụ khảo sát ---
+
+export enum AssignmentEventAction {
+  CREATED = 'CREATED',
+  STARTED = 'STARTED',
+  SUBMITTED = 'SUBMITTED',
+  COMPLETED = 'COMPLETED',
+  REVISIT_REQUESTED = 'REVISIT_REQUESTED',
+  ISSUE_REPORTED = 'ISSUE_REPORTED',
+  HELP_REQUESTED = 'HELP_REQUESTED',
+  HOUSE_RESURVEYED = 'HOUSE_RESURVEYED',
+}
+
+export const ASSIGNMENT_EVENT_LABELS: Record<AssignmentEventAction, string> = {
+  [AssignmentEventAction.CREATED]: 'Giao nhiệm vụ',
+  [AssignmentEventAction.STARTED]: 'Bắt đầu khảo sát',
+  [AssignmentEventAction.SUBMITTED]: 'Gửi duyệt',
+  [AssignmentEventAction.COMPLETED]: 'Nghiệm thu hoàn tất',
+  [AssignmentEventAction.REVISIT_REQUESTED]: 'Yêu cầu khảo sát lại',
+  [AssignmentEventAction.ISSUE_REPORTED]: 'Báo vấn đề',
+  [AssignmentEventAction.HELP_REQUESTED]: 'Yêu cầu hỗ trợ',
+  [AssignmentEventAction.HOUSE_RESURVEYED]: 'Đã khảo sát lại nhà',
+};
+
+export interface AssignmentEvent {
+  id: number;
+  assignmentId: string;
+  action: AssignmentEventAction;
+  note?: string | null;
+  fromStatus?: AssignmentStatus | null;
+  toStatus?: AssignmentStatus | null;
+  actorId?: string | null;
+  actor?: { id: string; fullName: string; username: string } | null;
+  createdAt: string;
+}
+
+/** 'ISSUE' = báo vấn đề hiện trường; 'HELP' = xin hỗ trợ. */
+export type AssignmentIssueKind = 'ISSUE' | 'HELP';
+
+export interface ReportIssueRequest {
+  kind: AssignmentIssueKind;
+  note: string;
+}
+
+// --- Phase 11 Đợt 2b: khảo sát lại đúng nhà bị lỗi (thay vì tạo nhà mới trùng) ---
+
+/** Nhà của một nhiệm vụ khảo sát — GET /survey-assignments/:id/houses[?revisit=true]. */
+export interface AssignmentHouse {
+  id: string;
+  houseNumber: string;
+  street: string;
+  ward: string;
+  ownerName: string;
+  /** Lý do người duyệt yêu cầu khảo sát lại; null = không bị yêu cầu (hoặc đã sửa xong). */
+  revisitReason?: string | null;
+  revisitRequestedAt?: string | null;
+  updatedAt: string;
+}
+
+/** Một nhà cần khảo sát lại kèm lý do riêng (bỏ trống thì dùng lý do chung). */
+export interface RevisitHouseRequest {
+  houseId: string;
+  reason?: string;
+}
+
+export interface RequestRevisitRequest {
+  reviewNote: string;
+  /** Không gửi/để rỗng = khảo sát lại chung (cán bộ thêm nhà còn thiếu). */
+  houses?: RevisitHouseRequest[];
+}
+
+/** Cán bộ khảo sát sửa lại đúng nhà bị yêu cầu — không được đổi trạng thái duyệt/giai đoạn/nhiệm vụ. */
+export type ResurveyHouseRequest = Omit<UpdateHouseRequest, 'status' | 'reviewStage' | 'surveyAssignmentId'>;
+
+/** Tiến độ nhiệm vụ theo chỉ tiêu: phần trăm (0-100, có thể >100 nếu vượt chỉ tiêu) hoặc null nếu chưa đặt chỉ tiêu. */
+export function assignmentProgressPercent(a: Pick<SurveyAssignment, 'targetCount' | '_count'>): number | null {
+  if (!a.targetCount) return null;
+  return Math.round(((a._count?.houses ?? 0) / a.targetCount) * 100);
+}
 
 // ============================================================
 //  Phase 10 — Hồ sơ – quy trình (IX. Quản lý hồ sơ – quy trình)
@@ -773,6 +893,8 @@ export interface HouseCase {
   assignedToId?: string | null;
   assignedTo?: { id: string; fullName: string; username: string } | null;
   rejectedReason?: string | null;
+  /** Hạn xử lý (ISO, chỉ phần ngày có nghĩa) — Phase 11. */
+  dueDate?: string | null;
   createdById?: string | null;
   createdBy?: { id: string; fullName: string; username: string } | null;
   createdAt: string;
@@ -786,9 +908,60 @@ export interface CreateCaseRequest {
   applicantPhone?: string;
   requestType?: CaseRequestType;
   description?: string;
+  /** Hạn xử lý "YYYY-MM-DD". Khi cập nhật, gửi null để xoá hạn. */
+  dueDate?: string | null;
 }
 
 export type UpdateCaseRequest = Partial<CreateCaseRequest>;
+
+// ============================================================
+//  Phase 11 — Thông báo & nhắc nhở (giao việc)
+//  GET /api/notifications, /unread-count, POST /:id/read, /read-all, /remind.
+// ============================================================
+
+export enum NotificationType {
+  ASSIGNED = 'ASSIGNED',
+  STATUS_CHANGED = 'STATUS_CHANGED',
+  DUE_SOON = 'DUE_SOON',
+  OVERDUE = 'OVERDUE',
+  REMINDER = 'REMINDER',
+  ISSUE_REPORTED = 'ISSUE_REPORTED',
+}
+
+export const NOTIFICATION_TYPE_LABELS: Record<NotificationType, string> = {
+  [NotificationType.ASSIGNED]: 'Được giao việc',
+  [NotificationType.STATUS_CHANGED]: 'Đổi trạng thái',
+  [NotificationType.DUE_SOON]: 'Sắp đến hạn',
+  [NotificationType.OVERDUE]: 'Quá hạn',
+  [NotificationType.REMINDER]: 'Nhắc việc',
+  [NotificationType.ISSUE_REPORTED]: 'Báo vấn đề',
+};
+
+export enum NotificationEntity {
+  TASK = 'TASK',
+  SURVEY_ASSIGNMENT = 'SURVEY_ASSIGNMENT',
+  HOUSE_CASE = 'HOUSE_CASE',
+}
+
+export interface AppNotification {
+  id: string;
+  type: NotificationType;
+  entityType: NotificationEntity;
+  entityId: string;
+  title: string;
+  body?: string | null;
+  /** Đường dẫn trên web để mở đối tượng liên quan. */
+  link?: string | null;
+  actor?: { id: string; fullName: string } | null;
+  readAt?: string | null;
+  createdAt: string;
+}
+
+export interface RemindRequest {
+  entityType: NotificationEntity;
+  entityId: string;
+  message?: string;
+}
 
 // ============================================================
 //  Dashboard tổng quan (nhóm 1 + nhóm 10 "Báo cáo – thống kê", 10.1-10.12).
@@ -926,4 +1099,213 @@ export interface PublicHouseSummary {
   buildingType: BuildingType;
   status: HouseStatus;
   qrCode: string;
+}
+
+// ============================================================
+//  Dashboard — dựng dữ liệu biểu đồ dùng chung web + mobile
+//  Chỉ chứa LOGIC THUẦN (số liệu → lát/thanh: khoá, nhãn, màu, cách gộp trạng thái).
+//  Phần VẼ khác nhau theo nền tảng: web = Chart.js, mobile = react-native-svg.
+//  Sửa ở đây thì cả hai app đổi theo, luôn khớp thứ tự lát/nhãn/màu.
+// ============================================================
+
+/** Bảng màu biểu đồ — bám hệ màu trạng thái của giao diện (Tailwind emerald/amber/rose/blue/violet/slate). */
+export const CHART_COLORS = {
+  green: '#10b981',
+  amber: '#f59e0b',
+  red: '#f43f5e',
+  blue: '#3b82f6',
+  violet: '#8b5cf6',
+  slate: '#94a3b8',
+} as const;
+
+/** 1 lát donut. `key` là định danh để app ánh xạ sang hành động mở danh sách chi tiết. */
+export interface ChartSlice {
+  key: string;
+  name: string;
+  value: number;
+  color: string;
+}
+
+/** 1 thanh bar chồng "đã có số / chưa có số" (theo xã/phường, ấp…). */
+export interface StackedBarItem {
+  key: string;
+  name: string;
+  approved: number;
+  withoutNumber: number;
+  /** id danh mục (xã/ấp/đường) — null nếu nhà chưa gán danh mục. Mobile lọc theo id; web lọc theo tên nên bỏ qua. */
+  id?: string | null;
+}
+
+/**
+ * Khoá đặc biệt cho lát GỘP nhiều trạng thái (không trùng enum nào) — app nhận key này để biết
+ * cần mở danh sách nhiều trạng thái cùng lúc.
+ */
+export const SLICE_KEY = {
+  /** Nhiệm vụ khảo sát: ASSIGNED + IN_PROGRESS. */
+  IN_SURVEY: 'IN_SURVEY',
+  /** Hồ sơ đang xử lý: mọi trạng thái trừ hoàn tất/từ chối. */
+  OPEN: 'OPEN',
+  /** Phương án đánh số: DRAFT + SUBMITTED. */
+  DRAFT_SUBMITTED: 'DRAFT_SUBMITTED',
+} as const;
+
+/** Báo cáo số lượng nhà (10.1) — theo trạng thái phê duyệt. Tổng = `summary.houses.total`. */
+export function buildHouseStatusSlices(s: DashboardSummary): ChartSlice[] {
+  return [
+    {
+      key: HouseStatus.APPROVED,
+      name: HOUSE_STATUS_LABELS[HouseStatus.APPROVED],
+      value: s.houses.approved,
+      color: CHART_COLORS.green,
+    },
+    {
+      key: HouseStatus.PENDING,
+      name: HOUSE_STATUS_LABELS[HouseStatus.PENDING],
+      value: s.houses.pending,
+      color: CHART_COLORS.amber,
+    },
+    {
+      key: HouseStatus.NEEDS_ADJUST,
+      name: HOUSE_STATUS_LABELS[HouseStatus.NEEDS_ADJUST],
+      value: s.houses.needsAdjust,
+      color: CHART_COLORS.red,
+    },
+  ];
+}
+
+/** Phân loại số nhà — 5 giai đoạn. Dùng `?.` vì backend cũ chưa chạy migration có thể chưa trả `reviewStages`. */
+export function buildReviewStageSlices(s: DashboardSummary): ChartSlice[] {
+  const stages: [HouseReviewStage, string][] = [
+    [HouseReviewStage.PROPOSED, CHART_COLORS.slate],
+    [HouseReviewStage.CHECKED, CHART_COLORS.blue],
+    [HouseReviewStage.APPROVED, CHART_COLORS.violet],
+    [HouseReviewStage.SIGNED, CHART_COLORS.green],
+    [HouseReviewStage.REJECTED, CHART_COLORS.red],
+  ];
+  return stages.map(([stage, color]) => ({
+    key: stage,
+    name: HOUSE_REVIEW_STAGE_LABELS[stage],
+    value: s.reviewStages?.byStage?.[stage]?.count ?? 0,
+    color,
+  }));
+}
+
+/** Báo cáo biển số nhà (10.7-10.9) — đã gắn / chưa gắn / đã thu hồi. */
+export function buildPlateSlices(s: DashboardSummary): ChartSlice[] {
+  return [
+    {
+      key: PlateStatus.INSTALLED,
+      name: PLATE_STATUS_LABELS[PlateStatus.INSTALLED],
+      value: s.plates.installed,
+      color: CHART_COLORS.green,
+    },
+    {
+      key: PlateStatus.ISSUED,
+      name: PLATE_STATUS_LABELS[PlateStatus.ISSUED],
+      value: s.plates.issued,
+      color: CHART_COLORS.amber,
+    },
+    {
+      key: PlateStatus.REVOKED,
+      name: PLATE_STATUS_LABELS[PlateStatus.REVOKED],
+      value: s.plates.revoked,
+      color: CHART_COLORS.slate,
+    },
+  ];
+}
+
+/** Tiến độ khảo sát (10.10) — theo trạng thái nhiệm vụ. "Đang khảo sát" gộp ASSIGNED + IN_PROGRESS. */
+export function buildSurveySlices(s: DashboardSummary): ChartSlice[] {
+  const a = s.surveys.assignments;
+  return [
+    {
+      key: SLICE_KEY.IN_SURVEY,
+      name: 'Đang khảo sát',
+      value: a.assigned + a.inProgress,
+      color: CHART_COLORS.amber,
+    },
+    {
+      key: AssignmentStatus.SUBMITTED,
+      name: ASSIGNMENT_STATUS_LABELS[AssignmentStatus.SUBMITTED],
+      value: a.submitted,
+      color: CHART_COLORS.blue,
+    },
+    {
+      key: AssignmentStatus.COMPLETED,
+      name: ASSIGNMENT_STATUS_LABELS[AssignmentStatus.COMPLETED],
+      value: a.completed,
+      color: CHART_COLORS.green,
+    },
+    {
+      key: AssignmentStatus.NEEDS_REVISIT,
+      name: ASSIGNMENT_STATUS_LABELS[AssignmentStatus.NEEDS_REVISIT],
+      value: a.needsRevisit,
+      color: CHART_COLORS.red,
+    },
+  ];
+}
+
+/** Tiến độ đánh số (10.11) — "Đang soạn / trình duyệt" gộp DRAFT + SUBMITTED. */
+export function buildSchemeSlices(s: DashboardSummary): ChartSlice[] {
+  const n = s.numberingSchemes;
+  return [
+    {
+      key: SLICE_KEY.DRAFT_SUBMITTED,
+      name: 'Đang soạn / trình duyệt',
+      value: n.draft + n.submitted,
+      color: CHART_COLORS.amber,
+    },
+    {
+      key: NumberingSchemeStatus.APPROVED,
+      name: NUMBERING_SCHEME_STATUS_LABELS[NumberingSchemeStatus.APPROVED],
+      value: n.approved,
+      color: CHART_COLORS.green,
+    },
+    {
+      key: NumberingSchemeStatus.REJECTED,
+      name: NUMBERING_SCHEME_STATUS_LABELS[NumberingSchemeStatus.REJECTED],
+      value: n.rejected,
+      color: CHART_COLORS.red,
+    },
+  ];
+}
+
+/** Hồ sơ – quy trình — đang xử lý / hoàn tất / bị từ chối. */
+export function buildCaseSlices(s: DashboardSummary): ChartSlice[] {
+  return [
+    { key: SLICE_KEY.OPEN, name: 'Đang xử lý', value: s.cases.open, color: CHART_COLORS.amber },
+    {
+      key: CaseStatus.COMPLETED,
+      name: CASE_STATUS_LABELS[CaseStatus.COMPLETED],
+      value: s.cases.completed,
+      color: CHART_COLORS.green,
+    },
+    {
+      key: CaseStatus.REJECTED,
+      name: CASE_STATUS_LABELS[CaseStatus.REJECTED],
+      value: s.cases.rejected,
+      color: CHART_COLORS.red,
+    },
+  ];
+}
+
+/**
+ * Thống kê theo xã/phường (hoặc ấp): API trả ĐỦ danh mục kể cả mục 0 nhà, nên phải bỏ mục rỗng,
+ * sắp giảm dần theo tổng số nhà rồi cắt top `limit` — vẽ hết sẽ dài vô tận.
+ */
+export function toStackedBreakdown(
+  items: AddressBreakdownItem[] | undefined,
+  limit = 10,
+): StackedBarItem[] {
+  return [...(items ?? [])]
+    .filter((i) => i.approved + i.withoutNumber > 0)
+    .sort((a, b) => b.approved + b.withoutNumber - (a.approved + a.withoutNumber))
+    .slice(0, limit)
+    .map((i) => ({
+      key: i.name,
+      name: i.name,
+      approved: i.approved,
+      withoutNumber: i.withoutNumber,
+      id: i.id,
+    }));
 }

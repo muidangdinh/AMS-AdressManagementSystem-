@@ -4,11 +4,20 @@ import { useCallback, useEffect, useState } from 'react';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
 import type { HouseCase, HouseSummary, PaginatedResult } from '@tayninh/shared';
-import { CASE_REQUEST_TYPE_LABELS, CASE_STATUS_LABELS, CaseStatus, EDITOR_ROLES, UserRole } from '@tayninh/shared';
+import {
+  CASE_REQUEST_TYPE_LABELS,
+  CASE_STATUS_LABELS,
+  CaseStatus,
+  EDITOR_ROLES,
+  NotificationEntity,
+  UserRole,
+} from '@tayninh/shared';
 import { useAuth } from '@/lib/auth-context';
 import { ApiError, apiFetch } from '@/lib/api';
 import { casesApi } from '@/lib/cases-api';
 import { ButtonSpinner, EmptyState, FIELD_CLASS } from '@/components/ui';
+import RemindButton from '@/components/RemindButton';
+import { formatDueDate, isOverdue } from '@/lib/deadline';
 
 const STATUS_BADGE: Record<CaseStatus, string> = {
   [CaseStatus.RECEIVED]: 'bg-slate-100 text-slate-700 border-slate-200',
@@ -74,6 +83,19 @@ export default function CaseDetailPage() {
       await load();
     } catch (err) {
       setActionError(err instanceof ApiError ? err.message : 'Không phân công được');
+    } finally {
+      setActionLoading(false);
+    }
+  }
+
+  async function handleDueDate(value: string) {
+    setActionLoading(true);
+    setActionError(null);
+    try {
+      await casesApi.update(caseId, { dueDate: value || null });
+      await load();
+    } catch (err) {
+      setActionError(err instanceof ApiError ? err.message : 'Không cập nhật được hạn xử lý');
     } finally {
       setActionLoading(false);
     }
@@ -291,7 +313,38 @@ export default function CaseDetailPage() {
                 ))}
               </select>
             </div>
+            <div>
+              <label className="block text-[11px] font-bold text-slate-500 uppercase mb-1">Hạn xử lý</label>
+              <input
+                key={houseCase.dueDate ?? 'none'}
+                type="date"
+                defaultValue={houseCase.dueDate?.slice(0, 10) ?? ''}
+                onBlur={(e) => {
+                  if (e.target.value !== (houseCase.dueDate?.slice(0, 10) ?? '')) handleDueDate(e.target.value);
+                }}
+                disabled={actionLoading}
+                className={FIELD_CLASS}
+              />
+            </div>
+            {houseCase.assignedToId && (
+              <RemindButton
+                entityType={NotificationEntity.HOUSE_CASE}
+                entityId={houseCase.id}
+                className="border border-amber-300 text-amber-700 hover:bg-amber-50 disabled:opacity-60 px-4 py-2 rounded-xl text-sm font-semibold transition"
+              />
+            )}
           </div>
+        )}
+
+        {houseCase.dueDate && (
+          <p
+            className={`text-xs font-semibold mt-3 ${
+              !isTerminal && isOverdue(houseCase.dueDate) ? 'text-rose-600' : 'text-slate-500'
+            }`}
+          >
+            Hạn xử lý: {formatDueDate(houseCase.dueDate)}
+            {!isTerminal && isOverdue(houseCase.dueDate) && ' — ĐÃ QUÁ HẠN'}
+          </p>
         )}
 
         <p className="text-xs text-slate-400 mt-3">

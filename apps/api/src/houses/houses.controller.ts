@@ -21,6 +21,7 @@ import { AuthenticatedUser } from '../auth/types/authenticated-user';
 import { HousesService } from './houses.service';
 import { CreateHouseDto } from './dto/create-house.dto';
 import { UpdateHouseDto } from './dto/update-house.dto';
+import { ResurveyHouseDto } from './dto/resurvey-house.dto';
 import { ListHousesQueryDto } from './dto/list-houses-query.dto';
 import { GeoJsonQueryDto } from './dto/geojson-query.dto';
 import { NearbyQueryDto } from './dto/nearby-query.dto';
@@ -127,6 +128,20 @@ export class HousesController {
     @CurrentUser() user: AuthenticatedUser,
   ) {
     return this.housesService.update(id, dto, user.id);
+  }
+
+  /**
+   * Phase 11 Đợt 2b — cán bộ khảo sát sửa lại đúng nhà bị yêu cầu khảo sát lại (BR-85). PATCH ở trên vẫn
+   * chỉ ADMIN/CADASTRAL; service tự kiểm tra nhà có cờ, đúng người được giao, nhiệm vụ đang thực hiện.
+   */
+  @Roles(Role.SURVEYOR)
+  @Post(':id/resurvey')
+  resurvey(
+    @Param('id') id: string,
+    @Body() dto: ResurveyHouseDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.housesService.resurvey(id, dto, user.id);
   }
 
   // Cùng lý do với create() ở trên — surveyStore.syncDraft() upload ảnh ngay sau khi tạo House.

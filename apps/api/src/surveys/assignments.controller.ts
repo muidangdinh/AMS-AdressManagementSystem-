@@ -8,6 +8,7 @@ import { CreateAssignmentDto } from './dto/create-assignment.dto';
 import { UpdateAssignmentDto } from './dto/update-assignment.dto';
 import { ListAssignmentsQueryDto } from './dto/list-assignments-query.dto';
 import { RequestRevisitDto } from './dto/request-revisit.dto';
+import { ReportIssueDto } from './dto/report-issue.dto';
 
 /**
  * Giao nhiệm vụ khảo sát (Phase 9 — VII). Đọc mở cho mọi vai trò (mobile cần
@@ -34,6 +35,16 @@ export class AssignmentsController {
   @Get(':id')
   findOne(@Param('id') id: string) {
     return this.assignmentsService.findOne(id);
+  }
+
+  /** Phase 11 Đợt 2b — nhà của nhiệm vụ; `?revisit=true` = chỉ nhà còn cờ khảo sát lại. SURVEYOR chỉ xem nhiệm vụ của mình. */
+  @Get(':id/houses')
+  listHouses(
+    @Param('id') id: string,
+    @Query('revisit') revisit: string | undefined,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.assignmentsService.listHouses(id, user, revisit === 'true');
   }
 
   @Roles(Role.ADMIN, Role.CADASTRAL)
@@ -64,6 +75,13 @@ export class AssignmentsController {
   @Post(':id/submit')
   submit(@Param('id') id: string, @CurrentUser() user: AuthenticatedUser) {
     return this.assignmentsService.submit(id, user.id);
+  }
+
+  /** BR-78 — cán bộ được giao báo vấn đề / xin hỗ trợ (không đổi trạng thái nhiệm vụ). */
+  @Roles(Role.SURVEYOR)
+  @Post(':id/issues')
+  reportIssue(@Param('id') id: string, @Body() dto: ReportIssueDto, @CurrentUser() user: AuthenticatedUser) {
+    return this.assignmentsService.reportIssue(id, dto, user.id);
   }
 
   @Roles(Role.ADMIN, Role.CADASTRAL)

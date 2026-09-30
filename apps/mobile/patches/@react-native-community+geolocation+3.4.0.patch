@@ -1,0 +1,19 @@
+diff --git a/node_modules/@react-native-community/geolocation/android/src/main/java/com/reactnativecommunity/geolocation/PlayServicesLocationManager.java b/node_modules/@react-native-community/geolocation/android/src/main/java/com/reactnativecommunity/geolocation/PlayServicesLocationManager.java
+index 423f7a5..f0a892b 100644
+--- a/node_modules/@react-native-community/geolocation/android/src/main/java/com/reactnativecommunity/geolocation/PlayServicesLocationManager.java
++++ b/node_modules/@react-native-community/geolocation/android/src/main/java/com/reactnativecommunity/geolocation/PlayServicesLocationManager.java
+@@ -167,8 +167,12 @@ public class PlayServicesLocationManager extends BaseLocationManager {
+ 
+                 callbackHolder.success(location);
+ 
+-                mFusedLocationClient.removeLocationUpdates(mSingleLocationCallback);
+-                mSingleLocationCallback = null;
++                // Go CHINH callback vua nhan ket qua (khong phai bien dung chung mSingleLocationCallback,
++                // co the da bi lan goi sau ghi de hoac dat null -> "Listener must not be null" lam crash app).
++                mFusedLocationClient.removeLocationUpdates(this);
++                if (mSingleLocationCallback == this) {
++                    mSingleLocationCallback = null;
++                }
+             }
+ 
+             @Override

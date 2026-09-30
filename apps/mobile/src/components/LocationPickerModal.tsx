@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Modal, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import MapView, { Marker } from 'react-native-maps';
 
@@ -23,12 +23,20 @@ export default function LocationPickerModal({
 }) {
   const [coord, setCoord] = useState({ latitude: initialLat, longitude: initialLng });
 
+  // Modal được render sẵn từ lúc mở màn hình (chỉ đổi `visible`), nên useState ở trên chỉ giữ
+  // tọa độ LẦN ĐẦU (thường là mặc định, trước khi GPS lấy xong) — trong khi MapView mở ra canh
+  // giữa tọa độ hiện tại → ghim nằm lệch khỏi khung nhìn. Đặt lại ghim mỗi lần mở modal.
+  useEffect(() => {
+    if (visible) setCoord({ latitude: initialLat, longitude: initialLng });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [visible]);
+
   return (
     <Modal visible={visible} animationType="slide" onRequestClose={onClose}>
       <View style={styles.container}>
         <View style={styles.header}>
           <Text style={styles.title}>Chọn vị trí trên bản đồ</Text>
-          <Text style={styles.hint}>Kéo thả ghim để chọn đúng vị trí căn nhà</Text>
+          <Text style={styles.hint}>Chạm vào bản đồ hoặc kéo ghim để chọn đúng vị trí căn nhà</Text>
         </View>
 
         <MapView
@@ -39,6 +47,8 @@ export default function LocationPickerModal({
             latitudeDelta: 0.01,
             longitudeDelta: 0.01,
           }}
+          // Chạm để dời ghim — kéo ghim nhỏ trên điện thoại khó thao tác.
+          onPress={(e) => setCoord(e.nativeEvent.coordinate)}
         >
           <Marker
             coordinate={coord}

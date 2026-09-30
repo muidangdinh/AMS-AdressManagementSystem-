@@ -24,6 +24,10 @@ export default function HouseMapLeaflet({
   const streetLayerRef = useRef<L.TileLayer | null>(null);
   const satelliteLayerRef = useRef<L.TileLayer | null>(null);
   const markersRef = useRef<Record<string, L.Marker>>({});
+  const myLocationMarkerRef = useRef<L.Marker | null>(null);
+  // true từ lúc map vừa tạo tới lần chạy đầu của effect flyTo — request đến ngay lúc mount thì
+  // đặt view thẳng (không animation), vì flyTo trên map chưa có tile nào dễ để lại nền trống.
+  const justCreatedRef = useRef(false);
   const onSelectRef = useRef(onSelectHouse);
   const onMapClickRef = useRef(onMapClick);
   const onMapRightClickRef = useRef(onMapRightClick);
@@ -72,8 +76,17 @@ export default function HouseMapLeaflet({
     mapRef.current = map;
     streetLayerRef.current = streetLayer;
     satelliteLayerRef.current = satelliteLayer;
+    justCreatedRef.current = true;
+
+    // Leaflet không tự biết khi container đổi kích thước (map mount lúc layout chưa ổn định,
+    // sidebar/menu co giãn…) — nếu không invalidateSize thì chỉ tải tile cho vùng cũ, nền bị xám.
+    const frame = requestAnimationFrame(() => map.invalidateSize());
+    const resizeObserver = new ResizeObserver(() => map.invalidateSize());
+    resizeObserver.observe(containerRef.current);
 
     return () => {
+      cancelAnimationFrame(frame);
+      resizeObserver.disconnect();
       map.remove();
       mapRef.current = null;
     };
@@ -124,11 +137,33 @@ export default function HouseMapLeaflet({
 
   // Bay tới vị trí khi flyToRequest đổi (click danh sách trong chế độ bản đồ)
   useEffect(() => {
+    const justCreated = justCreatedRef.current;
+    justCreatedRef.current = false;
     if (!flyToRequest || !mapRef.current) return;
-    mapRef.current.flyTo([flyToRequest.lat, flyToRequest.lng], 18, {
-      animate: true,
-      duration: 1,
-    });
+    if (justCreated) {
+      mapRef.current.setView([flyToRequest.lat, flyToRequest.lng], 18, { animate: false });
+    } else {
+      mapRef.current.flyTo([flyToRequest.lat, flyToRequest.lng], 18, {
+        animate: true,
+        duration: 1,
+      });
+    }
+
+    if (flyToRequest.myLocation) {
+      myLocationMarkerRef.current?.remove();
+      const icon = L.divIcon({
+        className: 'my-location-marker',
+        html: '<div style="width:18px;height:18px;border-radius:50%;background:#2563eb;border:3px solid white;box-shadow:0 0 0 2px #2563eb, 0 2px 6px rgba(0,0,0,0.4);"></div>',
+        iconSize: [18, 18],
+        iconAnchor: [9, 9],
+      });
+      const marker = L.marker([flyToRequest.lat, flyToRequest.lng], {
+        icon,
+        zIndexOffset: 1000,
+      }).addTo(mapRef.current);
+      marker.bindTooltip('Vị trí của bạn', { direction: 'top' });
+      myLocationMarkerRef.current = marker;
+    }
   }, [flyToRequest]);
 
   function setLayer(type: 'street' | 'satellite') {

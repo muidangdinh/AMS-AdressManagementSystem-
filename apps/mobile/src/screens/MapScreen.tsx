@@ -119,6 +119,33 @@ export default function MapScreen() {
   const [houses, setHouses] = useState<HouseGeoPoint[]>([]);
   const [loading, setLoading] = useState(false);
   const [locating, setLocating] = useState(false);
+  const [myLocation, setMyLocation] = useState<{ latitude: number; longitude: number } | null>(null);
+  const lastKnownPositionRef = useRef<{ latitude: number; longitude: number } | null>(null);
+  const watchIdRef = useRef<number | null>(null);
+
+  // "Làm nóng" GPS ngay khi vào màn hình Bản Đồ — theo dõi vị trí chạy nền (không
+  // hiện chấm đỏ) để lúc bấm nút 📍 có sẵn vị trí gần nhất, phản hồi tức thì thay vì
+  // phải đợi GPS tìm fix mới từ đầu (xem `handleLocateMe`).
+  useEffect(() => {
+    let active = true;
+    requestLocationPermission().then((ok) => {
+      if (!ok || !active) return;
+      watchIdRef.current = Geolocation.watchPosition(
+        (position) => {
+          lastKnownPositionRef.current = {
+            latitude: position.coords.latitude,
+            longitude: position.coords.longitude,
+          };
+        },
+        () => {},
+        { enableHighAccuracy: true, distanceFilter: 10, interval: 5000 },
+      );
+    });
+    return () => {
+      active = false;
+      if (watchIdRef.current != null) Geolocation.clearWatch(watchIdRef.current);
+    };
+  }, []);
 
   // TN-22 — lọc theo ấp/đường (góp ý khách hàng 11/09/2026, mục Bản đồ: "tạo thanh tìm
   // kiếm đa dạng, dễ tìm kiếm, dễ sử dụng"). Ấp lọc theo xã đã chọn (giống SurveyScreen).
@@ -276,22 +303,46 @@ export default function MapScreen() {
       setLocating(false);
       return;
     }
+
+    // Đã có vị trí từ watch nền (pre-warm) — dùng ngay, khỏi đợi GPS tìm fix mới.
+    if (lastKnownPositionRef.current) {
+      const { latitude, longitude } = lastKnownPositionRef.current;
+      mapRef.current?.animateToRegion(
+        { latitude, longitude, latitudeDelta: 0.01, longitudeDelta: 0.01 },
+        800,
+      );
+      setMyLocation({ latitude, longitude });
+      setLocating(false);
+      return;
+    }
+
+    // Chỉ báo lỗi thật cho người dùng nếu sau 10s vẫn chưa lấy được vị trí nào —
+    // bỏ qua callback lỗi tức thời của thư viện (có thể là false-positive dù vị
+    // trí thật vẫn lấy được đúng ngay sau đó).
+    let resolved = false;
+    const timeoutTimer = setTimeout(() => {
+      if (!resolved) {
+        resolved = true;
+        Alert.alert('Lỗi GPS', 'Không lấy được vị trí sau 10 giây. Hãy ra nơi thoáng rồi thử lại.');
+        setLocating(false);
+      }
+    }, 10000);
+
     Geolocation.getCurrentPosition(
       (position) => {
+        if (resolved) return;
+        resolved = true;
+        clearTimeout(timeoutTimer);
+        const { latitude, longitude } = position.coords;
         mapRef.current?.animateToRegion(
-          {
-            latitude: position.coords.latitude,
-            longitude: position.coords.longitude,
-            latitudeDelta: 0.01,
-            longitudeDelta: 0.01,
-          },
+          { latitude, longitude, latitudeDelta: 0.01, longitudeDelta: 0.01 },
           800,
         );
+        setMyLocation({ latitude, longitude });
         setLocating(false);
       },
-      (error) => {
-        Alert.alert('Lỗi GPS', error.message);
-        setLocating(false);
+      () => {
+        // Bỏ qua — timer 10s phía trên sẽ quyết định có báo lỗi hay không.
       },
       { enableHighAccuracy: true, timeout: 20000, maximumAge: 10000 },
     );
@@ -367,6 +418,12 @@ export default function MapScreen() {
             </View>
           </Marker>
         ))}
+
+        {myLocation && (
+          <Marker coordinate={myLocation} anchor={{ x: 0.5, y: 0.5 }} zIndex={999}>
+            <View collapsable={false} style={styles.myLocationDot} />
+          </Marker>
+        )}
       </MapView>
 
       {/* Thanh tìm kiếm & lọc — TN-22 (góp ý khách hàng 11/09/2026: "thanh tìm kiếm đa dạng, dễ
@@ -715,6 +772,18 @@ const styles = StyleSheet.create({
     elevation: 3,
   },
   markerText: { color: '#fff', fontWeight: '700', fontSize: 10 },
+  myLocationDot: {
+    width: 16,
+    height: 16,
+    borderRadius: 8,
+    backgroundColor: '#ef4444',
+    borderWidth: 2,
+    borderColor: '#fff',
+    shadowColor: '#000',
+    shadowOpacity: 0.3,
+    shadowRadius: 2,
+    elevation: 4,
+  },
   searchBar: {
     position: 'absolute',
     top: 12,

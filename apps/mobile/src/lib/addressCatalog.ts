@@ -18,8 +18,9 @@ export function fetchStreets(): Promise<Street[]> {
  * TN-07 — danh mục Ấp/Thôn (góp ý khách hàng 11/09/2026), LUÔN lọc theo xã
  * (khác `fetchWards`/`fetchStreets` tải hết rồi lọc phía client) vì Ấp bắt
  * buộc thuộc 1 xã (`Hamlet.wardId` required trong schema.prisma) — không có
- * lý do tải toàn bộ ấp của mọi xã trên máy khảo sát.
+ * lý do tải toàn bộ ấp của mọi xã trên máy khảo sát. Ngoại lệ: ô tìm kiếm nhanh
+ * ở Dashboard (giống web) bỏ trống `wardId` để lọc theo mọi ấp.
  */
-export function fetchHamlets(wardId: string): Promise<Hamlet[]> {
-  return apiFetch<Hamlet[]>(`/api/hamlets?wardId=${encodeURIComponent(wardId)}`);
+export function fetchHamlets(wardId?: string): Promise<Hamlet[]> {
+  return apiFetch<Hamlet[]>(`/api/hamlets${wardId ? `?wardId=${encodeURIComponent(wardId)}` : ''}`);
 }

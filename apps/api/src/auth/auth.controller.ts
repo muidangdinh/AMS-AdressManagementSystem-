@@ -1,6 +1,7 @@
-import { Body, Controller, Get, HttpCode, HttpStatus, Post } from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, HttpStatus, Patch, Post } from '@nestjs/common';
 import { AuthService } from './auth.service';
 import { LoginDto } from './dto/login.dto';
+import { ChangePasswordDto } from './dto/change-password.dto';
 import { Public } from './decorators/public.decorator';
 import { CurrentUser } from './decorators/current-user.decorator';
 import { AuthenticatedUser } from './types/authenticated-user';
@@ -25,5 +26,12 @@ export class AuthController {
   @Get('me')
   me(@CurrentUser() user: AuthenticatedUser) {
     return user;
+  }
+
+  /** PATCH /api/auth/me/password — tự đổi mật khẩu của chính mình, phải nhập đúng mật khẩu hiện tại. */
+  @Patch('me/password')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  changePassword(@Body() dto: ChangePasswordDto, @CurrentUser() user: AuthenticatedUser) {
+    return this.authService.changePassword(user.id, dto.currentPassword, dto.newPassword);
   }
 }

@@ -17,6 +17,7 @@ import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import type { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import { launchCamera } from 'react-native-image-picker';
+import { PHOTO_PICKER_OPTIONS } from '../lib/imageOptions';
 import type { HousePlate, HouseSummary, PaginatedResult } from '@tayninh/shared';
 import { HOUSE_STATUS_LABELS } from '@tayninh/shared';
 import { apiFetch } from '../lib/api';
@@ -129,7 +130,7 @@ export default function PlatesScreen() {
       Alert.alert('Thiếu quyền', 'Cần cấp quyền máy ảnh để chụp ảnh xác nhận đã gắn.');
       return;
     }
-    const result = await launchCamera({ mediaType: 'photo', quality: 0.8 });
+    const result = await launchCamera(PHOTO_PICKER_OPTIONS);
     if (result.didCancel) return;
     if (result.errorCode) {
       Alert.alert('Lỗi máy ảnh', result.errorMessage ?? result.errorCode);

@@ -7,6 +7,7 @@ import type { SurveyAssignment, SurveyCampaign, Ward } from '@tayninh/shared';
 import {
   ASSIGNMENT_STATUS_LABELS,
   AssignmentStatus,
+  assignmentProgressPercent,
   CAMPAIGN_STATUS_LABELS,
   CampaignStatus,
   EDITOR_ROLES,
@@ -15,6 +16,11 @@ import {
 import { useAuth } from '@/lib/auth-context';
 import { ApiError } from '@/lib/api';
 import { assignmentsApi, campaignsApi, zonesApi } from '@/lib/surveys-api';
+import { NotificationEntity } from '@tayninh/shared';
+import RemindButton from '@/components/RemindButton';
+import AssignmentTimeline from '@/components/AssignmentTimeline';
+import RevisitModal from '@/components/RevisitModal';
+import { formatDueDate, isOverdue } from '@/lib/deadline';
 import { wardsApi } from '@/lib/addresses-api';
 import { EmptyState, FIELD_CLASS } from '@/components/ui';
 
@@ -41,6 +47,7 @@ export default function SurveyCampaignDetailPage() {
   const [campaign, setCampaign] = useState<SurveyCampaign | null>(null);
   const [wards, setWards] = useState<Ward[]>([]);
   const [surveyors, setSurveyors] = useState<{ id: string; fullName: string; username: string }[]>([]);
+  const [surveyorsLoaded, setSurveyorsLoaded] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
@@ -63,7 +70,11 @@ export default function SurveyCampaignDetailPage() {
 
   useEffect(() => {
     wardsApi.list().then(setWards).catch(() => {});
-    assignmentsApi.listSurveyors().then(setSurveyors).catch(() => {});
+    assignmentsApi
+      .listSurveyors()
+      .then(setSurveyors)
+      .catch(() => {})
+      .finally(() => setSurveyorsLoaded(true));
   }, []);
 
   async function handleStatusChange(status: CampaignStatus) {
@@ -110,13 +121,13 @@ export default function SurveyCampaignDetailPage() {
   }
 
   // ---- Giao nhiệm vụ ----
-  const [assignForm, setAssignForm] = useState<Record<string, { assigneeId: string; dueDate: string; note: string }>>(
+  const [assignForm, setAssignForm] = useState<Record<string, { assigneeId: string; dueDate: string; note: string; targetCount: string }>>(
     {},
   );
   const [assigning, setAssigning] = useState<string | null>(null);
 
   function getAssignForm(zoneId: string) {
-    return assignForm[zoneId] ?? { assigneeId: '', dueDate: '', note: '' };
+    return assignForm[zoneId] ?? { assigneeId: '', dueDate: '', note: '', targetCount: '' };
   }
 
   async function handleAssign(zoneId: string) {
@@ -130,8 +141,9 @@ export default function SurveyCampaignDetailPage() {
         assigneeId: f.assigneeId,
         dueDate: f.dueDate || undefined,
         note: f.note || undefined,
+        targetCount: f.targetCount ? Number(f.targetCount) : undefined,
       });
-      setAssignForm((prev) => ({ ...prev, [zoneId]: { assigneeId: '', dueDate: '', note: '' } }));
+      setAssignForm((prev) => ({ ...prev, [zoneId]: { assigneeId: '', dueDate: '', note: '', targetCount: '' } }));
       await load();
     } catch (err) {
       setActionError(err instanceof ApiError ? err.message : 'Không giao được nhiệm vụ');
@@ -151,17 +163,8 @@ export default function SurveyCampaignDetailPage() {
     }
   }
 
-  async function handleRequestRevisit(assignmentId: string) {
-    const reason = prompt('Lý do yêu cầu khảo sát lại:');
-    if (!reason) return;
-    setActionError(null);
-    try {
-      await assignmentsApi.requestRevisit(assignmentId, reason);
-      await load();
-    } catch (err) {
-      setActionError(err instanceof ApiError ? err.message : 'Không gửi yêu cầu được');
-    }
-  }
+  // Phase 11 Đợt 2b — modal chọn nhà cần khảo sát lại (thay cho hộp thoại nhập lý do chung).
+  const [revisitTarget, setRevisitTarget] = useState<{ assignment: SurveyAssignment; zoneName: string } | null>(null);
 
   async function handleRemoveAssignment(assignmentId: string) {
     if (!confirm('Xóa nhiệm vụ này? (chỉ xóa được khi chưa bắt đầu)')) return;
@@ -190,6 +193,18 @@ export default function SurveyCampaignDetailPage() {
       <Link href="/houses/surveys" className="text-sm text-blue-600 hover:underline font-semibold">
         ← Danh sách đợt khảo sát
       </Link>
+
+      {revisitTarget && (
+        <RevisitModal
+          assignment={revisitTarget.assignment}
+          zoneName={revisitTarget.zoneName}
+          onClose={() => setRevisitTarget(null)}
+          onDone={() => {
+            setRevisitTarget(null);
+            load();
+          }}
+        />
+      )}
 
       {actionError && (
         <div className="bg-rose-50 border border-rose-200 text-rose-700 rounded-xl p-3 text-sm">{actionError}</div>
@@ -310,16 +325,45 @@ export default function SurveyCampaignDetailPage() {
                       {ASSIGNMENT_STATUS_LABELS[a.status]}
                     </span>
                     <p className="text-[11px] text-slate-400 mt-0.5">
-                      {a._count?.houses ?? 0} nhà đã khảo sát
-                      {a.dueDate ? ` • Hạn ${new Date(a.dueDate).toLocaleDateString('vi-VN')}` : ''}
+                      {a._count?.houses ?? 0}{a.targetCount ? ` / ${a.targetCount}` : ''} nhà đã khảo sát
+                      {a.dueDate ? ` • Hạn ${formatDueDate(a.dueDate)}` : ''}
+                      {a.dueDate &&
+                        isOverdue(a.dueDate) &&
+                        (a.status === AssignmentStatus.ASSIGNED ||
+                          a.status === AssignmentStatus.IN_PROGRESS ||
+                          a.status === AssignmentStatus.NEEDS_REVISIT) && (
+                          <span className="text-rose-600 font-bold"> • QUÁ HẠN</span>
+                        )}
                     </p>
+                    {a.targetCount ? (
+                      <div className="mt-1 flex items-center gap-2" title="Tiến độ theo chỉ tiêu">
+                        <div className="h-1.5 w-28 rounded-full bg-slate-100 overflow-hidden">
+                          <div
+                            className="h-full bg-blue-500"
+                            style={{ width: `${Math.min(100, assignmentProgressPercent(a) ?? 0)}%` }}
+                          />
+                        </div>
+                        <span className="text-[10px] font-semibold text-slate-500">{assignmentProgressPercent(a)}%</span>
+                      </div>
+                    ) : null}
                     {a.note && <p className="text-[11px] text-slate-500 mt-0.5">Ghi chú: {a.note}</p>}
+                    {(a.revisitPending ?? 0) > 0 && (
+                      <p className="text-[11px] text-rose-600 font-semibold mt-0.5">
+                        {a.revisitPending} nhà cần khảo sát lại
+                      </p>
+                    )}
                     {a.reviewNote && (
                       <p className="text-[11px] text-rose-600 mt-0.5">Lý do khảo sát lại: {a.reviewNote}</p>
                     )}
+                    <AssignmentTimeline assignmentId={a.id} />
                   </div>
                   {canEdit && (
                     <div className="flex gap-1.5 shrink-0">
+                      {(a.status === AssignmentStatus.ASSIGNED ||
+                        a.status === AssignmentStatus.IN_PROGRESS ||
+                        a.status === AssignmentStatus.NEEDS_REVISIT) && (
+                        <RemindButton entityType={NotificationEntity.SURVEY_ASSIGNMENT} entityId={a.id} />
+                      )}
                       {a.status === AssignmentStatus.ASSIGNED && (
                         <button
                           onClick={() => handleRemoveAssignment(a.id)}
@@ -337,7 +381,7 @@ export default function SurveyCampaignDetailPage() {
                             Duyệt hoàn tất
                           </button>
                           <button
-                            onClick={() => handleRequestRevisit(a.id)}
+                            onClick={() => setRevisitTarget({ assignment: a, zoneName: zone.name })}
                             className="border border-rose-300 text-rose-600 hover:bg-rose-50 text-xs font-semibold px-2.5 py-1 rounded-lg transition"
                           >
                             Yêu cầu khảo sát lại
@@ -368,6 +412,18 @@ export default function SurveyCampaignDetailPage() {
                       </option>
                     ))}
                   </select>
+                  {surveyorsLoaded && surveyors.length === 0 && (
+                    <p className="basis-full text-[11px] text-amber-600">
+                      Chưa có cán bộ khảo sát nào.{' '}
+                      {user?.role === UserRole.ADMIN ? (
+                        <Link href="/houses/users" className="font-semibold underline">
+                          Tạo tài khoản ở Quản lý người dùng
+                        </Link>
+                      ) : (
+                        'Liên hệ quản trị viên để tạo tài khoản.'
+                      )}
+                    </p>
+                  )}
                   <input
                     type="date"
                     value={getAssignForm(zone.id).dueDate}
@@ -378,6 +434,19 @@ export default function SurveyCampaignDetailPage() {
                       }))
                     }
                     className="border border-slate-300 rounded-lg px-2 py-1.5 text-xs focus:ring-2 focus:ring-blue-500/40 focus:border-blue-500 outline-none transition"
+                  />
+                  <input
+                    type="number"
+                    min={1}
+                    value={getAssignForm(zone.id).targetCount}
+                    onChange={(e) =>
+                      setAssignForm((prev) => ({
+                        ...prev,
+                        [zone.id]: { ...getAssignForm(zone.id), targetCount: e.target.value },
+                      }))
+                    }
+                    placeholder="Chỉ tiêu (số nhà)"
+                    className="border border-slate-300 rounded-lg px-2 py-1.5 text-xs w-36 focus:ring-2 focus:ring-blue-500/40 focus:border-blue-500 outline-none transition"
                   />
                   <input
                     value={getAssignForm(zone.id).note}

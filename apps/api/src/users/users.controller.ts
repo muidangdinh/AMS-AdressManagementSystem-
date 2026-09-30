@@ -1,6 +1,8 @@
 import { Body, Controller, Delete, Get, Param, Patch, Post } from '@nestjs/common';
 import { Role } from '@prisma/client';
 import { Roles } from '../auth/decorators/roles.decorator';
+import { CurrentUser } from '../auth/decorators/current-user.decorator';
+import { AuthenticatedUser } from '../auth/types/authenticated-user';
 import { UsersService } from './users.service';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
@@ -27,12 +29,12 @@ export class UsersController {
   }
 
   @Patch(':id')
-  update(@Param('id') id: string, @Body() dto: UpdateUserDto) {
-    return this.usersService.update(id, dto);
+  update(@Param('id') id: string, @Body() dto: UpdateUserDto, @CurrentUser() actor: AuthenticatedUser) {
+    return this.usersService.update(id, dto, actor.id);
   }
 
   @Delete(':id')
-  deactivate(@Param('id') id: string) {
-    return this.usersService.deactivate(id);
+  deactivate(@Param('id') id: string, @CurrentUser() actor: AuthenticatedUser) {
+    return this.usersService.deactivate(id, actor.id);
   }
 }

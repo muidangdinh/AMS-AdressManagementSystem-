@@ -17,6 +17,17 @@ const config: Config = {
       backgroundImage: {
         'app-shell': 'radial-gradient(circle at top left, #eff6ff 0%, #f8fafc 45%, #f8fafc 100%)',
       },
+      keyframes: {
+        // Từng mục của menu điều hướng trượt nhẹ từ trái vào, lệch thời gian nhau (xem NavItem ở
+        // houses/layout.tsx). Phần chiều cao/nền của menu dùng transition CSS, không cần keyframe.
+        'item-in': {
+          from: { opacity: '0', transform: 'translateX(-14px)' },
+          to: { opacity: '1', transform: 'translateX(0)' },
+        },
+      },
+      animation: {
+        'item-in': 'item-in 300ms cubic-bezier(0.22, 1, 0.36, 1) backwards',
+      },
     },
   },
   plugins: [],

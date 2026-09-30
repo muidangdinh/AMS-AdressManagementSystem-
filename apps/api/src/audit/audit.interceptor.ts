@@ -9,6 +9,8 @@ import { Observable, tap } from 'rxjs';
 import { AuditService } from './audit.service';
 
 const MUTATING_METHODS = new Set(['POST', 'PATCH', 'PUT', 'DELETE']);
+/** Đánh dấu đã đọc thông báo rất thường xuyên và không có giá trị truy vết — bỏ qua khỏi nhật ký. */
+const SKIP_AUDIT_PATH = /^\/api\/notifications\/(read-all|[^/]+\/read)\/?(\?.*)?$/;
 const SENSITIVE_FIELDS = ['password', 'passwordHash', 'accessToken', 'ownerIdNumber'];
 
 function sanitize(body: Record<string, unknown> | undefined) {
@@ -35,7 +37,7 @@ export class AuditInterceptor implements NestInterceptor {
     const request = context.switchToHttp().getRequest();
     const { method, originalUrl, user, body, ip } = request;
 
-    if (!MUTATING_METHODS.has(method)) {
+    if (!MUTATING_METHODS.has(method) || SKIP_AUDIT_PATH.test(originalUrl)) {
       return next.handle();
     }
 

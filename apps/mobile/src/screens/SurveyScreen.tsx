@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -14,7 +14,8 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import { useFocusEffect } from '@react-navigation/native';
+import { useFocusEffect, useNavigation, useRoute } from '@react-navigation/native';
+import type { NavigationProp, RouteProp } from '@react-navigation/native';
 import Geolocation from '@react-native-community/geolocation';
 import { launchCamera, launchImageLibrary } from 'react-native-image-picker';
 import {
@@ -26,15 +27,20 @@ import {
   PLATE_NEED_LABELS,
   NumberingSide,
   NUMBERING_SIDE_LABELS,
+  PhotoType,
+  type HouseSummary,
   type SurveyAssignment,
   type Hamlet,
   type Street,
   type Ward,
 } from '@tayninh/shared';
-import { createDraft, syncDraft } from '../lib/surveyStore';
+import { createDraft, syncDraft, uploadHousePhoto } from '../lib/surveyStore';
+import { PHOTO_PICKER_OPTIONS } from '../lib/imageOptions';
 import { fetchHamlets, fetchStreets, fetchWards } from '../lib/addressCatalog';
 import { getActiveAssignmentId, clearActiveAssignmentId } from '../lib/activeAssignment';
-import { getAssignment } from '../lib/surveysApi';
+import { fetchHouse, getAssignment, resurveyHouse as resurveyHouseApi } from '../lib/surveysApi';
+import { ApiError } from '../lib/api';
+import type { MainTabsParamList } from '../navigation/MainTabs';
 import { resolveWorkingWard } from '../lib/workingWard';
 import LocationPickerModal from '../components/LocationPickerModal';
 import WardSelectorBar from '../components/WardSelectorBar';
@@ -76,6 +82,20 @@ async function requestCameraPermission(): Promise<boolean> {
   return granted === PermissionsAndroid.RESULTS.GRANTED;
 }
 
+/** Thông báo lỗi định vị dễ hiểu theo mã lỗi chuẩn (1 = quyền, 2 = không có vị trí, 3 = hết giờ). */
+function gpsErrorMessage(code: number): string {
+  switch (code) {
+    case 1:
+      return 'Chưa cấp quyền vị trí cho ứng dụng.';
+    case 2:
+      return 'Định vị đang tắt — bật Vị trí (GPS) trong cài đặt điện thoại rồi thử lại.';
+    case 3:
+      return "Không bắt được tín hiệu vị trí — ra chỗ thoáng rồi thử lại, hoặc dùng 'Chọn trên map'.";
+    default:
+      return 'Không lấy được vị trí hiện tại.';
+  }
+}
+
 /** Mở action-sheet chụp/chọn 1 ảnh duy nhất — dùng cho các ô ảnh bắt buộc (mặt tiền/biển số). */
 function pickSinglePhoto(title: string, onPicked: (uri: string) => void) {
   Alert.alert(title, 'Chọn nguồn ảnh', [
@@ -87,7 +107,7 @@ function pickSinglePhoto(title: string, onPicked: (uri: string) => void) {
           Alert.alert('Thiếu quyền', 'Cần cấp quyền máy ảnh để chụp ảnh.');
           return;
         }
-        const result = await launchCamera({ mediaType: 'photo', quality: 0.8 });
+        const result = await launchCamera(PHOTO_PICKER_OPTIONS);
         if (result.didCancel) return;
         if (result.errorCode) {
           Alert.alert('Lỗi máy ảnh', result.errorMessage ?? result.errorCode);
@@ -100,7 +120,7 @@ function pickSinglePhoto(title: string, onPicked: (uri: string) => void) {
     {
       text: 'Chọn từ thư viện',
       onPress: async () => {
-        const result = await launchImageLibrary({ mediaType: 'photo', quality: 0.8, selectionLimit: 1 });
+        const result = await launchImageLibrary({ ...PHOTO_PICKER_OPTIONS, selectionLimit: 1 });
         if (result.didCancel) return;
         if (result.errorCode) {
           Alert.alert('Lỗi thư viện ảnh', result.errorMessage ?? result.errorCode);
@@ -115,6 +135,19 @@ function pickSinglePhoto(title: string, onPicked: (uri: string) => void) {
 }
 
 export default function SurveyScreen() {
+  // Phase 11 Đợt 2b — chế độ "sửa lại nhà": vào từ tab Nhiệm Vụ với `resurveyHouseId` (nhà bị yêu cầu khảo sát lại).
+  // Điền sẵn form từ server, gửi qua POST /houses/:id/resurvey (cần có mạng) thay vì tạo nhà mới trùng.
+  const navigation = useNavigation<NavigationProp<MainTabsParamList>>();
+  const route = useRoute<RouteProp<MainTabsParamList, 'Survey'>>();
+  const resurveyHouseId = route.params?.resurveyHouseId;
+  const [resurveyHouse, setResurveyHouse] = useState<HouseSummary | null>(null);
+  const [resurveyLoading, setResurveyLoading] = useState(false);
+  // Chặn tự lấy GPS / tự điền xã ghi đè dữ liệu nhà đã điền sẵn.
+  const resurveyRef = useRef(false);
+  resurveyRef.current = !!resurveyHouseId;
+  // Ảnh mới đã tải lên trong chế độ sửa lại — gửi lại sau lỗi mạng không bị tải trùng.
+  const uploadedRef = useRef<Set<string>>(new Set());
+
   const [lat, setLat] = useState(DEFAULT_LAT);
   const [lng, setLng] = useState(DEFAULT_LNG);
   const [gettingGps, setGettingGps] = useState(false);
@@ -163,7 +196,7 @@ export default function SurveyScreen() {
     useCallback(() => {
       if (wardId) return; // form đang có dữ liệu (đang nhập dở/vừa chọn tay) — không ghi đè
       resolveWorkingWard().then(({ ward: ww }) => {
-        if (ww) {
+        if (ww && !resurveyRef.current) {
           setWard(ww.name);
           setWardId(ww.id);
         }
@@ -219,46 +252,77 @@ export default function SurveyScreen() {
   const [photoUris, setPhotoUris] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
 
-  async function handleGetGps() {
+  // Nguồn của tọa độ đang hiển thị — 'default' nghĩa là vẫn là tọa độ mặc định (chưa lấy GPS /
+  // chưa chọn trên bản đồ); lưu nhà lúc này sẽ đặt nhà sai chỗ nên cần cảnh báo.
+  const [locationSource, setLocationSource] = useState<'default' | 'gps' | 'map'>('default');
+  const locationSourceRef = useRef(locationSource);
+  locationSourceRef.current = locationSource;
+  // Chặn gọi GPS chồng nhau (tự lấy khi mở màn hình + bấm nút cùng lúc).
+  const gettingGpsRef = useRef(false);
+
+  /**
+   * Lấy vị trí hiện tại của điện thoại. `silent` — dùng khi tự lấy (mở màn hình / sau khi lưu
+   * xong 1 nhà): không bật popup lỗi, card Tọa độ tự hiện trạng thái "chưa lấy vị trí".
+   */
+  async function handleGetGps({ silent = false }: { silent?: boolean } = {}) {
+    if (gettingGpsRef.current) return;
+    if (silent && resurveyRef.current) return;
+    gettingGpsRef.current = true;
     setGettingGps(true);
+    const done = () => {
+      gettingGpsRef.current = false;
+      setGettingGps(false);
+    };
+    const applyPosition = (position: { coords: { latitude: number; longitude: number } }) => {
+      // Lần lấy GPS tự động bắt đầu trước khi vào chế độ sửa lại — bỏ kết quả, giữ toạ độ nhà đã điền sẵn.
+      if (silent && resurveyRef.current) {
+        done();
+        return;
+      }
+      setLat(position.coords.latitude);
+      setLng(position.coords.longitude);
+      setLocationSource('gps');
+      done();
+    };
     try {
       const ok = await requestLocationPermission();
       if (!ok) {
-        Alert.alert('Thiếu quyền', 'Cần cấp quyền vị trí để lấy tọa độ GPS.');
-        setGettingGps(false);
+        if (!silent) Alert.alert('Thiếu quyền', 'Cần cấp quyền vị trí để lấy tọa độ GPS.');
+        done();
         return;
       }
       Geolocation.getCurrentPosition(
-        (position) => {
-          setLat(position.coords.latitude);
-          setLng(position.coords.longitude);
-          setGettingGps(false);
-        },
+        applyPosition,
         (error) => {
-          console.error('[GPS] high-accuracy fix failed:', error.code, error.message);
+          console.log('[GPS] high-accuracy fix failed:', error.code, error.message);
           // GPS vệ tinh không bắt được tín hiệu (trong nhà, cold start...) — thử lại
-          // bằng định vị qua mạng (nhanh hơn) và chấp nhận vị trí gần đây (<=60s).
+          // bằng định vị qua mạng (nhanh hơn) và chấp nhận vị trí gần đây (<=5 phút —
+          // người khảo sát thường đứng yên tại căn nhà).
           Geolocation.getCurrentPosition(
-            (position) => {
-              setLat(position.coords.latitude);
-              setLng(position.coords.longitude);
-              setGettingGps(false);
-            },
+            applyPosition,
             (fallbackError) => {
-              console.error('[GPS] fallback fix failed:', fallbackError.code, fallbackError.message);
-              Alert.alert('Lỗi GPS', fallbackError.message);
-              setGettingGps(false);
+              console.log('[GPS] fallback fix failed:', fallbackError.code, fallbackError.message);
+              if (!silent) Alert.alert('Lỗi GPS', gpsErrorMessage(fallbackError.code));
+              done();
             },
-            { enableHighAccuracy: false, timeout: 20000, maximumAge: 60000 },
+            { enableHighAccuracy: false, timeout: 15000, maximumAge: 5 * 60 * 1000 },
           );
         },
-        { enableHighAccuracy: true, timeout: 20000, maximumAge: 0 },
+        { enableHighAccuracy: true, timeout: 15000, maximumAge: 10000 },
       );
     } catch (error) {
       console.error('[GPS] unexpected error:', error);
-      setGettingGps(false);
+      done();
     }
   }
+
+  // Tự lấy GPS khi mở màn hình mà tọa độ vẫn là mặc định — không ghi đè tọa độ đã lấy/chọn
+  // của căn nhà đang nhập dở.
+  useFocusEffect(
+    useCallback(() => {
+      if (locationSourceRef.current === 'default') handleGetGps({ silent: true });
+    }, []),
+  );
 
   function handlePickPhoto() {
     if (photoUris.length >= MAX_PHOTOS) {
@@ -276,7 +340,7 @@ export default function SurveyScreen() {
             Alert.alert('Thiếu quyền', 'Cần cấp quyền máy ảnh để chụp ảnh hiện trạng.');
             return;
           }
-          const result = await launchCamera({ mediaType: 'photo', quality: 0.8 });
+          const result = await launchCamera(PHOTO_PICKER_OPTIONS);
           if (result.didCancel) return;
           if (result.errorCode) {
             Alert.alert('Lỗi máy ảnh', result.errorMessage ?? result.errorCode);
@@ -291,8 +355,7 @@ export default function SurveyScreen() {
         onPress: async () => {
           // selectionLimit cho phép chọn nhiều ảnh cùng lúc trong 1 lần mở thư viện.
           const result = await launchImageLibrary({
-            mediaType: 'photo',
-            quality: 0.8,
+            ...PHOTO_PICKER_OPTIONS,
             selectionLimit: remainingSlots,
           });
           if (result.didCancel) return;
@@ -342,11 +405,144 @@ export default function SurveyScreen() {
     setFacadePhotoUri(null);
     setPlatePhotoUri(null);
     setPhotoUris([]);
+    // Nhà kế tiếp ở vị trí khác — bỏ tọa độ cũ, tự lấy GPS lại (vẫn đang đứng ở hiện trường).
+    setLocationSource('default');
+    handleGetGps({ silent: true });
 
     const { ward: ww } = await resolveWorkingWard();
     if (ww) {
       setWard(ww.name);
       setWardId(ww.id);
+    }
+  }
+
+  /** Điền sẵn toàn bộ form từ nhà trên server (chế độ sửa lại). */
+  function applyHouseToForm(h: HouseSummary) {
+    setHouseNumber(h.houseNumber);
+    setStreet(h.street);
+    setStreetId(h.streetId ?? '');
+    setWard(h.ward);
+    setWardId(h.wardId ?? '');
+    setHamletId(h.hamletId ?? '');
+    setHamletName(h.hamlet?.name ?? '');
+    setSide(h.side === NumberingSide.NONE ? '' : h.side);
+    setOwnerName(h.ownerName);
+    setOwnerPhone(h.ownerPhone ?? '');
+    setOwnerIdNumber(h.ownerIdNumber ?? '');
+    setUsageStatus(h.usageStatus ?? '');
+    setPlateNeed(h.plateNeed ?? '');
+    setSoTo(h.soTo ?? '');
+    setSoThua(h.soThua ?? '');
+    setBuildingType(h.buildingType);
+    setFloors(h.floors != null ? String(h.floors) : '');
+    setArea(h.area != null ? String(h.area) : '');
+    setNote(h.note ?? '');
+    // Ảnh cũ nằm trên server (chỉ hiện số lượng); ảnh chọn ở đây là ảnh BỔ SUNG.
+    setFacadePhotoUri(null);
+    setPlatePhotoUri(null);
+    setPhotoUris([]);
+    // Toạ độ của chính nhà này — coi như đã xác nhận, không cảnh báo "toạ độ mặc định".
+    setLat(h.latitude);
+    setLng(h.longitude);
+    setLocationSource('map');
+  }
+
+  useEffect(() => {
+    if (!resurveyHouseId) return;
+    let cancelled = false;
+    setResurveyLoading(true);
+    uploadedRef.current.clear();
+    fetchHouse(resurveyHouseId)
+      .then((h) => {
+        if (cancelled) return;
+        applyHouseToForm(h);
+        setResurveyHouse(h);
+      })
+      .catch((e) => {
+        if (cancelled) return;
+        Alert.alert(
+          'Không tải được nhà',
+          e instanceof ApiError ? e.message : 'Cần có mạng để sửa lại nhà — kiểm tra kết nối rồi thử lại.',
+        );
+        navigation.setParams({ resurveyHouseId: undefined });
+      })
+      .finally(() => {
+        if (!cancelled) setResurveyLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [resurveyHouseId]);
+
+  /** Thoát chế độ sửa lại (đã gửi xong hoặc người dùng bỏ) — trả form về trạng thái khảo sát nhà mới. */
+  async function exitResurvey(goToAssignments: boolean) {
+    navigation.setParams({ resurveyHouseId: undefined });
+    resurveyRef.current = false;
+    setResurveyHouse(null);
+    uploadedRef.current.clear();
+    await resetForm();
+    if (goToAssignments) navigation.navigate('Assignments');
+  }
+
+  function handleCancelResurvey() {
+    Alert.alert('Thoát chế độ sửa lại', 'Các thay đổi đang nhập sẽ không được lưu.', [
+      { text: 'Tiếp tục sửa', style: 'cancel' },
+      { text: 'Thoát', style: 'destructive', onPress: () => exitResurvey(false) },
+    ]);
+  }
+
+  /**
+   * Gửi bản sửa lại (cần có mạng). Ảnh bổ sung tải TRƯỚC (bỏ qua ảnh đã tải ở lần thử trước), sửa thông tin SAU CÙNG:
+   * nếu bước cuối lỗi thì cờ "cần khảo sát lại" vẫn còn, bấm gửi lại được mà không bị trùng ảnh.
+   */
+  async function performResurvey() {
+    if (!resurveyHouse) return;
+    setSaving(true);
+    try {
+      const uploads = [
+        ...(facadePhotoUri ? [{ uri: facadePhotoUri, type: PhotoType.FACADE }] : []),
+        ...(platePhotoUri ? [{ uri: platePhotoUri, type: PhotoType.PLATE }] : []),
+        ...photoUris.map((uri) => ({ uri, type: PhotoType.CONDITION })),
+      ];
+      for (const [index, photo] of uploads.entries()) {
+        if (uploadedRef.current.has(photo.uri)) continue;
+        await uploadHousePhoto(resurveyHouse.id, photo, `resurvey-${resurveyHouse.id}-${index}.jpg`);
+        uploadedRef.current.add(photo.uri);
+      }
+      await resurveyHouseApi(resurveyHouse.id, {
+        houseNumber,
+        street,
+        streetId: streetId || undefined,
+        ward,
+        wardId: wardId || undefined,
+        hamletId: hamletId || undefined,
+        side: side || undefined,
+        ownerName,
+        ownerPhone: ownerPhone || undefined,
+        ownerIdNumber: ownerIdNumber || undefined,
+        usageStatus: usageStatus || undefined,
+        plateNeed: plateNeed || undefined,
+        buildingType,
+        floors: floors ? Number(floors) : undefined,
+        area: area ? Number(area) : undefined,
+        soTo: soTo || undefined,
+        soThua: soThua || undefined,
+        latitude: lat,
+        longitude: lng,
+        note: note || undefined,
+      });
+      Alert.alert('Đã gửi', `Nhà số ${houseNumber} đã được cập nhật.`);
+      await exitResurvey(true);
+    } catch (e) {
+      Alert.alert(
+        'Không gửi được',
+        e instanceof ApiError
+          ? e.message
+          : 'Cần có mạng để gửi bản sửa lại — kiểm tra kết nối rồi thử lại. Dữ liệu đang nhập vẫn được giữ.',
+      );
+    } finally {
+      setSaving(false);
     }
   }
 
@@ -404,6 +600,29 @@ export default function SurveyScreen() {
       Alert.alert('Thiếu thông tin', 'Vui lòng nhập đủ Số nhà, Đường, Phường/Xã, Chủ hộ, Phía đường.');
       return;
     }
+    // Tọa độ vẫn là mặc định (quên lấy GPS / GPS lỗi) — nhà sẽ nằm sai chỗ trên bản đồ. Cảnh báo
+    // mềm, vẫn cho lưu (offline-first, có khi không bắt được vị trí ở hiện trường).
+    if (locationSource === 'default') {
+      Alert.alert(
+        'Chưa có tọa độ nhà',
+        'Đang dùng tọa độ mặc định (trung tâm TP. Tây Ninh) — nhà sẽ nằm sai chỗ trên bản đồ.',
+        [
+          { text: 'Hủy', style: 'cancel' },
+          { text: 'Lấy GPS', onPress: () => handleGetGps() },
+          { text: 'Chọn trên bản đồ', onPress: () => setPickerVisible(true) },
+          { text: 'Vẫn lưu', onPress: () => confirmPhotosAndSave(trySyncNow) },
+        ],
+      );
+      return;
+    }
+    await confirmPhotosAndSave(trySyncNow);
+  }
+
+  async function confirmPhotosAndSave(trySyncNow: boolean) {
+    if (resurveyHouse) {
+      await performResurvey();
+      return;
+    }
     // Cảnh báo mềm — không chặn cứng, vì hiện trường nhiều khi không chụp được
     // đủ ảnh (biển hỏng, chủ nhà từ chối...) và app này ưu tiên offline-first.
     if (trySyncNow && (!facadePhotoUri || !platePhotoUri)) {
@@ -420,7 +639,34 @@ export default function SurveyScreen() {
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
       <WardSelectorBar />
 
-      {activeAssignment && (
+      {(resurveyHouseId || resurveyHouse) && (
+        <View style={styles.resurveyBanner}>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.resurveyBannerTitle}>
+              {resurveyHouse
+                ? `Đang khảo sát lại nhà số ${resurveyHouse.houseNumber} ${resurveyHouse.street}`
+                : 'Đang tải nhà cần khảo sát lại…'}
+            </Text>
+            {!!resurveyHouse?.revisitReason && (
+              <Text style={styles.resurveyBannerSub}>Lý do: {resurveyHouse.revisitReason}</Text>
+            )}
+            {resurveyHouse && (
+              <Text style={styles.resurveyBannerSub}>
+                Nhà đã có {resurveyHouse.photos?.length ?? 0} ảnh — ảnh chọn thêm ở dưới sẽ được bổ sung. Cần có mạng để gửi.
+              </Text>
+            )}
+          </View>
+          {resurveyLoading ? (
+            <ActivityIndicator color="#b91c1c" />
+          ) : (
+            <TouchableOpacity onPress={handleCancelResurvey}>
+              <Text style={styles.resurveyBannerClear}>Thoát</Text>
+            </TouchableOpacity>
+          )}
+        </View>
+      )}
+
+      {activeAssignment && !resurveyHouseId && (
         <View style={styles.assignmentBanner}>
           <View style={{ flex: 1 }}>
             <Text style={styles.assignmentBannerTitle}>
@@ -437,7 +683,50 @@ export default function SurveyScreen() {
       )}
 
       <View style={styles.card}>
-        <Text style={styles.sectionTitle}>1. Thông Tin Chủ Hộ & Hiện Trạng</Text>
+        <Text style={styles.sectionTitle}>1. Tọa Độ Vị Trí GPS</Text>
+        {/* Xếp dọc (tọa độ 1 dòng riêng, 2 nút chia đôi hàng dưới) — để chung 1 hàng thì màn hình
+            hẹp bị tràn/ép nút. */}
+        <View style={[styles.gpsValueBox, locationSource === 'default' && styles.gpsValueBoxWarn]}>
+          <Text style={styles.gpsText} numberOfLines={1} adjustsFontSizeToFit>
+            {lat.toFixed(5)}, {lng.toFixed(5)}
+          </Text>
+        </View>
+        <Text
+          style={[
+            styles.gpsStatus,
+            locationSource === 'default' && styles.gpsStatusWarn,
+            locationSource === 'gps' && styles.gpsStatusGps,
+            locationSource === 'map' && styles.gpsStatusMap,
+          ]}
+        >
+          {gettingGps
+            ? 'Đang lấy vị trí GPS…'
+            : locationSource === 'gps'
+              ? 'Vị trí từ GPS'
+              : locationSource === 'map'
+                ? 'Vị trí chọn trên bản đồ'
+                : 'Chưa lấy vị trí — đang dùng tọa độ mặc định'}
+        </Text>
+        <View style={styles.gpsActions}>
+          <TouchableOpacity style={styles.gpsButton} onPress={() => handleGetGps()} disabled={gettingGps}>
+            {gettingGps ? (
+              <ActivityIndicator color="#2563eb" size="small" />
+            ) : (
+              <Text style={styles.gpsButtonText} numberOfLines={1}>
+                Cập nhật GPS
+              </Text>
+            )}
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.gpsButton} onPress={() => setPickerVisible(true)}>
+            <Text style={styles.gpsButtonText} numberOfLines={1}>
+              Chọn trên map
+            </Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+
+      <View style={styles.card}>
+        <Text style={styles.sectionTitle}>2. Thông Tin Chủ Hộ</Text>
         <Field label="Họ tên chủ hộ *" value={ownerName} onChangeText={setOwnerName} />
         <Field
           label="Số điện thoại"
@@ -445,21 +734,6 @@ export default function SurveyScreen() {
           onChangeText={setOwnerPhone}
           keyboardType="phone-pad"
         />
-
-        <Text style={styles.label}>Hiện trạng nhà</Text>
-        <View style={styles.chipRow}>
-          {USAGE_STATUSES.map((s) => (
-            <TouchableOpacity
-              key={s}
-              onPress={() => setUsageStatus(usageStatus === s ? '' : s)}
-              style={[styles.chip, usageStatus === s && styles.chipActive]}
-            >
-              <Text style={[styles.chipText, usageStatus === s && styles.chipTextActive]}>
-                {HOUSE_USAGE_STATUS_LABELS[s]}
-              </Text>
-            </TouchableOpacity>
-          ))}
-        </View>
 
         <Text style={styles.label}>Nhu cầu gắn/lắp biển số nhà</Text>
         <View style={styles.chipRow}>
@@ -489,7 +763,7 @@ export default function SurveyScreen() {
       </View>
 
       <View style={styles.card}>
-        <Text style={styles.sectionTitle}>2. Địa Chỉ & Tuyến Đường</Text>
+        <Text style={styles.sectionTitle}>3. Địa Chỉ & Tuyến Đường</Text>
         <Field label="Số nhà đề xuất *" value={houseNumber} onChangeText={setHouseNumber} />
         <AddressPickerField
           label="Đường/Phố"
@@ -566,36 +840,18 @@ export default function SurveyScreen() {
       </View>
 
       <View style={styles.card}>
-        <Text style={styles.sectionTitle}>3. Tọa Độ Vị Trí GPS & Ghi Chú</Text>
-        <View style={styles.gpsRow}>
-          <Text style={styles.gpsText}>
-            {lat.toFixed(5)}, {lng.toFixed(5)}
-          </Text>
-          <View style={{ flexDirection: 'row', gap: 8 }}>
-            <TouchableOpacity style={styles.gpsButton} onPress={handleGetGps} disabled={gettingGps}>
-              {gettingGps ? (
-                <ActivityIndicator color="#2563eb" size="small" />
-              ) : (
-                <Text style={styles.gpsButtonText}>Cập nhật GPS</Text>
-              )}
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.gpsButton} onPress={() => setPickerVisible(true)}>
-              <Text style={styles.gpsButtonText}>Chọn trên map</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-
-        <Field label="Ghi chú khảo sát" value={note} onChangeText={setNote} multiline />
-      </View>
-
-      <View style={styles.card}>
-        <Text style={styles.sectionTitle}>4. Công Trình</Text>
+        <Text style={styles.sectionTitle}>4. Công Trình & Hiện Trạng</Text>
         <Text style={styles.label}>Loại công trình</Text>
         <View style={styles.chipRow}>
           {BUILDING_TYPES.map((t) => (
             <TouchableOpacity
               key={t}
-              onPress={() => setBuildingType(t)}
+              onPress={() => {
+                // Hiện trạng là mục con của loại công trình — đổi sang loại khác thì bỏ chọn
+                // hiện trạng cũ để người khảo sát chọn lại cho đúng loại mới.
+                if (t !== buildingType) setUsageStatus('');
+                setBuildingType(t);
+              }}
               style={[styles.chip, buildingType === t && styles.chipActive]}
             >
               <Text style={[styles.chipText, buildingType === t && styles.chipTextActive]}>
@@ -603,6 +859,23 @@ export default function SurveyScreen() {
               </Text>
             </TouchableOpacity>
           ))}
+        </View>
+
+        <View style={styles.subGroup}>
+          <Text style={styles.label}>Hiện trạng số nhà hiện tại</Text>
+          <View style={styles.chipRow}>
+            {USAGE_STATUSES.map((s) => (
+              <TouchableOpacity
+                key={s}
+                onPress={() => setUsageStatus(usageStatus === s ? '' : s)}
+                style={[styles.chip, usageStatus === s && styles.chipActive]}
+              >
+                <Text style={[styles.chipText, usageStatus === s && styles.chipTextActive]}>
+                  {HOUSE_USAGE_STATUS_LABELS[s]}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
         </View>
 
         <View style={styles.row2}>
@@ -660,7 +933,13 @@ export default function SurveyScreen() {
         </View>
       </View>
 
+      <View style={styles.card}>
+        <Text style={styles.sectionTitle}>6. Ghi Chú</Text>
+        <Field label="Ghi chú khảo sát" value={note} onChangeText={setNote} multiline />
+      </View>
+
       <View style={styles.actions}>
+        {!resurveyHouseId && (
         <TouchableOpacity
           style={[styles.actionButton, styles.actionOffline]}
           onPress={() => handleSave(false)}
@@ -668,6 +947,7 @@ export default function SurveyScreen() {
         >
           <Text style={styles.actionOfflineText}>Lưu Tạm (Offline)</Text>
         </TouchableOpacity>
+        )}
         <TouchableOpacity
           style={[styles.actionButton, styles.actionSubmit]}
           onPress={() => handleSave(true)}
@@ -676,7 +956,9 @@ export default function SurveyScreen() {
           {saving ? (
             <ActivityIndicator color="#fff" />
           ) : (
-            <Text style={styles.actionSubmitText}>Lưu & Gửi Duyệt</Text>
+            <Text style={styles.actionSubmitText}>
+              {resurveyHouseId ? 'Lưu & Gửi (sửa lại)' : 'Lưu & Gửi Duyệt'}
+            </Text>
           )}
         </TouchableOpacity>
       </View>
@@ -689,6 +971,7 @@ export default function SurveyScreen() {
         onConfirm={(newLat, newLng) => {
           setLat(newLat);
           setLng(newLng);
+          setLocationSource('map');
           setPickerVisible(false);
         }}
       />
@@ -874,9 +1157,27 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   sectionTitle: { fontSize: 12, fontWeight: '700', color: '#1d4ed8', textTransform: 'uppercase' },
-  gpsRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  gpsText: { fontFamily: 'monospace', fontSize: 13, color: '#0f172a' },
+  gpsValueBox: {
+    borderWidth: 1,
+    borderColor: '#cbd5e1',
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 10,
+    backgroundColor: '#f8fafc',
+    marginTop: 4,
+  },
+  gpsText: { fontFamily: 'monospace', fontSize: 15, color: '#0f172a', textAlign: 'center' },
+  gpsValueBoxWarn: { borderColor: '#f59e0b', backgroundColor: '#fffbeb' },
+  gpsStatus: { fontSize: 11, fontWeight: '600', color: '#64748b', textAlign: 'center' },
+  gpsStatusWarn: { color: '#b45309' },
+  gpsStatusGps: { color: '#047857' },
+  gpsStatusMap: { color: '#1d4ed8' },
+  gpsActions: { flexDirection: 'row', gap: 8 },
   gpsButton: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: 40,
     backgroundColor: '#eff6ff',
     borderColor: '#bfdbfe',
     borderWidth: 1,
@@ -885,6 +1186,20 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
   },
   gpsButtonText: { color: '#1d4ed8', fontWeight: '700', fontSize: 12 },
+  resurveyBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    backgroundColor: '#fef2f2',
+    borderWidth: 1,
+    borderColor: '#fecaca',
+    borderRadius: 12,
+    padding: 12,
+    marginBottom: 12,
+  },
+  resurveyBannerTitle: { fontSize: 13, fontWeight: '700', color: '#991b1b' },
+  resurveyBannerSub: { fontSize: 11, color: '#b91c1c', marginTop: 2 },
+  resurveyBannerClear: { fontSize: 12, fontWeight: '700', color: '#991b1b' },
   assignmentBanner: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -912,6 +1227,8 @@ const styles = StyleSheet.create({
   row2: { flexDirection: 'row', gap: 10 },
   half: { flex: 1 },
   chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 4 },
+  /** Khối con thụt lề (vd Hiện trạng dưới Loại công trình) — viền trái thể hiện quan hệ cha–con. */
+  subGroup: { marginLeft: 8, paddingLeft: 10, borderLeftWidth: 2, borderLeftColor: '#bfdbfe' },
   chip: {
     paddingVertical: 6,
     paddingHorizontal: 10,

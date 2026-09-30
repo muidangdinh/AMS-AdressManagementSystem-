@@ -84,6 +84,36 @@ export class HousePlatesService {
     });
   }
 
+  /**
+   * Tự duyệt nhà (House.status → APPROVED) nếu chưa duyệt, kèm ghi `approvedAt` (Ngày cấp) và
+   * lịch sử — dùng chung cho lúc CẤP biển (`issue`, điểm tự duyệt chính) và lúc xác nhận GẮN biển
+   * (`install`, giữ làm lưới an toàn cho trường hợp hiếm nhà bị đổi khỏi APPROVED giữa chừng).
+   * Không đụng gì nếu nhà đã APPROVED từ trước (giữ nguyên `approvedAt` gốc).
+   */
+  private async approveHouseIfNeeded(
+    tx: Prisma.TransactionClient,
+    houseId: string,
+    userId: string,
+  ) {
+    const house = await tx.house.findUniqueOrThrow({ where: { id: houseId } });
+    if (house.status === HouseStatus.APPROVED) return;
+
+    await tx.house.update({
+      where: { id: houseId },
+      data: { status: HouseStatus.APPROVED, approvedAt: new Date() },
+    });
+    await tx.houseHistory.create({
+      data: {
+        houseId,
+        action: 'UPDATE',
+        changes: [
+          { field: 'status', old: house.status, new: HouseStatus.APPROVED },
+        ] as unknown as Prisma.InputJsonValue,
+        changedById: userId,
+      },
+    });
+  }
+
   /** Cấp biển mới / cấp đổi / cấp lại (6.2-6.4) — 1 endpoint, phân biệt bằng `reason`. */
   async issue(dto: IssuePlateDto, userId: string) {
     const houseId = dto.houseId;
@@ -124,6 +154,9 @@ export class HousePlatesService {
         include: PLATE_INCLUDE,
       });
 
+      // Cấp biển xong coi như số nhà đã hoàn tất — tự duyệt luôn, không cần đợi tới lúc gắn biển.
+      await this.approveHouseIfNeeded(tx, houseId, userId);
+
       return created;
     });
   }
@@ -147,23 +180,8 @@ export class HousePlatesService {
         include: PLATE_INCLUDE,
       });
 
-      const house = await tx.house.findUniqueOrThrow({ where: { id: plate.houseId } });
-      if (house.status !== HouseStatus.APPROVED) {
-        await tx.house.update({
-          where: { id: plate.houseId },
-          data: { status: HouseStatus.APPROVED },
-        });
-        await tx.houseHistory.create({
-          data: {
-            houseId: plate.houseId,
-            action: 'UPDATE',
-            changes: [
-              { field: 'status', old: house.status, new: HouseStatus.APPROVED },
-            ] as unknown as Prisma.InputJsonValue,
-            changedById: userId,
-          },
-        });
-      }
+      // Lưới an toàn — bình thường nhà đã được duyệt từ lúc cấp biển (`issue`) rồi.
+      await this.approveHouseIfNeeded(tx, plate.houseId, userId);
 
       return updated;
     });

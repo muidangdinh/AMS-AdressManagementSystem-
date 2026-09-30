@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
+import { ScheduleModule } from '@nestjs/schedule';
 import { APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
 import { PrismaModule } from './prisma/prisma.module';
 import { HealthModule } from './health/health.module';
@@ -14,6 +15,7 @@ import { HousePlatesModule } from './house-plates/house-plates.module';
 import { SurveysModule } from './surveys/surveys.module';
 import { CasesModule } from './cases/cases.module';
 import { DashboardModule } from './dashboard/dashboard.module';
+import { NotificationsModule } from './notifications/notifications.module';
 import { JwtAuthGuard } from './auth/guards/jwt-auth.guard';
 import { RolesGuard } from './auth/guards/roles.guard';
 import { AuditInterceptor } from './audit/audit.interceptor';
@@ -29,6 +31,7 @@ import { AuditInterceptor } from './audit/audit.interceptor';
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
+    ScheduleModule.forRoot(),
     PrismaModule,
     AuditModule,
     HealthModule,
@@ -42,6 +45,7 @@ import { AuditInterceptor } from './audit/audit.interceptor';
     SurveysModule,
     CasesModule,
     DashboardModule,
+    NotificationsModule,
   ],
   providers: [
     { provide: APP_GUARD, useClass: JwtAuthGuard },
