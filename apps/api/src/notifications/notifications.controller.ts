@@ -1,6 +1,6 @@
 import { Body, Controller, Get, Param, Post, Query } from '@nestjs/common';
-import { Role } from '@prisma/client';
-import { Roles } from '../auth/decorators/roles.decorator';
+import { RequirePermissions } from '../auth/decorators/permissions.decorator';
+import { PERMISSIONS } from '../auth/permissions';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { AuthenticatedUser } from '../auth/types/authenticated-user';
 import { NotificationsService } from './notifications.service';
@@ -34,14 +34,14 @@ export class NotificationsController {
     return this.notificationsService.markAllRead(user.id);
   }
 
-  @Roles(Role.ADMIN, Role.CADASTRAL)
+  @RequirePermissions(PERMISSIONS.NOTIFICATION_REMIND)
   @Post('remind')
   remind(@Body() dto: RemindDto, @CurrentUser() user: AuthenticatedUser) {
     return this.notificationsService.remind(dto, user.id);
   }
 
   /** Chạy quét nhắc hạn ngay (kiểm thử/vận hành) — job định kỳ vẫn chạy bình thường. */
-  @Roles(Role.ADMIN)
+  @RequirePermissions(PERMISSIONS.NOTIFICATION_RUN_REMINDERS)
   @Post('run-reminders')
   runReminders() {
     return this.reminderScheduler.scanDeadlines();

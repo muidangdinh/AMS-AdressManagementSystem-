@@ -1,6 +1,6 @@
 import { Body, Controller, Delete, Get, Param, Patch, Post, Query } from '@nestjs/common';
-import { Role } from '@prisma/client';
-import { Roles } from '../auth/decorators/roles.decorator';
+import { RequirePermissions } from '../auth/decorators/permissions.decorator';
+import { PERMISSIONS } from '../auth/permissions';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { AuthenticatedUser } from '../auth/types/authenticated-user';
 import { CampaignsService } from './campaigns.service';
@@ -23,19 +23,19 @@ export class CampaignsController {
     return this.campaignsService.findOne(id);
   }
 
-  @Roles(Role.ADMIN, Role.CADASTRAL)
+  @RequirePermissions(PERMISSIONS.SURVEY_MANAGE)
   @Post()
   create(@Body() dto: CreateCampaignDto, @CurrentUser() user: AuthenticatedUser) {
     return this.campaignsService.create(dto, user.id);
   }
 
-  @Roles(Role.ADMIN, Role.CADASTRAL)
+  @RequirePermissions(PERMISSIONS.SURVEY_MANAGE)
   @Patch(':id')
   update(@Param('id') id: string, @Body() dto: UpdateCampaignDto) {
     return this.campaignsService.update(id, dto);
   }
 
-  @Roles(Role.ADMIN, Role.CADASTRAL)
+  @RequirePermissions(PERMISSIONS.SURVEY_MANAGE)
   @Delete(':id')
   remove(@Param('id') id: string) {
     return this.campaignsService.remove(id);

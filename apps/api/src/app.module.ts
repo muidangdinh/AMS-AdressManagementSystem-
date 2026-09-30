@@ -16,8 +16,9 @@ import { SurveysModule } from './surveys/surveys.module';
 import { CasesModule } from './cases/cases.module';
 import { DashboardModule } from './dashboard/dashboard.module';
 import { NotificationsModule } from './notifications/notifications.module';
+import { RolesModule } from './roles/roles.module';
 import { JwtAuthGuard } from './auth/guards/jwt-auth.guard';
-import { RolesGuard } from './auth/guards/roles.guard';
+import { PermissionsGuard } from './auth/guards/permissions.guard';
 import { AuditInterceptor } from './audit/audit.interceptor';
 
 /**
@@ -25,8 +26,8 @@ import { AuditInterceptor } from './audit/audit.interceptor';
  * Cấu trúc theo phân hệ: mỗi phân hệ (house, survey, auth...) sẽ là 1 module
  * được import vào đây ở các phase sau.
  *
- * JwtAuthGuard + RolesGuard áp dụng toàn cục theo thứ tự: xác thực trước,
- * phân quyền sau. Route đánh dấu @Public() bỏ qua cả hai bước.
+ * JwtAuthGuard + PermissionsGuard áp dụng toàn cục theo thứ tự: xác thực trước,
+ * phân quyền (theo permission — Phase 17) sau. Route @Public() bỏ qua cả hai bước.
  */
 @Module({
   imports: [
@@ -46,10 +47,11 @@ import { AuditInterceptor } from './audit/audit.interceptor';
     CasesModule,
     DashboardModule,
     NotificationsModule,
+    RolesModule,
   ],
   providers: [
     { provide: APP_GUARD, useClass: JwtAuthGuard },
-    { provide: APP_GUARD, useClass: RolesGuard },
+    { provide: APP_GUARD, useClass: PermissionsGuard },
     { provide: APP_INTERCEPTOR, useClass: AuditInterceptor },
   ],
 })

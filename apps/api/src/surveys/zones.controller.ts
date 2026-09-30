@@ -1,6 +1,6 @@
 import { Body, Controller, Delete, Get, Param, Patch, Post, Query } from '@nestjs/common';
-import { Role } from '@prisma/client';
-import { Roles } from '../auth/decorators/roles.decorator';
+import { RequirePermissions } from '../auth/decorators/permissions.decorator';
+import { PERMISSIONS } from '../auth/permissions';
 import { ZonesService } from './zones.service';
 import { CreateZoneDto } from './dto/create-zone.dto';
 import { UpdateZoneDto } from './dto/update-zone.dto';
@@ -21,19 +21,19 @@ export class ZonesController {
     return this.zonesService.findOne(id);
   }
 
-  @Roles(Role.ADMIN, Role.CADASTRAL)
+  @RequirePermissions(PERMISSIONS.SURVEY_MANAGE)
   @Post()
   create(@Body() dto: CreateZoneDto) {
     return this.zonesService.create(dto);
   }
 
-  @Roles(Role.ADMIN, Role.CADASTRAL)
+  @RequirePermissions(PERMISSIONS.SURVEY_MANAGE)
   @Patch(':id')
   update(@Param('id') id: string, @Body() dto: UpdateZoneDto) {
     return this.zonesService.update(id, dto);
   }
 
-  @Roles(Role.ADMIN, Role.CADASTRAL)
+  @RequirePermissions(PERMISSIONS.SURVEY_MANAGE)
   @Delete(':id')
   remove(@Param('id') id: string) {
     return this.zonesService.remove(id);

@@ -1,15 +1,15 @@
 import { Body, Controller, Delete, Get, Param, Patch, Post } from '@nestjs/common';
-import { Role } from '@prisma/client';
-import { Roles } from '../auth/decorators/roles.decorator';
+import { RequirePermissions } from '../auth/decorators/permissions.decorator';
+import { PERMISSIONS } from '../auth/permissions';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { AuthenticatedUser } from '../auth/types/authenticated-user';
 import { UsersService } from './users.service';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
 
-/** Toàn bộ quản lý người dùng chỉ dành cho vai trò ADMIN (X. Quản trị hệ thống). */
+/** Toàn bộ quản lý người dùng yêu cầu quyền user:manage (X. Quản trị hệ thống). */
 @Controller('users')
-@Roles(Role.ADMIN)
+@RequirePermissions(PERMISSIONS.USER_MANAGE)
 export class UsersController {
   constructor(private readonly usersService: UsersService) {}
 

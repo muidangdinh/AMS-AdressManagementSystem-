@@ -5,6 +5,7 @@
 // ============================================================
 import { PrismaClient, Role } from '@prisma/client';
 import * as bcrypt from 'bcryptjs';
+import { PERMISSION_CATALOG, DEFAULT_ROLES, LEGACY_ROLE_TO_CODE } from '../src/auth/permissions';
 
 const prisma = new PrismaClient();
 
@@ -27,6 +28,73 @@ async function seedAppConfig() {
     });
   }
   console.log('Đã seed cấu hình hệ thống (province.name, app.shortName).');
+}
+
+/**
+ * PHASE 17 — Đồng bộ danh mục QUYỀN từ code vào bảng `permission`. Idempotent:
+ * upsert theo code, cập nhật nhãn/nhóm nếu đổi. Không xóa quyền cũ tự động.
+ */
+async function seedPermissions() {
+  for (const p of PERMISSION_CATALOG) {
+    await prisma.permission.upsert({
+      where: { code: p.code },
+      update: { name: p.name, group: p.group },
+      create: { code: p.code, name: p.name, group: p.group },
+    });
+  }
+  console.log(`Đã đồng bộ ${PERMISSION_CATALOG.length} quyền vào danh mục permission.`);
+}
+
+/**
+ * PHASE 17 — Seed 3 vai trò hệ thống (isSystem=true) GIỮ NGUYÊN hành vi cũ.
+ * Chỉ gán bộ quyền mặc định khi TẠO MỚI; lần chạy sau KHÔNG ghi đè để tôn trọng
+ * tinh chỉnh quyền do admin thực hiện qua UI.
+ */
+async function seedRoles() {
+  for (const def of DEFAULT_ROLES) {
+    const existing = await prisma.appRole.findUnique({ where: { code: def.code } });
+    const role = existing
+      ? await prisma.appRole.update({ where: { code: def.code }, data: { isSystem: true } })
+      : await prisma.appRole.create({
+          data: {
+            code: def.code,
+            name: def.name,
+            description: def.description,
+            isSystem: true,
+          },
+        });
+    if (!existing) {
+      const perms = await prisma.permission.findMany({
+        where: { code: { in: def.permissions } },
+      });
+      await prisma.rolePermission.createMany({
+        data: perms.map((p) => ({ roleId: role.id, permissionId: p.id })),
+        skipDuplicates: true,
+      });
+    }
+  }
+  console.log(`Đã seed ${DEFAULT_ROLES.length} vai trò hệ thống (admin/cadastral/surveyor).`);
+}
+
+/**
+ * PHASE 17 — Backfill: mỗi user chưa có vai trò động sẽ được gán 1 vai trò suy
+ * từ cột `role` (enum legacy). Idempotent: bỏ qua user đã có vai trò.
+ */
+async function backfillUserRoles() {
+  const users = await prisma.user.findMany({ include: { roleLinks: true } });
+  const roles = await prisma.appRole.findMany();
+  const byCode = new Map(roles.map((r) => [r.code, r.id]));
+  let linked = 0;
+  for (const u of users) {
+    if (u.roleLinks.length > 0) continue;
+    const code = LEGACY_ROLE_TO_CODE[u.role];
+    const roleId = code ? byCode.get(code) : undefined;
+    if (roleId) {
+      await prisma.userRoleLink.create({ data: { userId: u.id, roleId } });
+      linked += 1;
+    }
+  }
+  console.log(`Đã backfill vai trò động cho ${linked} người dùng từ cột role cũ.`);
 }
 
 async function seedAdmin() {
@@ -145,7 +213,10 @@ async function backfillHouseAddressLinks() {
 
 async function main() {
   await seedAppConfig();
+  await seedPermissions();
+  await seedRoles();
   await seedAdmin();
+  await backfillUserRoles();
   await seedAddressCatalogSample();
   await backfillHouseAddressLinks();
 }

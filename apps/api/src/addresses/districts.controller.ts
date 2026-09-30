@@ -1,6 +1,6 @@
 import { Body, Controller, Delete, Get, HttpCode, Param, Patch, Post } from '@nestjs/common';
-import { Role } from '@prisma/client';
-import { Roles } from '../auth/decorators/roles.decorator';
+import { RequirePermissions } from '../auth/decorators/permissions.decorator';
+import { PERMISSIONS } from '../auth/permissions';
 import { DistrictsService } from './districts.service';
 import { CreateDistrictDto } from './dto/create-district.dto';
 import { UpdateDistrictDto } from './dto/update-district.dto';
@@ -24,19 +24,19 @@ export class DistrictsController {
     return this.districtsService.findOne(id);
   }
 
-  @Roles(Role.ADMIN)
+  @RequirePermissions(PERMISSIONS.ADDRESS_WRITE)
   @Post()
   create(@Body() dto: CreateDistrictDto) {
     return this.districtsService.create(dto);
   }
 
-  @Roles(Role.ADMIN)
+  @RequirePermissions(PERMISSIONS.ADDRESS_WRITE)
   @Patch(':id')
   update(@Param('id') id: string, @Body() dto: UpdateDistrictDto) {
     return this.districtsService.update(id, dto);
   }
 
-  @Roles(Role.ADMIN)
+  @RequirePermissions(PERMISSIONS.ADDRESS_WRITE)
   @Delete(':id')
   @HttpCode(204)
   remove(@Param('id') id: string) {

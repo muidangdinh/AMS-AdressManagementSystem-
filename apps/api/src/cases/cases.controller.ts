@@ -1,6 +1,6 @@
 import { Body, Controller, Get, Param, Patch, Post, Query } from '@nestjs/common';
-import { Role } from '@prisma/client';
-import { Roles } from '../auth/decorators/roles.decorator';
+import { RequirePermissions } from '../auth/decorators/permissions.decorator';
+import { PERMISSIONS } from '../auth/permissions';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { AuthenticatedUser } from '../auth/types/authenticated-user';
 import { CasesService } from './cases.service';
@@ -28,7 +28,7 @@ export class CasesController {
   }
 
   /** Đặt trước ':id' — không thì Nest khớp "staff" vào tham số :id. */
-  @Roles(Role.ADMIN, Role.CADASTRAL)
+  @RequirePermissions(PERMISSIONS.CASE_MANAGE)
   @Get('staff')
   listStaff() {
     return this.casesService.listStaff();
@@ -39,25 +39,25 @@ export class CasesController {
     return this.casesService.findOne(id);
   }
 
-  @Roles(Role.ADMIN, Role.CADASTRAL)
+  @RequirePermissions(PERMISSIONS.CASE_MANAGE)
   @Post()
   create(@Body() dto: CreateCaseDto, @CurrentUser() user: AuthenticatedUser) {
     return this.casesService.create(dto, user.id);
   }
 
-  @Roles(Role.ADMIN, Role.CADASTRAL)
+  @RequirePermissions(PERMISSIONS.CASE_MANAGE)
   @Patch(':id')
   update(@Param('id') id: string, @Body() dto: UpdateCaseDto) {
     return this.casesService.update(id, dto);
   }
 
-  @Roles(Role.ADMIN, Role.CADASTRAL)
+  @RequirePermissions(PERMISSIONS.CASE_MANAGE)
   @Post(':id/assign')
   assign(@Param('id') id: string, @Body() dto: AssignCaseDto, @CurrentUser() user: AuthenticatedUser) {
     return this.casesService.assign(id, dto, user.id);
   }
 
-  @Roles(Role.ADMIN, Role.CADASTRAL)
+  @RequirePermissions(PERMISSIONS.CASE_MANAGE)
   @Post(':id/link-house')
   linkHouse(
     @Param('id') id: string,
@@ -67,25 +67,25 @@ export class CasesController {
     return this.casesService.linkHouse(id, dto, user.id);
   }
 
-  @Roles(Role.ADMIN, Role.CADASTRAL)
+  @RequirePermissions(PERMISSIONS.CASE_MANAGE)
   @Post(':id/advance')
   advance(@Param('id') id: string, @CurrentUser() user: AuthenticatedUser) {
     return this.casesService.advance(id, user.id);
   }
 
-  @Roles(Role.ADMIN, Role.CADASTRAL)
+  @RequirePermissions(PERMISSIONS.CASE_MANAGE)
   @Post(':id/reject')
   reject(@Param('id') id: string, @Body() dto: RejectCaseDto, @CurrentUser() user: AuthenticatedUser) {
     return this.casesService.reject(id, dto, user.id);
   }
 
-  @Roles(Role.ADMIN, Role.CADASTRAL)
+  @RequirePermissions(PERMISSIONS.CASE_MANAGE)
   @Post(':id/reopen')
   reopen(@Param('id') id: string, @CurrentUser() user: AuthenticatedUser) {
     return this.casesService.reopen(id, user.id);
   }
 
-  @Roles(Role.ADMIN, Role.CADASTRAL)
+  @RequirePermissions(PERMISSIONS.CASE_MANAGE)
   @Post(':id/notes')
   addNote(@Param('id') id: string, @Body() dto: AddNoteDto, @CurrentUser() user: AuthenticatedUser) {
     return this.casesService.addNote(id, dto, user.id);

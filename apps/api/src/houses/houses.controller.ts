@@ -13,8 +13,8 @@ import {
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import type { Response } from 'express';
-import { Role } from '@prisma/client';
-import { Roles } from '../auth/decorators/roles.decorator';
+import { RequirePermissions } from '../auth/decorators/permissions.decorator';
+import { PERMISSIONS } from '../auth/permissions';
 import { Public } from '../auth/decorators/public.decorator';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { AuthenticatedUser } from '../auth/types/authenticated-user';
@@ -114,13 +114,13 @@ export class HousesController {
   // chính là endpoint mobile SurveyScreen/surveyStore.syncDraft() gọi để đồng bộ hồ sơ khảo sát.
   // Thiếu SURVEYOR ở đây là lỗi có sẵn từ trước Phase 9 — khiến cán bộ khảo sát chưa bao giờ
   // đồng bộ hồ sơ lên server thành công được (chỉ lưu offline mãi mãi).
-  @Roles(Role.ADMIN, Role.CADASTRAL, Role.SURVEYOR)
+  @RequirePermissions(PERMISSIONS.HOUSE_CREATE)
   @Post()
   create(@Body() dto: CreateHouseDto, @CurrentUser() user: AuthenticatedUser) {
     return this.housesService.create(dto, user.id);
   }
 
-  @Roles(Role.ADMIN, Role.CADASTRAL)
+  @RequirePermissions(PERMISSIONS.HOUSE_UPDATE)
   @Patch(':id')
   update(
     @Param('id') id: string,
@@ -134,7 +134,7 @@ export class HousesController {
    * Phase 11 Đợt 2b — cán bộ khảo sát sửa lại đúng nhà bị yêu cầu khảo sát lại (BR-85). PATCH ở trên vẫn
    * chỉ ADMIN/CADASTRAL; service tự kiểm tra nhà có cờ, đúng người được giao, nhiệm vụ đang thực hiện.
    */
-  @Roles(Role.SURVEYOR)
+  @RequirePermissions(PERMISSIONS.HOUSE_RESURVEY)
   @Post(':id/resurvey')
   resurvey(
     @Param('id') id: string,
@@ -145,7 +145,7 @@ export class HousesController {
   }
 
   // Cùng lý do với create() ở trên — surveyStore.syncDraft() upload ảnh ngay sau khi tạo House.
-  @Roles(Role.ADMIN, Role.CADASTRAL, Role.SURVEYOR)
+  @RequirePermissions(PERMISSIONS.HOUSE_PHOTO_ADD)
   @Post(':id/photos')
   @UseInterceptors(FileInterceptor('file', housePhotoMulterOptions))
   uploadPhoto(
@@ -157,7 +157,7 @@ export class HousesController {
     return this.housesService.addPhoto(id, file, type, user.id);
   }
 
-  @Roles(Role.ADMIN, Role.CADASTRAL)
+  @RequirePermissions(PERMISSIONS.HOUSE_PHOTO_DELETE)
   @Delete(':id/photos/:photoId')
   removePhoto(
     @Param('id') id: string,

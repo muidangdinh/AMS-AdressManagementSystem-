@@ -1,5 +1,4 @@
-import { IsEnum, IsOptional, IsString, MinLength } from 'class-validator';
-import { Role } from '@prisma/client';
+import { ArrayNotEmpty, IsArray, IsOptional, IsString, MinLength } from 'class-validator';
 
 export class CreateUserDto {
   @IsString()
@@ -14,8 +13,11 @@ export class CreateUserDto {
   @MinLength(2)
   fullName: string;
 
-  @IsEnum(Role)
-  role: Role;
+  /** PHASE 17 — danh sách id vai trò động gán cho user (ít nhất 1). */
+  @IsArray()
+  @ArrayNotEmpty()
+  @IsString({ each: true })
+  roleIds: string[];
 
   @IsOptional()
   @IsString()

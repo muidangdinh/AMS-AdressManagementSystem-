@@ -5,9 +5,11 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { AssignmentStatus, NotificationEntity, NotificationType, Prisma, Role } from '@prisma/client';
+import { AssignmentStatus, NotificationEntity, NotificationType, Prisma } from '@prisma/client';
 import { NotificationsService } from '../notifications/notifications.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { PERMISSIONS } from '../auth/permissions';
+import { usersWithPermission } from '../auth/user-access';
 import { CreateAssignmentDto } from './dto/create-assignment.dto';
 import { UpdateAssignmentDto } from './dto/update-assignment.dto';
 import { ListAssignmentsQueryDto } from './dto/list-assignments-query.dto';
@@ -127,7 +129,7 @@ export class AssignmentsService {
 
   private async listStaffIds(): Promise<string[]> {
     const staff = await this.prisma.user.findMany({
-      where: { role: { in: [Role.ADMIN, Role.CADASTRAL] }, isActive: true },
+      where: usersWithPermission(PERMISSIONS.ASSIGNMENT_REVIEW),
       select: { id: true },
     });
     return staff.map((s) => s.id);
@@ -180,7 +182,7 @@ export class AssignmentsService {
    */
   listSurveyors() {
     return this.prisma.user.findMany({
-      where: { role: Role.SURVEYOR, isActive: true },
+      where: usersWithPermission(PERMISSIONS.ASSIGNMENT_EXECUTE),
       select: { id: true, fullName: true, username: true },
       orderBy: { fullName: 'asc' },
     });
@@ -215,9 +217,11 @@ export class AssignmentsService {
    * Danh sách nhà của nhiệm vụ (modal chọn nhà cần khảo sát lại trên web; danh sách nhà cần sửa trên mobile).
    * SURVEYOR chỉ xem được nhiệm vụ của chính mình. `revisitOnly` = chỉ các nhà còn cờ khảo sát lại.
    */
-  async listHouses(id: string, user: { id: string; role: Role }, revisitOnly: boolean) {
+  async listHouses(id: string, user: { id: string; permissions: string[] }, revisitOnly: boolean) {
     const assignment = await this.findOneOrThrow(id);
-    if (user.role === Role.SURVEYOR && assignment.assigneeId !== user.id) {
+    // Người không có quyền nghiệm thu (chỉ đi khảo sát) chỉ xem nhà của nhiệm vụ của mình.
+    const canReviewAll = user.permissions.includes(PERMISSIONS.ASSIGNMENT_REVIEW);
+    if (!canReviewAll && assignment.assigneeId !== user.id) {
       throw new ForbiddenException('Chỉ xem được nhà của nhiệm vụ được giao cho mình');
     }
     return this.prisma.house.findMany({
@@ -246,10 +250,18 @@ export class AssignmentsService {
     const zone = await this.prisma.surveyZone.findUnique({ where: { id: dto.zoneId } });
     if (!zone) throw new NotFoundException('Không tìm thấy phân vùng khảo sát');
 
-    const assignee = await this.prisma.user.findUnique({ where: { id: dto.assigneeId } });
+    const assignee = await this.prisma.user.findUnique({
+      where: { id: dto.assigneeId },
+      include: {
+        roleLinks: { include: { role: { include: { permissions: { include: { permission: true } } } } } },
+      },
+    });
     if (!assignee) throw new NotFoundException('Không tìm thấy cán bộ được giao');
-    if (assignee.role !== Role.SURVEYOR) {
-      throw new BadRequestException('Chỉ giao nhiệm vụ khảo sát cho tài khoản vai trò SURVEYOR');
+    const assigneeCanExecute = assignee.roleLinks
+      .filter((l) => l.role.isActive)
+      .some((l) => l.role.permissions.some((rp) => rp.permission.code === PERMISSIONS.ASSIGNMENT_EXECUTE));
+    if (!assigneeCanExecute) {
+      throw new BadRequestException('Chỉ giao nhiệm vụ khảo sát cho tài khoản có quyền thực hiện khảo sát');
     }
     if (!assignee.isActive) {
       throw new BadRequestException('Tài khoản cán bộ này đã bị vô hiệu hóa');

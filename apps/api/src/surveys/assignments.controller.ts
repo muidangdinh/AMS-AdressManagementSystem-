@@ -1,6 +1,6 @@
 import { Body, Controller, Delete, Get, Param, Patch, Post, Query } from '@nestjs/common';
-import { Role } from '@prisma/client';
-import { Roles } from '../auth/decorators/roles.decorator';
+import { RequirePermissions } from '../auth/decorators/permissions.decorator';
+import { PERMISSIONS } from '../auth/permissions';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { AuthenticatedUser } from '../auth/types/authenticated-user';
 import { AssignmentsService } from './assignments.service';
@@ -26,7 +26,7 @@ export class AssignmentsController {
   }
 
   /** Đặt trước ':id' — không thì Nest khớp "surveyors" vào tham số :id. */
-  @Roles(Role.ADMIN, Role.CADASTRAL)
+  @RequirePermissions(PERMISSIONS.SURVEY_MANAGE)
   @Get('surveyors')
   listSurveyors() {
     return this.assignmentsService.listSurveyors();
@@ -47,50 +47,50 @@ export class AssignmentsController {
     return this.assignmentsService.listHouses(id, user, revisit === 'true');
   }
 
-  @Roles(Role.ADMIN, Role.CADASTRAL)
+  @RequirePermissions(PERMISSIONS.SURVEY_MANAGE)
   @Post()
   create(@Body() dto: CreateAssignmentDto, @CurrentUser() user: AuthenticatedUser) {
     return this.assignmentsService.create(dto, user.id);
   }
 
-  @Roles(Role.ADMIN, Role.CADASTRAL)
+  @RequirePermissions(PERMISSIONS.SURVEY_MANAGE)
   @Patch(':id')
   update(@Param('id') id: string, @Body() dto: UpdateAssignmentDto) {
     return this.assignmentsService.update(id, dto);
   }
 
-  @Roles(Role.ADMIN, Role.CADASTRAL)
+  @RequirePermissions(PERMISSIONS.SURVEY_MANAGE)
   @Delete(':id')
   remove(@Param('id') id: string) {
     return this.assignmentsService.remove(id);
   }
 
-  @Roles(Role.SURVEYOR)
+  @RequirePermissions(PERMISSIONS.ASSIGNMENT_EXECUTE)
   @Post(':id/start')
   start(@Param('id') id: string, @CurrentUser() user: AuthenticatedUser) {
     return this.assignmentsService.start(id, user.id);
   }
 
-  @Roles(Role.SURVEYOR)
+  @RequirePermissions(PERMISSIONS.ASSIGNMENT_EXECUTE)
   @Post(':id/submit')
   submit(@Param('id') id: string, @CurrentUser() user: AuthenticatedUser) {
     return this.assignmentsService.submit(id, user.id);
   }
 
   /** BR-78 — cán bộ được giao báo vấn đề / xin hỗ trợ (không đổi trạng thái nhiệm vụ). */
-  @Roles(Role.SURVEYOR)
+  @RequirePermissions(PERMISSIONS.ASSIGNMENT_EXECUTE)
   @Post(':id/issues')
   reportIssue(@Param('id') id: string, @Body() dto: ReportIssueDto, @CurrentUser() user: AuthenticatedUser) {
     return this.assignmentsService.reportIssue(id, dto, user.id);
   }
 
-  @Roles(Role.ADMIN, Role.CADASTRAL)
+  @RequirePermissions(PERMISSIONS.ASSIGNMENT_REVIEW)
   @Post(':id/complete')
   complete(@Param('id') id: string, @CurrentUser() user: AuthenticatedUser) {
     return this.assignmentsService.complete(id, user.id);
   }
 
-  @Roles(Role.ADMIN, Role.CADASTRAL)
+  @RequirePermissions(PERMISSIONS.ASSIGNMENT_REVIEW)
   @Post(':id/request-revisit')
   requestRevisit(
     @Param('id') id: string,

@@ -1,5 +1,7 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
-import { CaseStatus, NotificationEntity, NotificationType, Prisma, Role } from '@prisma/client';
+import { CaseStatus, NotificationEntity, NotificationType, Prisma } from '@prisma/client';
+import { PERMISSIONS } from '../auth/permissions';
+import { usersWithPermission } from '../auth/user-access';
 import { NotificationsService } from '../notifications/notifications.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateCaseDto } from './dto/create-case.dto';
@@ -55,13 +57,12 @@ export class CasesService {
   ) {}
 
   /**
-   * Danh sách cán bộ xử lý được (ADMIN/CADASTRAL, đang hoạt động) cho dropdown "phân công".
-   * `/api/users` yêu cầu ADMIN, nhưng CADASTRAL cũng cần gán được việc — endpoint riêng, hẹp,
-   * giống listSurveyors() ở surveys module.
+   * Danh sách cán bộ xử lý được (có quyền case:manage, đang hoạt động) cho dropdown "phân công".
+   * Endpoint riêng, hẹp, chỉ trả id/tên hiển thị — giống listSurveyors() ở surveys module.
    */
   listStaff() {
     return this.prisma.user.findMany({
-      where: { role: { in: [Role.ADMIN, Role.CADASTRAL] }, isActive: true },
+      where: usersWithPermission(PERMISSIONS.CASE_MANAGE),
       select: { id: true, fullName: true, username: true },
       orderBy: { fullName: 'asc' },
     });

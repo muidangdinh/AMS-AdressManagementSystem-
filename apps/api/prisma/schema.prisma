@@ -35,10 +35,82 @@ model AppSetting {
 }
 
 /// Vai trò người dùng (MVP — Phase 1). Khớp enum UserRole ở packages/shared.
+/// PHASE 17 (RBAC động): enum này trở thành LEGACY — nguồn phân quyền thật là
+/// model `AppRole` + `Permission` (gán động). Cột `User.role` giữ lại tạm để
+/// backfill `user_role` và rollback; sẽ drop ở migration dọn dẹp sau khi ổn định.
 enum Role {
   ADMIN
   CADASTRAL // Cán bộ địa chính
   SURVEYOR // Cán bộ khảo sát
+}
+
+// ============================================================
+//  PHASE 17 — RBAC động (vai trò + quyền)
+//  - Permission: danh mục quyền CỐ ĐỊNH, đồng bộ từ code (apps/api/src/auth/permissions.ts).
+//  - AppRole: vai trò ĐỘNG, admin tự tạo/sửa từ UI.
+//  - RolePermission / UserRoleLink: quan hệ nhiều-nhiều.
+//  Quyền hiệu lực của user = HỢP quyền của mọi vai trò được gán.
+// ============================================================
+
+/// Vai trò động — admin quản trị từ UI. 3 vai trò gốc seed với isSystem=true.
+model AppRole {
+  id          String   @id @default(uuid())
+  /// Mã ổn định, không dấu: "admin" | "cadastral" | "surveyor" | tùy biến.
+  code        String   @unique
+  /// Nhãn tiếng Việt hiển thị.
+  name        String
+  description String?
+  /// true = vai trò hệ thống (không cho xóa / không cho đổi code).
+  isSystem    Boolean  @default(false)
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  permissions RolePermission[]
+  users       UserRoleLink[]
+
+  @@map("app_role")
+}
+
+/// Danh mục quyền — đồng bộ từ code, không tạo tùy ý qua UI.
+model Permission {
+  id    String @id @default(uuid())
+  /// Mã quyền, vd "house:update".
+  code  String @unique
+  /// Nhãn tiếng Việt.
+  name  String
+  /// Nhóm để gom trên UI (vd "Hồ sơ nhà").
+  group String
+
+  roles RolePermission[]
+
+  @@map("permission")
+}
+
+/// Gán quyền cho vai trò (nhiều-nhiều).
+model RolePermission {
+  roleId       String
+  permissionId String
+
+  role       AppRole    @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@id([roleId, permissionId])
+  @@index([permissionId])
+  @@map("role_permission")
+}
+
+/// Gán vai trò cho người dùng (nhiều-nhiều).
+model UserRoleLink {
+  userId String
+  roleId String
+
+  user User    @relation("UserRoleLinkUser", fields: [userId], references: [id], onDelete: Cascade)
+  role AppRole @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@id([userId, roleId])
+  @@index([roleId])
+  @@map("user_role")
 }
 
 /// Tài khoản người dùng hệ thống (Phase 1 — X. Quản trị hệ thống).
@@ -72,6 +144,7 @@ model User {
   casesCreated  HouseCase[]  @relation("CaseCreatedBy")
   casesAssigned HouseCase[]  @relation("CaseAssignedTo")
   caseEvents    CaseEvent[]  @relation("CaseEventActor")
+  roleLinks             UserRoleLink[] @relation("UserRoleLinkUser")
   notificationsReceived Notification[] @relation("NotificationRecipient")
   notificationsSent     Notification[] @relation("NotificationActor")
   assignmentEvents      SurveyAssignmentEvent[] @relation("AssignmentEventActor")

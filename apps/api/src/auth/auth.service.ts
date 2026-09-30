@@ -13,7 +13,12 @@ export class AuthService {
   ) {}
 
   async login(username: string, password: string) {
-    const user = await this.prisma.user.findUnique({ where: { username } });
+    const user = await this.prisma.user.findUnique({
+      where: { username },
+      include: {
+        roleLinks: { include: { role: { include: { permissions: { include: { permission: true } } } } } },
+      },
+    });
 
     // Cố tình dùng chung 1 thông báo lỗi cho sai username lẫn sai password
     // để tránh lộ thông tin tài khoản nào tồn tại (dò tài khoản).
@@ -26,6 +31,12 @@ export class AuthService {
       throw new UnauthorizedException('Tên đăng nhập hoặc mật khẩu không đúng');
     }
 
+    const activeRoles = user.roleLinks.map((l) => l.role).filter((r) => r.isActive);
+    const roles = activeRoles.map((r) => ({ id: r.id, code: r.code, name: r.name }));
+    const permissions = [
+      ...new Set(activeRoles.flatMap((r) => r.permissions.map((rp) => rp.permission.code))),
+    ];
+
     const payload = { sub: user.id, username: user.username, role: user.role };
     const accessToken = await this.jwtService.signAsync(payload);
 
@@ -36,6 +47,8 @@ export class AuthService {
         username: user.username,
         fullName: user.fullName,
         role: user.role,
+        roles,
+        permissions,
         unit: user.unit,
         position: user.position,
       },

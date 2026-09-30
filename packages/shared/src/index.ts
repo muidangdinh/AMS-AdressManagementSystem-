@@ -120,8 +120,86 @@ export const USER_ROLE_LABELS: Record<UserRole, string> = {
   [UserRole.SURVEYOR]: 'Cán bộ khảo sát',
 };
 
-/** Vai trò được phép ghi/sửa dữ liệu nghiệp vụ (House...). */
+/**
+ * @deprecated PHASE 17 — thay bằng kiểm tra quyền (permission). Giữ tạm để không
+ * vỡ các nơi chưa chuyển. Nên dùng `hasPermission()` phía FE với PERMISSIONS.HOUSE_UPDATE...
+ */
 export const EDITOR_ROLES: UserRole[] = [UserRole.ADMIN, UserRole.CADASTRAL];
+
+// ============================================================
+//  PHASE 17 — RBAC động: danh mục QUYỀN (mirror apps/api/src/auth/permissions.ts)
+//  Nguồn sự thật ở backend; nhân bản chuỗi ở đây cho frontend (giống cách enum
+//  đang được nhân bản vì API không import shared lúc runtime).
+// ============================================================
+
+export const PERMISSIONS = {
+  USER_MANAGE: 'user:manage',
+  ROLE_MANAGE: 'role:manage',
+  ADDRESS_WRITE: 'address:write',
+  HOUSE_CREATE: 'house:create',
+  HOUSE_UPDATE: 'house:update',
+  HOUSE_RESURVEY: 'house:resurvey',
+  HOUSE_PHOTO_ADD: 'house:photo:add',
+  HOUSE_PHOTO_DELETE: 'house:photo:delete',
+  SCHEME_MANAGE: 'scheme:manage',
+  SCHEME_APPROVE: 'scheme:approve',
+  PLATE_ISSUE: 'plate:issue',
+  PLATE_INSTALL: 'plate:install',
+  PLATE_REVOKE: 'plate:revoke',
+  SURVEY_MANAGE: 'survey:manage',
+  ASSIGNMENT_EXECUTE: 'assignment:execute',
+  ASSIGNMENT_REVIEW: 'assignment:review',
+  CASE_MANAGE: 'case:manage',
+  NOTIFICATION_REMIND: 'notification:remind',
+  NOTIFICATION_RUN_REMINDERS: 'notification:run-reminders',
+} as const;
+
+export type PermissionCode = (typeof PERMISSIONS)[keyof typeof PERMISSIONS];
+
+/** Một quyền trong danh mục (GET /api/permissions). */
+export interface PermissionDef {
+  code: string;
+  name: string;
+  group: string;
+}
+
+/** Vai trò động (GET /api/roles). */
+export interface RoleSummary {
+  id: string;
+  code: string;
+  name: string;
+  description?: string | null;
+  isSystem: boolean;
+  isActive: boolean;
+  permissionCodes: string[];
+  userCount: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** Vai trò gọn gắn theo user (LoginResponse/UserSummary). */
+export interface UserRoleRef {
+  id: string;
+  code: string;
+  name: string;
+}
+
+export interface CreateRoleRequest {
+  code: string;
+  name: string;
+  description?: string;
+  permissionCodes?: string[];
+}
+
+export interface UpdateRoleRequest {
+  name?: string;
+  description?: string;
+  isActive?: boolean;
+}
+
+export interface SetPermissionsRequest {
+  permissionCodes: string[];
+}
 
 /** Kết quả trả về của endpoint /api/health. */
 export interface HealthResponse {
@@ -148,27 +226,34 @@ export interface UserSummary {
   id: string;
   username: string;
   fullName: string;
+  /** @deprecated LEGACY — vai trò enum đơn. Dùng `roles`/`permissions` (Phase 17). */
   role: UserRole;
+  /** PHASE 17 — vai trò động được gán. */
+  roles: UserRoleRef[];
+  /** PHASE 17 — hợp quyền từ mọi vai trò (dùng để ẩn/hiện chức năng). */
+  permissions: string[];
   unit?: string | null;
   /** Chức vụ (TN-05, góp ý khách hàng 11/09/2026) — tự do nhập, tuỳ chọn. */
   position?: string | null;
   isActive: boolean;
 }
 
-/** Body POST /api/users (ADMIN) — khớp CreateUserDto ở API. */
+/** Body POST /api/users — khớp CreateUserDto ở API. Cần quyền user:manage. */
 export interface CreateUserRequest {
   username: string;
   password: string;
   fullName: string;
-  role: UserRole;
+  /** PHASE 17 — danh sách id vai trò gán cho user (ít nhất 1). */
+  roleIds: string[];
   unit?: string;
   position?: string;
 }
 
-/** Body PATCH /api/users/:id (ADMIN) — khớp UpdateUserDto ở API; `password` để đặt lại mật khẩu. */
+/** Body PATCH /api/users/:id — khớp UpdateUserDto; `password` để đặt lại mật khẩu. */
 export interface UpdateUserRequest {
   fullName?: string;
-  role?: UserRole;
+  /** PHASE 17 — cập nhật danh sách vai trò (nếu truyền, phải có ít nhất 1). */
+  roleIds?: string[];
   unit?: string;
   position?: string;
   isActive?: boolean;
@@ -185,7 +270,10 @@ export interface ChangePasswordRequest {
 export interface LoginResponse {
   accessToken: string;
   /** unit/position kèm theo để dashboard mobile dựng lời chào (TN-13) mà không cần gọi thêm /auth/me. */
-  user: Pick<UserSummary, 'id' | 'username' | 'fullName' | 'role' | 'unit' | 'position'>;
+  user: Pick<
+    UserSummary,
+    'id' | 'username' | 'fullName' | 'role' | 'roles' | 'permissions' | 'unit' | 'position'
+  >;
 }
 
 // ============================================================

@@ -11,8 +11,8 @@ import {
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import type { Response } from 'express';
-import { Role } from '@prisma/client';
-import { Roles } from '../auth/decorators/roles.decorator';
+import { RequirePermissions } from '../auth/decorators/permissions.decorator';
+import { PERMISSIONS } from '../auth/permissions';
 import { Public } from '../auth/decorators/public.decorator';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { AuthenticatedUser } from '../auth/types/authenticated-user';
@@ -54,13 +54,13 @@ export class HousePlatesController {
     res.send(buffer);
   }
 
-  @Roles(Role.ADMIN, Role.CADASTRAL)
+  @RequirePermissions(PERMISSIONS.PLATE_ISSUE)
   @Post()
   issue(@Body() dto: IssuePlateDto, @CurrentUser() user: AuthenticatedUser) {
     return this.platesService.issue(dto, user.id);
   }
 
-  @Roles(Role.ADMIN, Role.CADASTRAL, Role.SURVEYOR)
+  @RequirePermissions(PERMISSIONS.PLATE_INSTALL)
   @Post(':id/install')
   @UseInterceptors(FileInterceptor('file', platePhotoMulterOptions))
   install(
@@ -72,13 +72,13 @@ export class HousePlatesController {
     return this.platesService.install(id, user.id, photoUrl);
   }
 
-  @Roles(Role.ADMIN, Role.CADASTRAL, Role.SURVEYOR)
+  @RequirePermissions(PERMISSIONS.PLATE_INSTALL)
   @Post(':id/not-installed')
   markNotInstalled(@Param('id') id: string, @Body() dto: NotInstalledPlateDto) {
     return this.platesService.markNotInstalled(id, dto);
   }
 
-  @Roles(Role.ADMIN, Role.CADASTRAL)
+  @RequirePermissions(PERMISSIONS.PLATE_REVOKE)
   @Post(':id/revoke')
   revoke(
     @Param('id') id: string,

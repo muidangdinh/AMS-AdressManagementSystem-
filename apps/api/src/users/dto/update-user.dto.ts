@@ -1,5 +1,4 @@
-import { IsBoolean, IsEnum, IsOptional, IsString, MinLength } from 'class-validator';
-import { Role } from '@prisma/client';
+import { ArrayNotEmpty, IsArray, IsBoolean, IsOptional, IsString, MinLength } from 'class-validator';
 
 export class UpdateUserDto {
   @IsOptional()
@@ -7,9 +6,12 @@ export class UpdateUserDto {
   @MinLength(2)
   fullName?: string;
 
+  /** PHASE 17 — cập nhật danh sách vai trò (nếu truyền, phải có ít nhất 1). */
   @IsOptional()
-  @IsEnum(Role)
-  role?: Role;
+  @IsArray()
+  @ArrayNotEmpty()
+  @IsString({ each: true })
+  roleIds?: string[];
 
   @IsOptional()
   @IsString()
