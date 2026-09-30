@@ -9,7 +9,7 @@ import {
   CreateHouseRequest,
   DEFAULT_PROVINCE_NAME,
   District,
-  EDITOR_ROLES,
+  PERMISSIONS,
   formatFullAddress,
   Hamlet,
   HOUSE_STATUS_LABELS,
@@ -36,7 +36,6 @@ import {
   PlateStatus,
   Street,
   USER_ROLE_LABELS,
-  UserRole,
   Ward,
 } from '@tayninh/shared';
 import { useAuth } from '@/lib/auth-context';
@@ -350,8 +349,8 @@ function ResetToTableFromQuery({ onReset }: { onReset: () => void }) {
 }
 
 export default function HousesPage() {
-  const { user } = useAuth();
-  const canEdit = !!user && EDITOR_ROLES.includes(user.role as UserRole);
+  const { user, hasPermission } = useAuth();
+  const canEdit = hasPermission(PERMISSIONS.HOUSE_UPDATE);
   const apiUrl = getApiUrl();
 
   // Bộ lọc

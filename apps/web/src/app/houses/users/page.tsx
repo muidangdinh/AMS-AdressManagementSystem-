@@ -2,18 +2,19 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { USER_ROLE_LABELS, UserRole } from '@tayninh/shared';
-import type { UserSummary } from '@tayninh/shared';
+import { PERMISSIONS } from '@tayninh/shared';
+import type { RoleSummary, UserSummary } from '@tayninh/shared';
 import { useAuth } from '@/lib/auth-context';
 import { ApiError } from '@/lib/api';
 import { usersApi } from '@/lib/users-api';
+import { rolesApi } from '@/lib/roles-api';
 import { ButtonSpinner, EmptyState, FIELD_CLASS, FormField, PageHeader } from '@/components/ui';
 
 interface FormState {
   username: string;
   password: string;
   fullName: string;
-  role: UserRole;
+  roleIds: string[];
   unit: string;
   position: string;
   isActive: boolean;
@@ -23,26 +24,27 @@ const EMPTY_FORM: FormState = {
   username: '',
   password: '',
   fullName: '',
-  role: UserRole.SURVEYOR,
+  roleIds: [],
   unit: '',
   position: '',
   isActive: true,
 };
 
 /**
- * Quản lý người dùng — chỉ ADMIN. Trước đây API `/api/users` đã có nhưng web không có
- * giao diện gọi, nên trên server mới (chỉ có tài khoản admin từ seed) không có chỗ tạo
- * cán bộ khảo sát để giao nhiệm vụ.
+ * Quản lý người dùng — cần quyền user:manage. PHASE 17: gán NHIỀU vai trò động
+ * (chọn từ danh sách vai trò do admin quản trị ở /houses/roles).
  */
 export default function UsersAdminPage() {
-  const { user } = useAuth();
+  const { user, hasPermission } = useAuth();
   const router = useRouter();
+  const canManage = hasPermission(PERMISSIONS.USER_MANAGE);
 
   useEffect(() => {
-    if (user && user.role !== UserRole.ADMIN) router.replace('/houses');
-  }, [user, router]);
+    if (user && !canManage) router.replace('/houses');
+  }, [user, canManage, router]);
 
   const [users, setUsers] = useState<UserSummary[]>([]);
+  const [roles, setRoles] = useState<RoleSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
 
@@ -50,7 +52,9 @@ export default function UsersAdminPage() {
     setLoading(true);
     setLoadError(null);
     try {
-      setUsers(await usersApi.list());
+      const [userList, roleList] = await Promise.all([usersApi.list(), rolesApi.list()]);
+      setUsers(userList);
+      setRoles(roleList.filter((r) => r.isActive));
     } catch (err) {
       setLoadError(err instanceof ApiError ? err.message : 'Không tải được danh sách người dùng');
     } finally {
@@ -79,7 +83,7 @@ export default function UsersAdminPage() {
       username: u.username,
       password: '',
       fullName: u.fullName,
-      role: u.role,
+      roleIds: u.roles?.map((r) => r.id) ?? [],
       unit: u.unit ?? '',
       position: u.position ?? '',
       isActive: u.isActive,
@@ -88,9 +92,22 @@ export default function UsersAdminPage() {
     setEditing(u);
   }
 
+  function toggleRole(roleId: string) {
+    setForm((prev) => ({
+      ...prev,
+      roleIds: prev.roleIds.includes(roleId)
+        ? prev.roleIds.filter((id) => id !== roleId)
+        : [...prev.roleIds, roleId],
+    }));
+  }
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (editing === null) return;
+    if (form.roleIds.length === 0) {
+      setFormError('Phải chọn ít nhất một vai trò');
+      return;
+    }
     setSaving(true);
     setFormError(null);
     try {
@@ -99,14 +116,14 @@ export default function UsersAdminPage() {
           username: form.username.trim(),
           password: form.password,
           fullName: form.fullName.trim(),
-          role: form.role,
+          roleIds: form.roleIds,
           unit: form.unit.trim() || undefined,
           position: form.position.trim() || undefined,
         });
       } else {
         await usersApi.update(editing.id, {
           fullName: form.fullName.trim(),
-          role: form.role,
+          roleIds: form.roleIds,
           unit: form.unit.trim(),
           position: form.position.trim(),
           isActive: form.isActive,
@@ -124,14 +141,14 @@ export default function UsersAdminPage() {
   }
 
   const isNew = editing === 'new';
-  // Không cho tự khóa / tự hạ quyền chính mình (API cũng chặn) — tránh mất quyền quản trị.
+  // Không cho tự khóa chính mình (API cũng chặn) — tránh mất quyền quản trị.
   const isSelf = editing !== null && editing !== 'new' && editing.id === user?.id;
 
   return (
     <div className="h-full overflow-auto p-6 space-y-4">
       <PageHeader
         title="Quản lý người dùng"
-        subtitle="Tạo tài khoản cán bộ (khảo sát, địa chính) và quản trị viên"
+        subtitle="Tạo tài khoản cán bộ và gán vai trò (có thể nhiều vai trò)"
         actions={
           <button
             onClick={openNew}
@@ -173,7 +190,9 @@ export default function UsersAdminPage() {
                 <tr key={u.id} className={u.isActive ? '' : 'text-slate-400'}>
                   <td className="px-4 py-2.5 font-semibold">{u.fullName}</td>
                   <td className="px-4 py-2.5">{u.username}</td>
-                  <td className="px-4 py-2.5">{USER_ROLE_LABELS[u.role]}</td>
+                  <td className="px-4 py-2.5">
+                    {u.roles?.length ? u.roles.map((r) => r.name).join(', ') : '—'}
+                  </td>
                   <td className="px-4 py-2.5">{u.unit ?? '—'}</td>
                   <td className="px-4 py-2.5">{u.position ?? '—'}</td>
                   <td className="px-4 py-2.5">
@@ -246,18 +265,25 @@ export default function UsersAdminPage() {
                 />
               </FormField>
               <FormField label="Vai trò" required>
-                <select
-                  value={form.role}
-                  onChange={(e) => setForm({ ...form, role: e.target.value as UserRole })}
-                  disabled={isSelf}
-                  className={`${FIELD_CLASS} disabled:bg-slate-100`}
-                >
-                  {Object.values(UserRole).map((r) => (
-                    <option key={r} value={r}>
-                      {USER_ROLE_LABELS[r]}
-                    </option>
-                  ))}
-                </select>
+                <div className="space-y-1.5 rounded-lg border border-slate-200 p-2.5 max-h-44 overflow-auto">
+                  {roles.length === 0 ? (
+                    <p className="text-xs text-slate-400">Chưa có vai trò nào — tạo ở mục Vai trò & phân quyền.</p>
+                  ) : (
+                    roles.map((r) => (
+                      <label key={r.id} className="flex items-center gap-2 text-sm text-slate-700">
+                        <input
+                          type="checkbox"
+                          checked={form.roleIds.includes(r.id)}
+                          onChange={() => toggleRole(r.id)}
+                        />
+                        <span>{r.name}</span>
+                        {r.isSystem && (
+                          <span className="text-[10px] text-slate-400 uppercase">hệ thống</span>
+                        )}
+                      </label>
+                    ))
+                  )}
+                </div>
               </FormField>
               <FormField label="Đơn vị">
                 <input

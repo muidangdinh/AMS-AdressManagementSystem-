@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { UserRole } from '@tayninh/shared';
+import { PERMISSIONS } from '@tayninh/shared';
 import type { Alley, District, Hamlet, Street, Ward } from '@tayninh/shared';
 import { useAuth } from '@/lib/auth-context';
 import { ApiError } from '@/lib/api';
@@ -27,12 +27,13 @@ const TABS: { key: TabKey; label: string }[] = [
  * quản trị này cũng chỉ hiện cho ADMIN để tránh gây hiểu nhầm cho vai trò khác.
  */
 export default function AddressesAdminPage() {
-  const { user } = useAuth();
+  const { user, hasPermission } = useAuth();
   const router = useRouter();
+  const canManage = hasPermission(PERMISSIONS.ADDRESS_WRITE);
 
   useEffect(() => {
-    if (user && user.role !== UserRole.ADMIN) router.replace('/houses');
-  }, [user, router]);
+    if (user && !canManage) router.replace('/houses');
+  }, [user, canManage, router]);
 
   const [tab, setTab] = useState<TabKey>('district');
 
@@ -236,7 +237,7 @@ export default function AddressesAdminPage() {
     }
   }
 
-  if (!user || user.role !== UserRole.ADMIN) {
+  if (!user || !canManage) {
     return <div className="p-6 text-sm text-slate-400">Đang chuyển hướng…</div>;
   }
 

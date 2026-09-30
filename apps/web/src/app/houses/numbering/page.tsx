@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import type { NumberingScheme, Street } from '@tayninh/shared';
-import { EDITOR_ROLES, NUMBERING_SCHEME_STATUS_LABELS, NumberingSchemeStatus, UserRole } from '@tayninh/shared';
+import { NUMBERING_SCHEME_STATUS_LABELS, NumberingSchemeStatus, PERMISSIONS } from '@tayninh/shared';
 import { useAuth } from '@/lib/auth-context';
 import { ApiError } from '@/lib/api';
 import { numberingSchemesApi } from '@/lib/numbering-api';
@@ -19,9 +19,9 @@ const STATUS_BADGE: Record<NumberingSchemeStatus, string> = {
 
 /** Danh sách phương án đánh số (Phase 7 — V. Đánh số nhà). */
 export default function NumberingSchemesPage() {
-  const { user } = useAuth();
+  const { user, hasPermission } = useAuth();
   const router = useRouter();
-  const canEdit = !!user && EDITOR_ROLES.includes(user.role as UserRole);
+  const canEdit = hasPermission(PERMISSIONS.SCHEME_MANAGE);
 
   const [schemes, setSchemes] = useState<NumberingScheme[]>([]);
   const [streets, setStreets] = useState<Street[]>([]);

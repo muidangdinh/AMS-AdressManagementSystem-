@@ -7,8 +7,7 @@ import {
   CASE_REQUEST_TYPE_LABELS,
   CASE_STATUS_LABELS,
   CaseStatus,
-  EDITOR_ROLES,
-  UserRole,
+  PERMISSIONS,
 } from '@tayninh/shared';
 import { useAuth } from '@/lib/auth-context';
 import { ApiError } from '@/lib/api';
@@ -30,9 +29,9 @@ const STATUS_BADGE: Record<CaseStatus, string> = {
 
 /** Danh sách hồ sơ (Phase 10 — IX. Quản lý hồ sơ – quy trình). */
 export default function CasesPage() {
-  const { user } = useAuth();
+  const { user, hasPermission } = useAuth();
   const router = useRouter();
-  const canEdit = !!user && EDITOR_ROLES.includes(user.role as UserRole);
+  const canEdit = hasPermission(PERMISSIONS.CASE_MANAGE);
 
   const [cases, setCases] = useState<HouseCase[]>([]);
   const [loading, setLoading] = useState(true);

@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import type { SurveyCampaign } from '@tayninh/shared';
-import { CAMPAIGN_STATUS_LABELS, CampaignStatus, EDITOR_ROLES, UserRole } from '@tayninh/shared';
+import { CAMPAIGN_STATUS_LABELS, CampaignStatus, PERMISSIONS } from '@tayninh/shared';
 import { useAuth } from '@/lib/auth-context';
 import { ApiError } from '@/lib/api';
 import { campaignsApi } from '@/lib/surveys-api';
@@ -17,9 +17,9 @@ const STATUS_BADGE: Record<CampaignStatus, string> = {
 
 /** Danh sách đợt khảo sát (Phase 9 — VII. Quản lý khảo sát thực địa). */
 export default function SurveyCampaignsPage() {
-  const { user } = useAuth();
+  const { user, hasPermission } = useAuth();
   const router = useRouter();
-  const canEdit = !!user && EDITOR_ROLES.includes(user.role as UserRole);
+  const canEdit = hasPermission(PERMISSIONS.SURVEY_MANAGE);
 
   const [campaigns, setCampaigns] = useState<SurveyCampaign[]>([]);
   const [loading, setLoading] = useState(true);

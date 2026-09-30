@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import Link from 'next/link';
-import { USER_ROLE_LABELS, UserRole } from '@tayninh/shared';
+import { PERMISSIONS, USER_ROLE_LABELS, UserRole } from '@tayninh/shared';
 import { useAuth } from '@/lib/auth-context';
 import NotificationBell from '@/components/NotificationBell';
 // import WardSelector from '@/components/WardSelector';
@@ -153,7 +153,7 @@ function NavItem({ index, children }: { index: number; children: React.ReactNode
 }
 
 export default function HousesLayout({ children }: { children: React.ReactNode }) {
-  const { user, isLoading, logout } = useAuth();
+  const { user, isLoading, logout, hasPermission } = useAuth();
   const router = useRouter();
   const pathname = usePathname();
   // Menu điều hướng thả xuống — chỉ dùng ở màn hình nhỏ (< md); từ md trở lên đã có sidebar dọc.
@@ -286,7 +286,11 @@ export default function HousesLayout({ children }: { children: React.ReactNode }
               </div>
               <div className="hidden sm:block text-right text-xs leading-tight">
                 <p className="font-semibold text-slate-100">{user.fullName}</p>
-                <p className="text-slate-400">{USER_ROLE_LABELS[user.role as UserRole]}</p>
+                <p className="text-slate-400">
+                  {user.roles?.length
+                    ? user.roles.map((r) => r.name).join(', ')
+                    : USER_ROLE_LABELS[user.role as UserRole]}
+                </p>
               </div>
               <svg
                 viewBox="0 0 24 24"
@@ -416,21 +420,28 @@ export default function HousesLayout({ children }: { children: React.ReactNode }
                     Đánh số
                   </NavLink>
                 </NavItem>
-                {user.role === UserRole.ADMIN && (
+                {hasPermission(PERMISSIONS.ADDRESS_WRITE) && (
                   <NavItem index={5}>
                     <NavLink href="/houses/addresses" icon="addresses" block touch onNavigate={closeNav}>
                       Quản lý tuyến đường
                     </NavLink>
                   </NavItem>
                 )}
-                {user.role === UserRole.ADMIN && (
+                {hasPermission(PERMISSIONS.USER_MANAGE) && (
                   <NavItem index={6}>
                     <NavLink href="/houses/users" icon="users" block touch onNavigate={closeNav}>
                       Người dùng
                     </NavLink>
                   </NavItem>
                 )}
-                <NavItem index={user.role === UserRole.ADMIN ? 7 : 5}>
+                {hasPermission(PERMISSIONS.ROLE_MANAGE) && (
+                  <NavItem index={7}>
+                    <NavLink href="/houses/roles" icon="users" block touch onNavigate={closeNav}>
+                      Vai trò & phân quyền
+                    </NavLink>
+                  </NavItem>
+                )}
+                <NavItem index={8}>
                   <LocateButton block touch onNavigate={closeNav} />
                 </NavItem>
               </div>
@@ -457,14 +468,19 @@ export default function HousesLayout({ children }: { children: React.ReactNode }
           <NavLink href="/houses/numbering" icon="numbering" block>
             Đánh số
           </NavLink>
-          {user.role === UserRole.ADMIN && (
+          {hasPermission(PERMISSIONS.ADDRESS_WRITE) && (
             <NavLink href="/houses/addresses" icon="addresses" block>
               Quản lý tuyến đường
             </NavLink>
           )}
-          {user.role === UserRole.ADMIN && (
+          {hasPermission(PERMISSIONS.USER_MANAGE) && (
             <NavLink href="/houses/users" icon="users" block>
               Người dùng
+            </NavLink>
+          )}
+          {hasPermission(PERMISSIONS.ROLE_MANAGE) && (
+            <NavLink href="/houses/roles" icon="users" block>
+              Vai trò & phân quyền
             </NavLink>
           )}
           <LocateButton block />

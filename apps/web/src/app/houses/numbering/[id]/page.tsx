@@ -5,12 +5,11 @@ import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import type { HouseSummary, NumberingSchemeItem, PaginatedResult, SchemeValidationResult } from '@tayninh/shared';
 import {
-  EDITOR_ROLES,
   NUMBERING_SCHEME_STATUS_LABELS,
   NUMBERING_SIDE_LABELS,
   NumberingSchemeStatus,
   NumberingSide,
-  UserRole,
+  PERMISSIONS,
 } from '@tayninh/shared';
 import { useAuth } from '@/lib/auth-context';
 import { ApiError, apiFetch } from '@/lib/api';
@@ -28,9 +27,9 @@ export default function NumberingSchemeDetailPage() {
   const params = useParams<{ id: string }>();
   const schemeId = params.id;
   const router = useRouter();
-  const { user } = useAuth();
-  const isAdmin = user?.role === UserRole.ADMIN;
-  const isEditorRole = !!user && EDITOR_ROLES.includes(user.role as UserRole);
+  const { hasPermission } = useAuth();
+  const isAdmin = hasPermission(PERMISSIONS.SCHEME_APPROVE);
+  const isEditorRole = hasPermission(PERMISSIONS.SCHEME_MANAGE);
 
   const [scheme, setScheme] = useState<Awaited<ReturnType<typeof numberingSchemesApi.get>> | null>(
     null,

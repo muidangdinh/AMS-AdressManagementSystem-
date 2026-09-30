@@ -8,9 +8,8 @@ import {
   CASE_REQUEST_TYPE_LABELS,
   CASE_STATUS_LABELS,
   CaseStatus,
-  EDITOR_ROLES,
   NotificationEntity,
-  UserRole,
+  PERMISSIONS,
 } from '@tayninh/shared';
 import { useAuth } from '@/lib/auth-context';
 import { ApiError, apiFetch } from '@/lib/api';
@@ -44,8 +43,8 @@ const NEXT_STEP_LABEL: Partial<Record<CaseStatus, string>> = {
 export default function CaseDetailPage() {
   const params = useParams<{ id: string }>();
   const caseId = params.id;
-  const { user } = useAuth();
-  const canEdit = !!user && EDITOR_ROLES.includes(user.role as UserRole);
+  const { user, hasPermission } = useAuth();
+  const canEdit = hasPermission(PERMISSIONS.CASE_MANAGE);
 
   const [houseCase, setHouseCase] = useState<HouseCase | null>(null);
   const [staff, setStaff] = useState<{ id: string; fullName: string; username: string }[]>([]);
