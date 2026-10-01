@@ -24,7 +24,8 @@ export default function HouseLabelPage() {
   }, [params.id]);
 
   return (
-    <div className="min-h-full bg-app-shell flex flex-col items-center py-10 px-4 print:bg-white print:py-0">
+    // Nhãn in luôn nền sáng (data-theme="light" cục bộ) dù app đang ở theme tối.
+    <div data-theme="light" className="min-h-full bg-app-shell text-fg flex flex-col items-center py-10 px-4 print:bg-white print:py-0">
       <style>{`
         @page {
           size: 100mm 70mm;

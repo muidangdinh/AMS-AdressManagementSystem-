@@ -13,6 +13,7 @@ import { AddressesModule } from './addresses/addresses.module';
 import { NumberingSchemesModule } from './numbering-schemes/numbering-schemes.module';
 import { HousePlatesModule } from './house-plates/house-plates.module';
 import { SurveysModule } from './surveys/surveys.module';
+import { InstallsModule } from './installs/installs.module';
 import { CasesModule } from './cases/cases.module';
 import { DashboardModule } from './dashboard/dashboard.module';
 import { NotificationsModule } from './notifications/notifications.module';
@@ -44,6 +45,7 @@ import { AuditInterceptor } from './audit/audit.interceptor';
     NumberingSchemesModule,
     HousePlatesModule,
     SurveysModule,
+    InstallsModule,
     CasesModule,
     DashboardModule,
     NotificationsModule,

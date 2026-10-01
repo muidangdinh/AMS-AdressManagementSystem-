@@ -89,32 +89,32 @@ export default function RevisitModal({
   }
 
   return (
-    <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-30 p-4">
-      <div className="bg-white rounded-2xl shadow-soft w-full max-w-xl max-h-[90vh] flex flex-col overflow-hidden">
-        <div className="bg-slate-900 text-white px-5 py-4 flex items-center justify-between shrink-0">
+    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-30 p-4">
+      <div className="bg-surface rounded-2xl shadow-soft w-full max-w-xl max-h-[90vh] flex flex-col overflow-hidden">
+        <div className="bg-shell text-fg border-b border-line px-5 py-4 flex items-center justify-between shrink-0">
           <div className="min-w-0">
             <h3 className="font-bold text-base">Yêu cầu khảo sát lại</h3>
-            <p className="text-xs text-slate-400 truncate">
+            <p className="text-xs text-fg-subtle truncate">
               {zoneName} — {assignment.assignee.fullName}
             </p>
           </div>
           <button
             onClick={onClose}
             aria-label="Đóng"
-            className="w-7 h-7 rounded-lg flex items-center justify-center text-slate-400 hover:text-white hover:bg-white/10 transition"
+            className="w-7 h-7 rounded-lg flex items-center justify-center text-fg-subtle hover:text-fg hover:bg-surface-2 transition"
           >
             ×
           </button>
         </div>
 
-        <div className="p-5 space-y-4 bg-slate-50 overflow-y-auto">
+        <div className="p-5 space-y-4 bg-surface-2 overflow-y-auto">
           {error && (
-            <div className="bg-rose-50 border border-rose-200 text-rose-700 rounded-xl p-3 text-sm">{error}</div>
+            <div className="bg-danger/10 border border-danger/30 text-danger rounded-xl p-3 text-sm">{error}</div>
           )}
 
           <div>
-            <label className="block text-xs font-bold text-slate-600 uppercase tracking-wide mb-1">
-              Lý do chung <span className="text-rose-500">*</span>
+            <label className="block text-xs font-bold text-fg-muted uppercase tracking-wide mb-1">
+              Lý do chung <span className="text-danger">*</span>
             </label>
             <textarea
               value={note}
@@ -127,35 +127,35 @@ export default function RevisitModal({
 
           <div>
             <div className="flex items-center justify-between mb-1">
-              <p className="text-xs font-bold text-slate-600 uppercase tracking-wide">
+              <p className="text-xs font-bold text-fg-muted uppercase tracking-wide">
                 Nhà cần khảo sát lại {houses ? `(${pickedCount}/${houses.length})` : ''}
               </p>
               {houses && houses.length > 0 && (
                 <button
                   type="button"
                   onClick={toggleAll}
-                  className="text-xs font-semibold text-blue-600 hover:underline"
+                  className="text-xs font-semibold text-accent hover:underline"
                 >
                   {pickedCount === houses.length ? 'Bỏ chọn tất cả' : 'Chọn tất cả'}
                 </button>
               )}
             </div>
-            <p className="text-[11px] text-slate-500 mb-2">
+            <p className="text-[11px] text-fg-muted mb-2">
               Chọn nhà có lỗi để cán bộ sửa <strong>đúng nhà đó</strong>. Không chọn nhà nào = khảo sát lại chung
               (cán bộ được thêm nhà còn thiếu).
             </p>
 
             {!houses && !loadError && (
-              <p className="flex items-center gap-2 text-xs text-slate-400">
+              <p className="flex items-center gap-2 text-xs text-fg-subtle">
                 <ButtonSpinner /> Đang tải danh sách nhà…
               </p>
             )}
-            {loadError && <p className="text-xs text-rose-600">{loadError}</p>}
+            {loadError && <p className="text-xs text-danger">{loadError}</p>}
             {houses && houses.length === 0 && (
-              <p className="text-xs text-slate-400">Nhiệm vụ này chưa có nhà nào được khảo sát.</p>
+              <p className="text-xs text-fg-subtle">Nhiệm vụ này chưa có nhà nào được khảo sát.</p>
             )}
             {houses && houses.length > 0 && (
-              <div className="border border-slate-200 rounded-xl bg-white divide-y divide-slate-100 max-h-72 overflow-y-auto">
+              <div className="border border-line rounded-xl bg-surface divide-y divide-line max-h-72 overflow-y-auto">
                 {houses.map((h) => {
                   const checked = h.id in picked;
                   return (
@@ -165,15 +165,15 @@ export default function RevisitModal({
                           type="checkbox"
                           checked={checked}
                           onChange={() => toggle(h.id)}
-                          className="mt-1 accent-blue-600"
+                          className="mt-1 accent-accent"
                         />
                         <span className="min-w-0">
-                          <span className="font-semibold text-slate-800">
+                          <span className="font-semibold text-fg">
                             Số {h.houseNumber} {h.street}
                           </span>
-                          <span className="text-slate-500"> — {h.ownerName}</span>
+                          <span className="text-fg-muted"> — {h.ownerName}</span>
                           {h.revisitReason && (
-                            <span className="block text-[11px] text-rose-600">
+                            <span className="block text-[11px] text-danger">
                               Đang chờ sửa: {h.revisitReason}
                             </span>
                           )}
@@ -195,11 +195,11 @@ export default function RevisitModal({
           </div>
         </div>
 
-        <div className="flex justify-end gap-2 px-5 py-3 border-t border-slate-200 bg-white shrink-0">
+        <div className="flex justify-end gap-2 px-5 py-3 border-t border-line bg-surface shrink-0">
           <button
             type="button"
             onClick={onClose}
-            className="px-4 py-2 rounded-xl text-sm font-semibold border border-slate-300 bg-white text-slate-600 hover:bg-slate-100 transition"
+            className="px-4 py-2 rounded-xl text-sm font-semibold border border-line bg-surface text-fg-muted hover:bg-surface-2 transition"
           >
             Hủy
           </button>
@@ -207,7 +207,7 @@ export default function RevisitModal({
             type="button"
             onClick={handleSubmit}
             disabled={submitting || !note.trim()}
-            className="bg-rose-600 hover:bg-rose-700 disabled:opacity-60 text-white px-4 py-2 rounded-xl text-sm font-semibold transition flex items-center gap-2"
+            className="bg-danger hover:bg-danger/90 disabled:opacity-60 text-white px-4 py-2 rounded-xl text-sm font-semibold transition flex items-center gap-2"
           >
             {submitting && <ButtonSpinner light />}
             {pickedCount > 0 ? `Gửi yêu cầu (${pickedCount} nhà)` : 'Gửi yêu cầu (chung)'}

@@ -150,6 +150,9 @@ export const PERMISSIONS = {
   ASSIGNMENT_EXECUTE: 'assignment:execute',
   ASSIGNMENT_REVIEW: 'assignment:review',
   CASE_MANAGE: 'case:manage',
+  INSTALL_MANAGE: 'install:manage',
+  INSTALL_EXECUTE: 'install:execute',
+  INSTALL_REVIEW: 'install:review',
   NOTIFICATION_REMIND: 'notification:remind',
   NOTIFICATION_RUN_REMINDERS: 'notification:run-reminders',
 } as const;
@@ -765,12 +768,43 @@ export interface SurveyZone {
   updatedAt: string;
   _count?: { assignments: number };
   assignments?: SurveyAssignment[];
+  /** Tuyến đường khảo sát — có ở GET /survey-campaigns/:id. */
+  routes?: SurveyRoute[];
+}
+
+/** Tuyến đường khảo sát trong 1 phân vùng — chấm điểm đầu/cuối trên bản đồ web. */
+export interface SurveyRoute {
+  id: string;
+  zoneId: string;
+  name: string;
+  streetId?: string | null;
+  street?: AddressRef | null;
+  startLat: number;
+  startLng: number;
+  endLat: number;
+  endLng: number;
+  /** Polyline [[lat,lng],...]. */
+  path: [number, number][];
+  /** Độ dài tuyến (mét). */
+  lengthM?: number | null;
+  /** true = bám đường thực tế (OSRM); false = đường thẳng dự phòng. */
+  snapped: boolean;
+  note?: string | null;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface SurveyAssignment {
   id: string;
   zoneId: string;
   zone: SurveyZone;
+  /** Tuyến đường được giao — trống = giao cả phân vùng. */
+  routeId?: string | null;
+  /** Có hình tuyến (path, điểm đầu/cuối) để mobile vẽ lên bản đồ. */
+  route?:
+    | (Pick<SurveyRoute, 'id' | 'name'> &
+        Partial<Pick<SurveyRoute, 'path' | 'startLat' | 'startLng' | 'endLat' | 'endLng' | 'lengthM' | 'snapped'>>)
+    | null;
   assigneeId: string;
   assignee: { id: string; fullName: string; username: string };
   dueDate?: string | null;
@@ -814,9 +848,212 @@ export interface CreateZoneRequest {
 
 export type UpdateZoneRequest = Partial<Omit<CreateZoneRequest, 'campaignId'>>;
 
+/**
+ * Khoảng cách ngắn nhất (mét) từ 1 điểm tới đường gấp khúc [[lat,lng],...]. Dùng phép chiếu
+ * phẳng xấp xỉ quanh điểm — sai số không đáng kể ở phạm vi vài km (tuyến khảo sát).
+ */
+export function distanceToPathM(lat: number, lng: number, path: [number, number][]): number {
+  if (path.length === 0) return Infinity;
+  const mPerDegLat = 111320;
+  const mPerDegLng = 111320 * Math.cos((lat * Math.PI) / 180);
+  const toXY = ([pLat, pLng]: [number, number]): [number, number] => [
+    (pLng - lng) * mPerDegLng,
+    (pLat - lat) * mPerDegLat,
+  ];
+  if (path.length === 1) {
+    const [x, y] = toXY(path[0]);
+    return Math.hypot(x, y);
+  }
+  let best = Infinity;
+  for (let i = 1; i < path.length; i++) {
+    const [ax, ay] = toXY(path[i - 1]);
+    const [bx, by] = toXY(path[i]);
+    const dx = bx - ax;
+    const dy = by - ay;
+    const len2 = dx * dx + dy * dy;
+    // Điểm cần đo nằm ở gốc (0,0) — chiếu lên đoạn AB rồi kẹp trong [0,1].
+    const t = len2 ? Math.max(0, Math.min(1, -(ax * dx + ay * dy) / len2)) : 0;
+    best = Math.min(best, Math.hypot(ax + t * dx, ay + t * dy));
+  }
+  return best;
+}
+
+export interface CreateSurveyRouteRequest {
+  zoneId: string;
+  name: string;
+  streetId?: string;
+  startLat: number;
+  startLng: number;
+  endLat: number;
+  endLng: number;
+  path: [number, number][];
+  lengthM?: number;
+  snapped?: boolean;
+  note?: string;
+}
+
+export interface UpdateSurveyRouteRequest {
+  name?: string;
+  /** Chuỗi rỗng = bỏ liên kết đường. */
+  streetId?: string;
+  note?: string;
+}
+
+// ============================================================
+//  Thi công gắn biển số nhà (tương tự Khảo sát) — đợt → phân vùng → nhiệm vụ giao cán bộ thi công.
+//  Dùng chung CampaignStatus / AssignmentStatus với khảo sát (cùng vòng đời).
+// ============================================================
+
+/** Số biển của 1 nhiệm vụ thi công theo kết quả hiện trường (biển đã thu hồi không tính). */
+export interface InstallPlateStats {
+  total: number;
+  installed: number;
+  /** Chưa xử lý (chưa gắn, chưa ghi lý do). */
+  pending: number;
+  /** Chưa gắn được — đã ghi lý do. */
+  notInstalled: number;
+  /** Còn cờ "thi công lại". */
+  revisit: number;
+}
+
+export interface InstallCampaign {
+  id: string;
+  name: string;
+  description?: string | null;
+  startDate?: string | null;
+  endDate?: string | null;
+  status: CampaignStatus;
+  createdById?: string | null;
+  createdBy?: { id: string; fullName: string; username: string } | null;
+  createdAt: string;
+  updatedAt: string;
+  /** Chỉ có ở danh sách. */
+  _count?: { zones: number };
+  /** Chỉ có ở GET :id. */
+  zones?: InstallZone[];
+}
+
+export interface InstallZone {
+  id: string;
+  campaignId: string;
+  campaign?: { id: string; name: string; status: CampaignStatus };
+  name: string;
+  wardId?: string | null;
+  ward?: AddressRef | null;
+  description?: string | null;
+  createdAt: string;
+  updatedAt: string;
+  _count?: { assignments: number };
+  assignments?: InstallAssignment[];
+}
+
+export interface InstallAssignmentEvent {
+  id: number;
+  assignmentId: string;
+  action: string;
+  note?: string | null;
+  fromStatus?: AssignmentStatus | null;
+  toStatus?: AssignmentStatus | null;
+  actorId?: string | null;
+  actor?: { id: string; fullName: string; username: string } | null;
+  createdAt: string;
+}
+
+export interface InstallAssignment {
+  id: string;
+  zoneId: string;
+  zone: InstallZone;
+  routeId?: string | null;
+  /** Tuyến dùng chung với khảo sát (SurveyRoute) — có hình tuyến để vẽ bản đồ. */
+  route?:
+    | (Pick<SurveyRoute, 'id' | 'name'> &
+        Partial<Pick<SurveyRoute, 'path' | 'startLat' | 'startLng' | 'endLat' | 'endLng' | 'lengthM' | 'snapped'>>)
+    | null;
+  assigneeId: string;
+  assignee: { id: string; fullName: string; username: string };
+  dueDate?: string | null;
+  status: AssignmentStatus;
+  note?: string | null;
+  targetCount?: number | null;
+  submittedAt?: string | null;
+  reviewedById?: string | null;
+  reviewedBy?: { id: string; fullName: string; username: string } | null;
+  reviewedAt?: string | null;
+  reviewNote?: string | null;
+  createdById?: string | null;
+  createdBy?: { id: string; fullName: string; username: string } | null;
+  createdAt: string;
+  updatedAt: string;
+  /** Thống kê biển (danh sách + chi tiết đều có). */
+  stats?: InstallPlateStats;
+  /** Chỉ có ở GET :id. */
+  events?: InstallAssignmentEvent[];
+}
+
+/** Biển trong danh sách biển của nhiệm vụ (GET /install-assignments/:id/plates). */
+export interface InstallPlateItem {
+  id: string;
+  plateCode: string;
+  houseId: string;
+  status: PlateStatus;
+  installedAt?: string | null;
+  installPhotoUrl?: string | null;
+  notInstalledAt?: string | null;
+  notInstalledReason?: string | null;
+  revisitReason?: string | null;
+  house: {
+    id: string;
+    houseNumber: string;
+    street: string;
+    ward: string;
+    ownerName: string;
+    ownerPhone?: string | null;
+    latitude: number;
+    longitude: number;
+  };
+}
+
+export interface CreateInstallCampaignRequest {
+  name: string;
+  description?: string;
+  startDate?: string;
+  endDate?: string;
+}
+
+export type UpdateInstallCampaignRequest = Partial<CreateInstallCampaignRequest> & { status?: CampaignStatus };
+
+export interface CreateInstallZoneRequest {
+  campaignId: string;
+  name: string;
+  wardId?: string;
+  description?: string;
+}
+
+export type UpdateInstallZoneRequest = Partial<Omit<CreateInstallZoneRequest, 'campaignId'>>;
+
+export interface CreateInstallAssignmentRequest {
+  zoneId: string;
+  assigneeId: string;
+  routeId?: string;
+  dueDate?: string;
+  note?: string;
+  targetCount?: number;
+}
+
+export type UpdateInstallAssignmentRequest = Partial<Pick<CreateInstallAssignmentRequest, 'dueDate' | 'note'>> & {
+  targetCount?: number | null;
+};
+
+export interface RequestInstallRevisitRequest {
+  reviewNote: string;
+  plates: { plateId: string; reason?: string }[];
+}
+
 export interface CreateAssignmentRequest {
   zoneId: string;
   assigneeId: string;
+  /** Giao theo tuyến đường (phải thuộc `zoneId`). */
+  routeId?: string;
   dueDate?: string;
   note?: string;
   targetCount?: number;
@@ -838,6 +1075,7 @@ export enum AssignmentEventAction {
   ISSUE_REPORTED = 'ISSUE_REPORTED',
   HELP_REQUESTED = 'HELP_REQUESTED',
   HOUSE_RESURVEYED = 'HOUSE_RESURVEYED',
+  REASSIGNED = 'REASSIGNED',
 }
 
 export const ASSIGNMENT_EVENT_LABELS: Record<AssignmentEventAction, string> = {
@@ -849,6 +1087,7 @@ export const ASSIGNMENT_EVENT_LABELS: Record<AssignmentEventAction, string> = {
   [AssignmentEventAction.ISSUE_REPORTED]: 'Báo vấn đề',
   [AssignmentEventAction.HELP_REQUESTED]: 'Yêu cầu hỗ trợ',
   [AssignmentEventAction.HOUSE_RESURVEYED]: 'Đã khảo sát lại nhà',
+  [AssignmentEventAction.REASSIGNED]: 'Đổi người thực hiện',
 };
 
 export interface AssignmentEvent {
@@ -1029,6 +1268,7 @@ export enum NotificationEntity {
   TASK = 'TASK',
   SURVEY_ASSIGNMENT = 'SURVEY_ASSIGNMENT',
   HOUSE_CASE = 'HOUSE_CASE',
+  INSTALL_ASSIGNMENT = 'INSTALL_ASSIGNMENT',
 }
 
 export interface AppNotification {

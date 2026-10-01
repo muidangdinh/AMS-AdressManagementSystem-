@@ -1,6 +1,7 @@
 'use client';
 
 import { createContext, useContext, useState } from 'react';
+import { useTheme } from '@/lib/theme';
 import {
   ArcElement,
   BarElement,
@@ -22,7 +23,23 @@ export type { ChartSlice, StackedBarItem };
 
 ChartJS.register(ArcElement, BarElement, CategoryScale, LinearScale, Tooltip, Legend);
 ChartJS.defaults.font.family = 'system-ui, -apple-system, "Segoe UI", Roboto, sans-serif';
-ChartJS.defaults.color = '#64748b';
+
+/** Đọc màu token theme hiện tại (globals.css) cho Chart.js — canvas không dùng được class Tailwind. */
+function cssColor(name: string, alpha = 1): string {
+  if (typeof document === 'undefined') return `rgba(100,116,139,${alpha})`;
+  const v = getComputedStyle(document.documentElement).getPropertyValue(name).trim().split(/\s+/).join(',');
+  return v ? `rgba(${v},${alpha})` : `rgba(100,116,139,${alpha})`;
+}
+
+/**
+ * Theo dõi theme để vẽ lại biểu đồ khi đổi sáng/tối: trả về `key` gắn vào <Doughnut>/<Bar>
+ * (đổi key = Chart.js tạo lại canvas với màu mới) và cập nhật màu chữ mặc định.
+ */
+function useChartTheme() {
+  const { theme } = useTheme();
+  ChartJS.defaults.color = cssColor('--fg-muted');
+  return theme;
+}
 
 export interface ChartBar {
   key: string;
@@ -55,19 +72,19 @@ export function ChartSection({
   return (
     <section className="mb-6">
       <div className="mb-2.5">
-        <h3 className="text-sm font-bold text-slate-800">{title}</h3>
-        {subtitle && <p className="text-xs text-slate-400">{subtitle}</p>}
+        <h3 className="text-sm font-bold text-fg">{title}</h3>
+        {subtitle && <p className="text-xs text-fg-subtle">{subtitle}</p>}
       </div>
 
       <div
         onClick={toggle}
-        className="bg-white rounded-xl border border-slate-200 shadow-card p-4 cursor-pointer hover:border-blue-200 transition"
+        className="glass p-4 cursor-pointer hover:border-accent/30 transition"
       >
         {/* Canvas tự xử lý click (lát → popup, nền → toggle) nên chặn nổi bọt để không toggle 2 lần. */}
         <div onClick={(e) => e.stopPropagation()}>
           <ToggleDetailsContext.Provider value={toggle}>{chart}</ToggleDetailsContext.Provider>
         </div>
-        <p className="text-[11px] text-slate-400 text-center mt-2">
+        <p className="text-[11px] text-fg-subtle text-center mt-2">
           Bấm vào lát/thanh để xem danh sách · bấm nền biểu đồ để{' '}
           {expanded ? 'thu gọn' : 'xem'} số liệu chi tiết
         </p>
@@ -99,10 +116,10 @@ function centerTextPlugin(label: string, value: number): Plugin<'doughnut'> {
       ctx.save();
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
-      ctx.fillStyle = '#0f172a';
+      ctx.fillStyle = cssColor('--fg');
       ctx.font = `bold 24px ${ChartJS.defaults.font.family}`;
       ctx.fillText(String(value), arc.x, arc.y - 8);
-      ctx.fillStyle = '#94a3b8';
+      ctx.fillStyle = cssColor('--fg-subtle');
       ctx.font = `11px ${ChartJS.defaults.font.family}`;
       ctx.fillText(label, arc.x, arc.y + 14);
       ctx.restore();
@@ -122,6 +139,7 @@ export function DonutChart({
   centerValue: number;
   onSliceClick?: (key: string) => void;
 }) {
+  const chartTheme = useChartTheme();
   const toggleDetails = useContext(ToggleDetailsContext);
   const total = data.reduce((sum, d) => sum + d.value, 0);
 
@@ -149,10 +167,13 @@ export function DonutChart({
           pointStyle: 'circle',
           boxWidth: 8,
           padding: 14,
-          font: { size: 12 },
+          // Màu chữ chú giải theo theme (rõ ở cả sáng lẫn tối) — xem cssColor/useChartTheme.
+          color: cssColor('--fg'),
+          font: { size: 12, weight: 500 },
           generateLabels: () =>
             data.map((slice, i) => ({
               text: `${slice.name} — ${slice.value}`,
+              fontColor: cssColor('--fg'),
               fillStyle: slice.color,
               strokeStyle: slice.color,
               lineWidth: 0,
@@ -177,13 +198,14 @@ export function DonutChart({
   return (
     <div className="h-60">
       <Doughnut
+        key={chartTheme}
         data={{
           labels: data.map((d) => d.name),
           datasets: [
             {
               data: data.map((d) => d.value),
               backgroundColor: data.map((d) => d.color),
-              borderColor: '#ffffff',
+              borderColor: cssColor('--surface'),
               borderWidth: 2,
               borderRadius: 6,
               hoverOffset: 10,
@@ -207,6 +229,7 @@ export function GaugeChart({
   label: string;
   color: string;
 }) {
+  const chartTheme = useChartTheme();
   const toggleDetails = useContext(ToggleDetailsContext);
   const pct = Math.max(0, Math.min(100, Math.round(value)));
 
@@ -219,10 +242,10 @@ export function GaugeChart({
       ctx.save();
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
-      ctx.fillStyle = '#0f172a';
+      ctx.fillStyle = cssColor('--fg');
       ctx.font = `bold 22px ${ChartJS.defaults.font.family}`;
       ctx.fillText(`${pct}%`, arc.x, arc.y - 10);
-      ctx.fillStyle = '#94a3b8';
+      ctx.fillStyle = cssColor('--fg-subtle');
       ctx.font = `11px ${ChartJS.defaults.font.family}`;
       ctx.fillText(label, arc.x, arc.y + 12);
       ctx.restore();
@@ -243,12 +266,13 @@ export function GaugeChart({
   return (
     <div className="h-[150px]">
       <Doughnut
+        key={chartTheme}
         data={{
           labels: [label, 'Còn lại'],
           datasets: [
             {
               data: [pct, 100 - pct],
-              backgroundColor: [color, '#e2e8f0'],
+              backgroundColor: [color, cssColor('--line')],
               borderWidth: 0,
               borderRadius: 6,
             },
@@ -268,7 +292,7 @@ const barValuePlugin: Plugin<'bar'> = {
     const { ctx } = chart;
     const meta = chart.getDatasetMeta(0);
     ctx.save();
-    ctx.fillStyle = '#475569';
+    ctx.fillStyle = cssColor('--fg');
     ctx.font = `bold 11px ${ChartJS.defaults.font.family}`;
     ctx.textAlign = 'left';
     ctx.textBaseline = 'middle';
@@ -292,6 +316,7 @@ export function BarChartH({
   onBarClick?: (key: string) => void;
   barColor?: string;
 }) {
+  const chartTheme = useChartTheme();
   const toggleDetails = useContext(ToggleDetailsContext);
 
   if (data.length === 0) return <EmptyState icon="📭" text="Chưa có dữ liệu" />;
@@ -313,12 +338,13 @@ export function BarChartH({
     scales: {
       x: {
         beginAtZero: true,
-        ticks: { precision: 0, font: { size: 11 } },
-        grid: { color: '#f1f5f9' },
+        ticks: { precision: 0, color: cssColor('--fg-muted'), font: { size: 11 } },
+        grid: { color: cssColor('--line', 0.6) },
         border: { display: false },
       },
       y: {
         ticks: {
+          color: cssColor('--fg-muted'),
           font: { size: 11 },
           // Tên ấp/đường có thể rất dài — cắt bớt cho khỏi bóp hẹp phần thanh.
           callback(_value, index) {
@@ -345,6 +371,7 @@ export function BarChartH({
   return (
     <div style={{ height: Math.max(200, data.length * 38) }}>
       <Bar
+        key={chartTheme}
         data={{
           labels: data.map((d) => d.name),
           datasets: [
@@ -373,6 +400,7 @@ export function StackedBarChart({
   data: StackedBarItem[];
   onBarClick?: (key: string) => void;
 }) {
+  const chartTheme = useChartTheme();
   const toggleDetails = useContext(ToggleDetailsContext);
 
   if (data.length === 0) return <EmptyState icon="📭" text="Chưa có dữ liệu" />;
@@ -395,13 +423,14 @@ export function StackedBarChart({
       x: {
         stacked: true,
         beginAtZero: true,
-        ticks: { precision: 0, font: { size: 11 } },
-        grid: { color: '#f1f5f9' },
+        ticks: { precision: 0, color: cssColor('--fg-muted'), font: { size: 11 } },
+        grid: { color: cssColor('--line', 0.6) },
         border: { display: false },
       },
       y: {
         stacked: true,
         ticks: {
+          color: cssColor('--fg-muted'),
           font: { size: 11 },
           callback(_value, index) {
             const name = data[index]?.name ?? '';
@@ -416,7 +445,14 @@ export function StackedBarChart({
       legend: {
         position: 'top',
         align: 'end',
-        labels: { usePointStyle: true, pointStyle: 'circle', boxWidth: 8, padding: 12, font: { size: 12 } },
+        labels: {
+          usePointStyle: true,
+          pointStyle: 'circle',
+          boxWidth: 8,
+          padding: 12,
+          color: cssColor('--fg'),
+          font: { size: 12, weight: 500 },
+        },
       },
       tooltip: {
         ...TOOLTIP_STYLE,
@@ -435,6 +471,7 @@ export function StackedBarChart({
   return (
     <div style={{ height: Math.max(200, data.length * 38) }}>
       <Bar
+        key={chartTheme}
         data={{
           labels: data.map((d) => d.name),
           datasets: [

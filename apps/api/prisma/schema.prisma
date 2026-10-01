@@ -139,6 +139,7 @@ model User {
   platesRevoked   HousePlate[]      @relation("PlateRevokedBy")
   campaignsCreated    SurveyCampaign[]   @relation("CampaignCreatedBy")
   assignmentsCreated  SurveyAssignment[] @relation("AssignmentCreatedBy")
+  surveyRoutesCreated SurveyRoute[]      @relation("SurveyRouteCreatedBy")
   assignmentsAssigned SurveyAssignment[] @relation("AssignmentAssignee")
   assignmentsReviewed SurveyAssignment[] @relation("AssignmentReviewedBy")
   casesCreated  HouseCase[]  @relation("CaseCreatedBy")
@@ -148,6 +149,11 @@ model User {
   notificationsReceived Notification[] @relation("NotificationRecipient")
   notificationsSent     Notification[] @relation("NotificationActor")
   assignmentEvents      SurveyAssignmentEvent[] @relation("AssignmentEventActor")
+  installCampaignsCreated InstallCampaign[]        @relation("InstallCampaignCreatedBy")
+  installAssigned         InstallAssignment[]      @relation("InstallAssignmentAssignee")
+  installCreated          InstallAssignment[]      @relation("InstallAssignmentCreatedBy")
+  installReviewed         InstallAssignment[]      @relation("InstallAssignmentReviewedBy")
+  installEvents           InstallAssignmentEvent[] @relation("InstallEventActor")
 
   @@map("app_user")
 }
@@ -403,6 +409,7 @@ model Ward {
   houses  House[]
   numberingSchemes NumberingScheme[]
   surveyZones      SurveyZone[]
+  installZones     InstallZone[]
 
   @@unique([name, districtId])
   @@map("address_ward")
@@ -436,6 +443,7 @@ model Street {
   alleys Alley[]
   houses House[]
   numberingSchemes NumberingScheme[]
+  surveyRoutes     SurveyRoute[]
 
   @@unique([name, wardId])
   @@map("address_street")
@@ -592,6 +600,13 @@ model HousePlate {
   notInstalledAt     DateTime?
   notInstalledReason String?
 
+  /// Nhiệm vụ THI CÔNG chứa biển này (trống = gắn ngoài nhiệm vụ, luồng tự do như trước).
+  installAssignmentId String?
+  installAssignment   InstallAssignment? @relation(fields: [installAssignmentId], references: [id], onDelete: SetNull)
+  /// Yêu cầu thi công lại riêng biển này (người nghiệm thu chọn từng biển). NULL = không bị yêu cầu.
+  revisitReason       String?
+  revisitRequestedAt  DateTime?
+
   revokedAt     DateTime?
   revokedById   String?
   revokedBy     User?   @relation("PlateRevokedBy", fields: [revokedById], references: [id], onDelete: SetNull)
@@ -602,6 +617,7 @@ model HousePlate {
 
   @@index([houseId])
   @@index([status])
+  @@index([installAssignmentId])
   @@map("house_plate")
 }
 
@@ -658,9 +674,45 @@ model SurveyZone {
   updatedAt DateTime @updatedAt
 
   assignments SurveyAssignment[]
+  routes      SurveyRoute[]
 
   @@index([campaignId])
   @@map("survey_zone")
+}
+
+/// Tuyến đường khảo sát trong 1 phân vùng — chấm điểm đầu/cuối trên bản đồ web.
+/// `path` lưu sẵn polyline [[lat,lng],...] (bám đường qua OSRM, hoặc đường thẳng khi
+/// định tuyến lỗi — `snapped=false`). Chỉ dùng để hiển thị nên để Json, chưa cần PostGIS.
+model SurveyRoute {
+  id     String     @id @default(uuid())
+  zoneId String
+  zone   SurveyZone @relation(fields: [zoneId], references: [id], onDelete: Cascade)
+
+  name     String
+  streetId String?
+  street   Street? @relation(fields: [streetId], references: [id], onDelete: SetNull)
+
+  startLat Float
+  startLng Float
+  endLat   Float
+  endLng   Float
+  path     Json
+  lengthM  Float?
+  snapped  Boolean @default(true)
+  note     String?
+
+  createdById String?
+  createdBy   User?   @relation("SurveyRouteCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  assignments SurveyAssignment[]
+  /// Nhiệm vụ THI CÔNG dùng chung tuyến này (xem InstallAssignment.routeId).
+  installAssignments InstallAssignment[]
+
+  @@index([zoneId])
+  @@map("survey_route")
 }
 
 enum AssignmentStatus {
@@ -676,6 +728,11 @@ model SurveyAssignment {
   id     String     @id @default(uuid())
   zoneId String
   zone   SurveyZone @relation(fields: [zoneId], references: [id], onDelete: Cascade)
+
+  /// Tuyến đường được giao (kéo thả cán bộ vào tuyến trên bản đồ web). Trống = giao cả phân vùng.
+  /// Mỗi tuyến tối đa 1 nhiệm vụ (kiểm ở service). Restrict: phải xóa nhiệm vụ trước khi xóa tuyến.
+  routeId String?
+  route   SurveyRoute? @relation(fields: [routeId], references: [id], onDelete: Restrict)
 
   assigneeId String
   assignee   User   @relation("AssignmentAssignee", fields: [assigneeId], references: [id], onDelete: Cascade)
@@ -705,9 +762,116 @@ model SurveyAssignment {
   events SurveyAssignmentEvent[]
 
   @@index([zoneId])
+  @@index([routeId])
   @@index([assigneeId])
   @@index([status])
   @@map("survey_assignment")
+}
+
+// ============================================================
+//  Thi công gắn biển số nhà (tương tự Khảo sát): Đợt (InstallCampaign) → Phân vùng theo Xã/Phường
+//  (InstallZone) → Nhiệm vụ giao cán bộ thi công (InstallAssignment, tùy chọn gắn 1 tuyến
+//  SurveyRoute dùng chung với khảo sát). Đối tượng làm việc là BIỂN (HousePlate) thay vì nhà.
+//  Tái dùng enum CampaignStatus / AssignmentStatus của khảo sát (cùng vòng đời).
+// ============================================================
+
+model InstallCampaign {
+  id          String    @id @default(uuid())
+  name        String
+  description String?
+  startDate   DateTime?
+  endDate     DateTime?
+  status      CampaignStatus @default(DRAFT)
+
+  createdById String?
+  createdBy   User?   @relation("InstallCampaignCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  zones InstallZone[]
+
+  @@index([status])
+  @@map("install_campaign")
+}
+
+model InstallZone {
+  id         String          @id @default(uuid())
+  campaignId String
+  campaign   InstallCampaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+
+  name        String
+  wardId      String?
+  ward        Ward?   @relation(fields: [wardId], references: [id], onDelete: SetNull)
+  description String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  assignments InstallAssignment[]
+
+  @@index([campaignId])
+  @@map("install_zone")
+}
+
+/// Giao 1 phân vùng (tùy chọn kèm 1 tuyến) cho 1 cán bộ thi công. Mỗi tuyến tối đa 1 nhiệm vụ
+/// (kiểm ở service). Danh sách biển của nhiệm vụ = HousePlate.installAssignmentId.
+model InstallAssignment {
+  id     String      @id @default(uuid())
+  zoneId String
+  zone   InstallZone @relation(fields: [zoneId], references: [id], onDelete: Cascade)
+
+  routeId String?
+  route   SurveyRoute? @relation(fields: [routeId], references: [id], onDelete: Restrict)
+
+  assigneeId String
+  assignee   User   @relation("InstallAssignmentAssignee", fields: [assigneeId], references: [id], onDelete: Cascade)
+
+  dueDate     DateTime?
+  status      AssignmentStatus @default(ASSIGNED)
+  note        String?
+  /// Chỉ tiêu: số biển dự kiến gắn. Để trống = lấy theo số biển trong nhiệm vụ.
+  targetCount Int?
+
+  submittedAt  DateTime?
+  reviewedById String?
+  reviewedBy   User?     @relation("InstallAssignmentReviewedBy", fields: [reviewedById], references: [id], onDelete: SetNull)
+  reviewedAt   DateTime?
+  reviewNote   String?
+
+  createdById String?
+  createdBy   User?   @relation("InstallAssignmentCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  plates HousePlate[]
+  events InstallAssignmentEvent[]
+
+  @@index([zoneId])
+  @@index([routeId])
+  @@index([assigneeId])
+  @@index([status])
+  @@map("install_assignment")
+}
+
+model InstallAssignmentEvent {
+  id           Int               @id @default(autoincrement())
+  assignmentId String
+  assignment   InstallAssignment @relation(fields: [assignmentId], references: [id], onDelete: Cascade)
+
+  action     String
+  note       String?
+  fromStatus AssignmentStatus?
+  toStatus   AssignmentStatus?
+
+  actorId String?
+  actor   User?   @relation("InstallEventActor", fields: [actorId], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+
+  @@index([assignmentId])
+  @@map("install_assignment_event")
 }
 
 // ============================================================
@@ -816,6 +980,7 @@ enum NotificationEntity {
   TASK
   SURVEY_ASSIGNMENT
   HOUSE_CASE
+  INSTALL_ASSIGNMENT
 }
 
 model Notification {

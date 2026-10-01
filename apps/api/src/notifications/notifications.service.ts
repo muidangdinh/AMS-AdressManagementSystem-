@@ -24,6 +24,7 @@ export const ENTITY_LINKS: Record<NotificationEntity, (id: string) => string> = 
   [NotificationEntity.TASK]: (id) => `/houses/tasks/${id}`,
   [NotificationEntity.SURVEY_ASSIGNMENT]: (id) => `/houses/surveys?assignment=${id}`,
   [NotificationEntity.HOUSE_CASE]: (id) => `/houses/cases/${id}`,
+  [NotificationEntity.INSTALL_ASSIGNMENT]: (id) => `/houses/installs?assignment=${id}`,
 };
 
 /** Thông báo trong app (Phase 11) — dùng chung cho Task, nhiệm vụ khảo sát và hồ sơ hành chính. */
@@ -141,6 +142,14 @@ export class NotificationsService {
       });
       if (!a) throw new NotFoundException('Không tìm thấy nhiệm vụ khảo sát');
       return { link: `/houses/surveys/${a.zone.campaignId}`, assigneeId: a.assigneeId, label: `Khảo sát ${a.zone.name}` };
+    }
+    if (entityType === NotificationEntity.INSTALL_ASSIGNMENT) {
+      const a = await this.prisma.installAssignment.findUnique({
+        where: { id: entityId },
+        include: { zone: { select: { name: true, campaignId: true } } },
+      });
+      if (!a) throw new NotFoundException('Không tìm thấy nhiệm vụ thi công');
+      return { link: `/houses/installs/${a.zone.campaignId}`, assigneeId: a.assigneeId, label: `Thi công ${a.zone.name}` };
     }
     if (entityType === NotificationEntity.HOUSE_CASE) {
       const c = await this.prisma.houseCase.findUnique({ where: { id: entityId } });

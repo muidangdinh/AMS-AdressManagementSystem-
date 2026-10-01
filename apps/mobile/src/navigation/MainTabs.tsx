@@ -7,6 +7,8 @@ import MapScreen from '../screens/MapScreen';
 import AssignmentsScreen from '../screens/AssignmentsScreen';
 import SurveyScreen from '../screens/SurveyScreen';
 import PlatesScreen from '../screens/PlatesScreen';
+import InstallScreen from '../screens/InstallScreen';
+import { useAuth } from '../lib/AuthContext';
 import HistoryScreen from '../screens/HistoryScreen';
 import NotificationBell from '../components/NotificationBell';
 import UserProfileMenu from '../components/UserProfileMenu';
@@ -18,6 +20,8 @@ export type MainTabsParamList = {
   Assignments: undefined;
   /** `resurveyHouseId` — vào chế độ sửa lại đúng nhà bị yêu cầu khảo sát lại (Phase 11 Đợt 2b). */
   Survey: { resurveyHouseId?: string } | undefined;
+  /** Thi công gắn biển — chỉ hiện với cán bộ có quyền install:execute. */
+  Install: undefined;
   Plates: undefined;
   History: undefined;
 };
@@ -25,6 +29,8 @@ export type MainTabsParamList = {
 const Tab = createBottomTabNavigator<MainTabsParamList>();
 
 export default function MainTabs() {
+  const { user } = useAuth();
+  const canInstall = !!user?.permissions?.includes('install:execute');
   return (
     <Tab.Navigator
       screenOptions={{
@@ -73,6 +79,17 @@ export default function MainTabs() {
           tabBarIcon: ({ color, size }) => <Icon name="map-marker-radius" color={color} size={size} />,
         }}
       />
+      {canInstall && (
+        <Tab.Screen
+          name="Install"
+          component={InstallScreen}
+          options={{
+            title: 'Thi Công',
+            tabBarLabel: 'Thi Công',
+            tabBarIcon: ({ color, size }) => <Icon name="hammer-wrench" color={color} size={size} />,
+          }}
+        />
+      )}
       {/* TN-19 — góp ý khách hàng 11/09/2026: đổi tên hiển thị thành "Tra Cứu" (thêm thanh tra
           cứu ở PlatesScreen.tsx). Giữ nguyên route name "Plates" — không đổi để khỏi phải sửa
           điều hướng ở nơi khác (vd DashboardScreen điều hướng theo tên route, không theo nhãn). */}

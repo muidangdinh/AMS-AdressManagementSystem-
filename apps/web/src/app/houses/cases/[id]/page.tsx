@@ -19,15 +19,15 @@ import RemindButton from '@/components/RemindButton';
 import { formatDueDate, isOverdue } from '@/lib/deadline';
 
 const STATUS_BADGE: Record<CaseStatus, string> = {
-  [CaseStatus.RECEIVED]: 'bg-slate-100 text-slate-700 border-slate-200',
-  [CaseStatus.ASSIGNED]: 'bg-slate-100 text-slate-700 border-slate-200',
-  [CaseStatus.REVIEWING]: 'bg-blue-100 text-blue-800 border-blue-200',
-  [CaseStatus.SURVEYING]: 'bg-blue-100 text-blue-800 border-blue-200',
-  [CaseStatus.NUMBERING]: 'bg-blue-100 text-blue-800 border-blue-200',
-  [CaseStatus.APPROVED]: 'bg-amber-100 text-amber-800 border-amber-200',
-  [CaseStatus.PLATE_ISSUED]: 'bg-amber-100 text-amber-800 border-amber-200',
-  [CaseStatus.COMPLETED]: 'bg-emerald-100 text-emerald-800 border-emerald-200',
-  [CaseStatus.REJECTED]: 'bg-rose-100 text-rose-800 border-rose-200',
+  [CaseStatus.RECEIVED]: 'bg-surface-2 text-fg border-line',
+  [CaseStatus.ASSIGNED]: 'bg-surface-2 text-fg border-line',
+  [CaseStatus.REVIEWING]: 'bg-accent/15 text-accent border-accent/30',
+  [CaseStatus.SURVEYING]: 'bg-accent/15 text-accent border-accent/30',
+  [CaseStatus.NUMBERING]: 'bg-accent/15 text-accent border-accent/30',
+  [CaseStatus.APPROVED]: 'bg-warn/15 text-warn border-warn/30',
+  [CaseStatus.PLATE_ISSUED]: 'bg-warn/15 text-warn border-warn/30',
+  [CaseStatus.COMPLETED]: 'bg-ok/15 text-ok border-ok/30',
+  [CaseStatus.REJECTED]: 'bg-danger/15 text-danger border-danger/30',
 };
 
 const NEXT_STEP_LABEL: Partial<Record<CaseStatus, string>> = {
@@ -193,30 +193,30 @@ export default function CaseDetailPage() {
 
   if (loading) {
     return (
-      <div className="p-6 flex items-center gap-2 text-sm text-slate-400">
+      <div className="p-6 flex items-center gap-2 text-sm text-fg-subtle">
         <ButtonSpinner /> Đang tải…
       </div>
     );
   }
   if (error || !houseCase) {
-    return <div className="p-6 text-sm text-rose-600">{error ?? 'Không tìm thấy hồ sơ'}</div>;
+    return <div className="p-6 text-sm text-danger">{error ?? 'Không tìm thấy hồ sơ'}</div>;
   }
 
   const isTerminal = houseCase.status === CaseStatus.COMPLETED || houseCase.status === CaseStatus.REJECTED;
 
   return (
     <div className="h-full overflow-auto p-6 space-y-4">
-      <Link href="/houses/cases" className="text-sm text-blue-600 hover:underline font-semibold">
+      <Link href="/houses/cases" className="text-sm text-accent hover:underline font-semibold">
         ← Danh sách hồ sơ
       </Link>
 
       {actionError && (
-        <div className="bg-rose-50 border border-rose-200 text-rose-700 rounded-xl p-3 text-sm">
+        <div className="bg-danger/10 border border-danger/30 text-danger rounded-xl p-3 text-sm">
           {actionError}
         </div>
       )}
 
-      <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-card">
+      <div className="glass p-5">
         <div className="flex items-start justify-between">
           <div>
             <span
@@ -224,24 +224,24 @@ export default function CaseDetailPage() {
             >
               {CASE_STATUS_LABELS[houseCase.status]}
             </span>
-            <h2 className="text-lg font-bold text-slate-900 font-mono">{houseCase.caseNumber}</h2>
-            <p className="text-sm text-slate-600 mt-1">
+            <h2 className="text-lg font-bold text-fg font-mono">{houseCase.caseNumber}</h2>
+            <p className="text-sm text-fg-muted mt-1">
               {houseCase.applicantName}
               {houseCase.applicantPhone ? ` • ${houseCase.applicantPhone}` : ''} •{' '}
               {CASE_REQUEST_TYPE_LABELS[houseCase.requestType]}
             </p>
-            {houseCase.description && <p className="text-sm text-slate-500 mt-1">{houseCase.description}</p>}
+            {houseCase.description && <p className="text-sm text-fg-muted mt-1">{houseCase.description}</p>}
           </div>
         </div>
 
         {houseCase.status === CaseStatus.REJECTED && houseCase.rejectedReason && (
-          <div className="bg-rose-50 border border-rose-200 text-rose-700 rounded-xl p-3 text-sm mt-3">
+          <div className="bg-danger/10 border border-danger/30 text-danger rounded-xl p-3 text-sm mt-3">
             <strong>Lý do từ chối:</strong> {houseCase.rejectedReason}
           </div>
         )}
 
         {houseCase.house ? (
-          <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-3 text-sm mt-3">
+          <div className="bg-ok/10 border border-ok/30 rounded-xl p-3 text-sm mt-3">
             <strong>Hồ sơ số nhà liên kết:</strong> Số {houseCase.house.houseNumber} {houseCase.house.street}
             {', '}
             {houseCase.house.ward}
@@ -249,8 +249,8 @@ export default function CaseDetailPage() {
         ) : (
           canEdit &&
           !isTerminal && (
-            <div className="border border-slate-200 rounded-xl p-3 mt-3 space-y-2">
-              <p className="text-xs font-bold text-slate-500 uppercase">Liên kết hồ sơ số nhà</p>
+            <div className="border border-line rounded-xl p-3 mt-3 space-y-2">
+              <p className="text-xs font-bold text-fg-muted uppercase">Liên kết hồ sơ số nhà</p>
               <div className="flex gap-2">
                 <input
                   value={houseQuery}
@@ -261,28 +261,28 @@ export default function CaseDetailPage() {
                 />
                 <button
                   onClick={handleSearchHouse}
-                  className="px-4 py-2 rounded-xl text-sm font-semibold border border-slate-300 bg-white text-slate-600 hover:bg-slate-100 transition"
+                  className="px-4 py-2 rounded-xl text-sm font-semibold border border-line bg-surface text-fg-muted hover:bg-surface-2 transition"
                 >
                   Tìm
                 </button>
               </div>
               {searchingHouse && (
-                <p className="flex items-center gap-2 text-xs text-slate-400">
+                <p className="flex items-center gap-2 text-xs text-fg-subtle">
                   <ButtonSpinner /> Đang tìm…
                 </p>
               )}
               {houseResults.length > 0 && (
-                <div className="border border-slate-200 rounded-xl divide-y divide-slate-100 max-h-56 overflow-y-auto">
+                <div className="border border-line rounded-xl divide-y divide-line max-h-56 overflow-y-auto">
                   {houseResults.map((h) => (
                     <button
                       key={h.id}
                       onClick={() => handleLinkHouse(h.id)}
-                      className="w-full text-left px-3 py-2 text-sm hover:bg-blue-50 transition-colors flex items-center justify-between"
+                      className="w-full text-left px-3 py-2 text-sm hover:bg-accent/10 transition-colors flex items-center justify-between"
                     >
                       <span>
                         Số {h.houseNumber} {h.street} — {h.ownerName}
                       </span>
-                      <span className="text-xs text-blue-600 font-semibold">+ Liên kết</span>
+                      <span className="text-xs text-accent font-semibold">+ Liên kết</span>
                     </button>
                   ))}
                 </div>
@@ -294,7 +294,7 @@ export default function CaseDetailPage() {
         {canEdit && !isTerminal && (
           <div className="flex gap-2 items-end mt-3 flex-wrap">
             <div>
-              <label className="block text-[11px] font-bold text-slate-500 uppercase mb-1">
+              <label className="block text-[11px] font-bold text-fg-muted uppercase mb-1">
                 Phân công cán bộ xử lý
               </label>
               <select
@@ -313,7 +313,7 @@ export default function CaseDetailPage() {
               </select>
             </div>
             <div>
-              <label className="block text-[11px] font-bold text-slate-500 uppercase mb-1">Hạn xử lý</label>
+              <label className="block text-[11px] font-bold text-fg-muted uppercase mb-1">Hạn xử lý</label>
               <input
                 key={houseCase.dueDate ?? 'none'}
                 type="date"
@@ -329,7 +329,7 @@ export default function CaseDetailPage() {
               <RemindButton
                 entityType={NotificationEntity.HOUSE_CASE}
                 entityId={houseCase.id}
-                className="border border-amber-300 text-amber-700 hover:bg-amber-50 disabled:opacity-60 px-4 py-2 rounded-xl text-sm font-semibold transition"
+                className="border border-warn/30 text-warn hover:bg-warn/10 disabled:opacity-60 px-4 py-2 rounded-xl text-sm font-semibold transition"
               />
             )}
           </div>
@@ -338,7 +338,7 @@ export default function CaseDetailPage() {
         {houseCase.dueDate && (
           <p
             className={`text-xs font-semibold mt-3 ${
-              !isTerminal && isOverdue(houseCase.dueDate) ? 'text-rose-600' : 'text-slate-500'
+              !isTerminal && isOverdue(houseCase.dueDate) ? 'text-danger' : 'text-fg-muted'
             }`}
           >
             Hạn xử lý: {formatDueDate(houseCase.dueDate)}
@@ -346,7 +346,7 @@ export default function CaseDetailPage() {
           </p>
         )}
 
-        <p className="text-xs text-slate-400 mt-3">
+        <p className="text-xs text-fg-subtle mt-3">
           Tạo bởi {houseCase.createdBy?.fullName ?? '—'} lúc{' '}
           {new Date(houseCase.createdAt).toLocaleString('vi-VN')}
           {houseCase.assignedTo && ` • Đang xử lý bởi ${houseCase.assignedTo.fullName}`}
@@ -359,7 +359,7 @@ export default function CaseDetailPage() {
             <button
               onClick={handleAdvance}
               disabled={actionLoading}
-              className="bg-blue-600 hover:bg-blue-700 disabled:opacity-60 text-white px-4 py-2 rounded-xl text-sm font-semibold shadow-soft transition flex items-center gap-2"
+              className="bg-brand hover:bg-brand/90 disabled:opacity-60 text-white px-4 py-2 rounded-xl text-sm font-semibold shadow-soft transition flex items-center gap-2"
             >
               {actionLoading && <ButtonSpinner light />}
               {NEXT_STEP_LABEL[houseCase.status]}
@@ -369,7 +369,7 @@ export default function CaseDetailPage() {
             <button
               onClick={handleReject}
               disabled={actionLoading}
-              className="border border-rose-300 text-rose-600 hover:bg-rose-50 disabled:opacity-60 px-4 py-2 rounded-xl text-sm font-semibold transition"
+              className="border border-danger/30 text-danger hover:bg-danger/10 disabled:opacity-60 px-4 py-2 rounded-xl text-sm font-semibold transition"
             >
               Từ chối hồ sơ
             </button>
@@ -378,7 +378,7 @@ export default function CaseDetailPage() {
             <button
               onClick={handleReopen}
               disabled={actionLoading}
-              className="border border-slate-300 bg-white text-slate-600 hover:bg-slate-50 disabled:opacity-60 px-4 py-2 rounded-xl text-sm font-semibold transition"
+              className="border border-line bg-surface text-fg-muted hover:bg-surface-2 disabled:opacity-60 px-4 py-2 rounded-xl text-sm font-semibold transition"
             >
               Mở lại hồ sơ
             </button>
@@ -387,8 +387,8 @@ export default function CaseDetailPage() {
       )}
 
       {canEdit && (
-        <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-card">
-          <p className="text-xs font-bold text-slate-500 uppercase mb-2">+ Thêm ghi chú xử lý</p>
+        <div className="glass p-4">
+          <p className="text-xs font-bold text-fg-muted uppercase mb-2">+ Thêm ghi chú xử lý</p>
           <div className="flex gap-2">
             <input
               value={noteText}
@@ -400,7 +400,7 @@ export default function CaseDetailPage() {
             <button
               onClick={handleAddNote}
               disabled={savingNote || !noteText.trim()}
-              className="bg-slate-800 hover:bg-slate-900 disabled:opacity-60 text-white px-4 py-2 rounded-xl text-sm font-semibold transition flex items-center gap-2"
+              className="bg-brand hover:bg-brand/90 disabled:opacity-60 text-white px-4 py-2 rounded-xl text-sm font-semibold transition flex items-center gap-2"
             >
               {savingNote && <ButtonSpinner light />}
               Ghi
@@ -409,18 +409,18 @@ export default function CaseDetailPage() {
         </div>
       )}
 
-      <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-card">
-        <h3 className="font-bold text-sm text-slate-900 mb-3">Lịch sử xử lý</h3>
+      <div className="glass p-4">
+        <h3 className="font-bold text-sm text-fg mb-3">Lịch sử xử lý</h3>
         {(houseCase.events ?? []).length === 0 ? (
-          <EmptyState icon="🕓" text="Chưa có lịch sử xử lý" />
+          <EmptyState text="Chưa có lịch sử xử lý" />
         ) : (
           <div className="space-y-3">
             {(houseCase.events ?? []).map((e) => (
-              <div key={e.id} className="border-b border-slate-100 pb-2 last:border-0 text-sm">
-                <p className="text-slate-700">
+              <div key={e.id} className="border-b border-line pb-2 last:border-0 text-sm">
+                <p className="text-fg">
                   {e.note ?? (e.toStatus ? `Chuyển sang: ${CASE_STATUS_LABELS[e.toStatus]}` : e.action)}
                 </p>
-                <p className="text-[11px] text-slate-400">
+                <p className="text-[11px] text-fg-subtle">
                   {e.actor?.fullName ?? 'Hệ thống'} — {new Date(e.createdAt).toLocaleString('vi-VN')}
                 </p>
               </div>

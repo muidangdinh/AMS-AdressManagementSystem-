@@ -3,6 +3,7 @@
 import { Suspense, useCallback, useEffect, useRef, useState } from 'react';
 import dynamic from 'next/dynamic';
 import { useSearchParams } from 'next/navigation';
+import { ChevronUp, Filter, List, Map as MapIcon, Plus, Search, Zap } from 'lucide-react';
 import {
   BUILDING_TYPE_LABELS,
   BuildingType,
@@ -45,7 +46,7 @@ import { platesApi } from '@/lib/plates-api';
 import { useWorkingWard } from '@/lib/working-ward';
 import { fetchAppConfig } from '@/lib/app-config';
 import type { FlyToRequest, HouseMapPoint } from '@/components/HouseMap';
-import { FIELD_CLASS, FormSection, FormField } from '@/components/ui';
+import { Button, FIELD_CLASS, FormSection, FormField, KpiPill, SegmentedControl } from '@/components/ui';
 
 /**
  * Phase 6 — chọn địa chỉ từ danh mục chuẩn hoá thay vì gõ tự do, với lối
@@ -76,8 +77,8 @@ function AddressComboField({
 
   return (
     <div>
-      <label className="block text-xs font-bold text-slate-600 uppercase tracking-wide mb-1">
-        {label} {required && <span className="text-rose-500">*</span>}
+      <label className="block text-xs font-bold text-fg-muted uppercase tracking-wide mb-1">
+        {label} {required && <span className="text-danger">*</span>}
       </label>
       {manualMode ? (
         <div className="flex gap-2">
@@ -91,7 +92,7 @@ function AddressComboField({
             <button
               type="button"
               onClick={() => setManualMode(false)}
-              className="text-xs text-blue-600 hover:underline whitespace-nowrap shrink-0"
+              className="text-xs text-accent hover:underline whitespace-nowrap shrink-0"
             >
               Chọn danh mục
             </button>
@@ -131,13 +132,17 @@ function AddressComboField({
 const HouseMap = dynamic(() => import('@/components/HouseMap'), {
   ssr: false,
   loading: () => (
-    <div className="h-full w-full flex items-center justify-center text-slate-400 text-sm">
+    <div className="h-full w-full flex items-center justify-center text-fg-subtle text-sm">
       Đang tải bản đồ…
     </div>
   ),
 });
 
 const PAGE_SIZE = 20;
+
+/** Ô nhập/lọc trên thanh bộ lọc (card kính mờ) — cùng token với FIELD_CLASS nhưng nền trong suốt hơn. */
+const FILTER_FIELD =
+  'w-full border border-line rounded-lg px-3 py-2 text-sm bg-surface-2/50 text-fg placeholder:text-fg-subtle focus:ring-2 focus:ring-accent/40 focus:border-accent outline-none transition';
 /** Cỡ mỗi lượt tải khi sắp xếp toàn bộ ở trình duyệt — bằng giới hạn pageSize tối đa của API. */
 const SORT_FETCH_PAGE_SIZE = 100;
 /** So sánh số nhà "tự nhiên": 2 < 10 < 12 < 12A < 12/3 (không so như chuỗi thuần "10" < "2"). */
@@ -148,9 +153,9 @@ const MOBILE_MAX_WIDTH = 768;
 const NEARBY_RADIUS_METERS = 500;
 
 const STATUS_BADGE: Record<HouseStatus, string> = {
-  [HouseStatus.APPROVED]: 'bg-emerald-100 text-emerald-800 border-emerald-200',
-  [HouseStatus.PENDING]: 'bg-amber-100 text-amber-800 border-amber-200',
-  [HouseStatus.NEEDS_ADJUST]: 'bg-rose-100 text-rose-800 border-rose-200',
+  [HouseStatus.APPROVED]: 'bg-ok/15 text-ok border-ok/30',
+  [HouseStatus.PENDING]: 'bg-warn/15 text-warn border-warn/30',
+  [HouseStatus.NEEDS_ADJUST]: 'bg-danger/15 text-danger border-danger/30',
 };
 
 /**
@@ -158,11 +163,11 @@ const STATUS_BADGE: Record<HouseStatus, string> = {
  * ghi chú tại enum HouseReviewStage trong packages/shared).
  */
 const REVIEW_STAGE_BADGE: Record<HouseReviewStage, string> = {
-  [HouseReviewStage.PROPOSED]: 'bg-slate-100 text-slate-700 border-slate-200',
-  [HouseReviewStage.CHECKED]: 'bg-sky-100 text-sky-800 border-sky-200',
-  [HouseReviewStage.APPROVED]: 'bg-emerald-100 text-emerald-800 border-emerald-200',
-  [HouseReviewStage.SIGNED]: 'bg-indigo-100 text-indigo-800 border-indigo-200',
-  [HouseReviewStage.REJECTED]: 'bg-rose-100 text-rose-800 border-rose-200',
+  [HouseReviewStage.PROPOSED]: 'bg-surface-2 text-fg border-line',
+  [HouseReviewStage.CHECKED]: 'bg-accent/15 text-accent border-accent/30',
+  [HouseReviewStage.APPROVED]: 'bg-ok/15 text-ok border-ok/30',
+  [HouseReviewStage.SIGNED]: 'bg-info/15 text-info border-info/30',
+  [HouseReviewStage.REJECTED]: 'bg-danger/15 text-danger border-danger/30',
 };
 
 const HISTORY_ACTION_LABELS: Record<HouseHistoryEntry['action'], string> = {
@@ -921,31 +926,31 @@ export default function HousesPage() {
   const totalPages = data ? Math.max(1, Math.ceil(data.total / data.pageSize)) : 1;
 
   // Nút chuyển Bảng/Bản đồ — dùng ở cả thanh bộ lọc đầy đủ lẫn dòng thu gọn.
+  // Ctrl/⌘ + K: nhảy tới ô tìm kiếm (mở lại thanh bộ lọc nếu đang thu gọn ở chế độ Bản đồ).
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault();
+        setTopBarOpen(true);
+        requestAnimationFrame(() => document.getElementById('house-list-search')?.focus());
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
+
   const viewModeSwitch = (
-    <div className="flex rounded-lg border border-slate-300 overflow-hidden text-sm font-semibold">
-      <button
-        onClick={() => {
-          setViewMode('table');
-          setFlyToRequest(null);
-        }}
-        className={`px-3 py-2 transition ${
-          viewMode === 'table' ? 'bg-blue-600 text-white' : 'bg-white text-slate-600 hover:bg-slate-50'
-        }`}
-      >
-        Bảng
-      </button>
-      <button
-        onClick={() => {
-          setViewMode('map');
-          setFlyToRequest(null);
-        }}
-        className={`px-3 py-2 transition border-l border-slate-300 ${
-          viewMode === 'map' ? 'bg-blue-600 text-white' : 'bg-white text-slate-600 hover:bg-slate-50'
-        }`}
-      >
-        Bản đồ
-      </button>
-    </div>
+    <SegmentedControl
+      value={viewMode}
+      onChange={(v) => {
+        setViewMode(v);
+        setFlyToRequest(null);
+      }}
+      options={[
+        { value: 'table', label: <><List className="w-4 h-4" /> Bảng</> },
+        { value: 'map', label: <><MapIcon className="w-4 h-4" /> Bản đồ</> },
+      ]}
+    />
   );
 
   return (
@@ -958,64 +963,54 @@ export default function HousesPage() {
 
       {/* Thanh thống kê dashboard (Phase 5 — IX) — ở chế độ Bản đồ có thể thu gọn cùng thanh bộ lọc. */}
       {stats && !topBarCollapsed && (
-        <div className="bg-slate-900 px-6 py-2 flex flex-wrap gap-x-5 gap-y-1 text-xs shrink-0">
-          <div className="flex items-center gap-2">
-            <span className="w-2 h-2 rounded-full bg-blue-500" />
-            <span className="text-slate-300">Tổng số nhà:</span>
-            <span className="font-bold text-white">{stats.total}</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <span className="w-2 h-2 rounded-full bg-emerald-500" />
-            <span className="text-slate-300">Đã cấp biển/QR:</span>
-            <span className="font-bold text-emerald-400">{stats.approved}</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <span className="w-2 h-2 rounded-full bg-amber-500" />
-            <span className="text-slate-300">Chờ duyệt:</span>
-            <span className="font-bold text-amber-400">{stats.pending}</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <span className="w-2 h-2 rounded-full bg-rose-500" />
-            <span className="text-slate-300">Cần hiệu chỉnh:</span>
-            <span className="font-bold text-rose-400">{stats.needsAdjust}</span>
-          </div>
+        <div className="px-6 pt-3 flex flex-wrap gap-2 shrink-0">
+          <KpiPill tone="accent" label="Tổng số nhà" value={stats.total} />
+          <KpiPill tone="ok" label="Đã cấp biển/QR" value={stats.approved} />
+          <KpiPill tone="warn" label="Chờ duyệt" value={stats.pending} />
+          <KpiPill tone="danger" label="Cần hiệu chỉnh" value={stats.needsAdjust} />
         </div>
       )}
 
       {/* Thanh bộ lọc */}
       {topBarCollapsed ? (
-        <div className="bg-white border-b border-slate-200 px-3 sm:px-6 py-2 flex items-center justify-between gap-2 shrink-0">
+        <div className="glass mx-3 sm:mx-6 mt-3 px-3 py-2 flex items-center justify-between gap-2 shrink-0">
           <button
             type="button"
             onClick={() => setTopBarOpen(true)}
-            className="flex items-center gap-1.5 text-sm font-semibold text-slate-600 hover:text-slate-900 px-2 py-1.5 rounded-lg hover:bg-slate-100"
+            className="flex items-center gap-1.5 text-sm font-semibold text-fg-muted hover:text-fg px-2 py-1.5 rounded-lg hover:bg-surface-2"
           >
-            ▾ Bộ lọc &amp; thống kê
+            <Filter className="w-4 h-4" /> Bộ lọc &amp; thống kê
             {(search || wardId || streetId || status) && (
-              <span className="w-2 h-2 rounded-full bg-blue-600" title="Đang có bộ lọc" />
+              <span className="w-2 h-2 rounded-full bg-brand" title="Đang có bộ lọc" />
             )}
           </button>
           {viewModeSwitch}
         </div>
       ) : (
-      <div className="bg-white border-b border-slate-200 px-6 py-3 flex flex-wrap gap-3 items-end shrink-0">
+      <div className="glass mx-3 sm:mx-6 mt-3 px-4 py-3 flex flex-wrap gap-3 items-end shrink-0">
         <div className="flex-1 min-w-[220px]">
-          <label className="block text-[11px] font-bold text-slate-500 uppercase mb-1">
+          <label className="block text-[11px] font-bold text-fg-subtle uppercase tracking-wider mb-1">
             Tìm kiếm
           </label>
-          <input
-            value={search}
-            onChange={(e) => {
-              setPage(1);
-              setSearch(e.target.value);
-            }}
-            id="house-list-search"
-            placeholder="Số nhà, chủ sở hữu, CCCD/CMND, mã QR..."
-            className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none"
-          />
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-fg-subtle pointer-events-none" />
+            <input
+              value={search}
+              onChange={(e) => {
+                setPage(1);
+                setSearch(e.target.value);
+              }}
+              id="house-list-search"
+              placeholder="Số nhà, chủ sở hữu, CCCD/CMND, mã QR..."
+              className={`${FILTER_FIELD} pl-9 pr-16`}
+            />
+            <kbd className="absolute right-2 top-1/2 -translate-y-1/2 hidden sm:inline-flex items-center rounded border border-line bg-surface-2/70 px-1.5 py-0.5 text-[10px] font-semibold text-fg-subtle">
+              Ctrl K
+            </kbd>
+          </div>
         </div>
         <div className="w-44">
-          <label className="block text-[11px] font-bold text-slate-500 uppercase mb-1">
+          <label className="block text-[11px] font-bold text-fg-subtle uppercase tracking-wider mb-1">
             Ấp/thôn
           </label>
           <select
@@ -1024,7 +1019,7 @@ export default function HousesPage() {
               setPage(1);
               setWardId(e.target.value);
             }}
-            className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none"
+            className={FILTER_FIELD}
           >
             <option value="">-- Tất cả --</option>
             {wards.map((w) => (
@@ -1035,7 +1030,7 @@ export default function HousesPage() {
           </select>
         </div>
         <div className="w-44">
-          <label className="block text-[11px] font-bold text-slate-500 uppercase mb-1">
+          <label className="block text-[11px] font-bold text-fg-subtle uppercase tracking-wider mb-1">
             Đường
           </label>
           <select
@@ -1044,7 +1039,7 @@ export default function HousesPage() {
               setPage(1);
               setStreetId(e.target.value);
             }}
-            className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none"
+            className={FILTER_FIELD}
           >
             <option value="">-- Tất cả --</option>
             {streets
@@ -1057,7 +1052,7 @@ export default function HousesPage() {
           </select>
         </div>
         <div className="w-48">
-          <label className="block text-[11px] font-bold text-slate-500 uppercase mb-1">
+          <label className="block text-[11px] font-bold text-fg-subtle uppercase tracking-wider mb-1">
             Trạng thái
           </label>
           <select
@@ -1066,7 +1061,7 @@ export default function HousesPage() {
               setPage(1);
               setStatus(e.target.value as HouseStatus | '');
             }}
-            className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none"
+            className={FILTER_FIELD}
           >
             <option value="">-- Tất cả --</option>
             {Object.values(HouseStatus).map((s) => (
@@ -1077,28 +1072,23 @@ export default function HousesPage() {
           </select>
         </div>
         {viewModeSwitch}
-        <button
-          onClick={handleExportExcel}
-          disabled={exporting}
-          className="bg-emerald-600 hover:bg-emerald-700 disabled:opacity-60 text-white px-4 py-2 rounded-lg text-sm font-semibold shadow"
-        >
+        <Button variant="success" onClick={handleExportExcel} disabled={exporting}>
+          <Zap className="w-4 h-4" />
           {exporting ? 'Đang xuất…' : 'Xuất Excel'}
-        </button>
+        </Button>
         {canEdit && (
-          <button
-            onClick={() => openCreateModal()}
-            className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-semibold shadow"
-          >
-            + Thêm số nhà
-          </button>
+          <Button variant="primary" onClick={() => openCreateModal()}>
+            <Plus className="w-4 h-4" />
+            Thêm số nhà
+          </Button>
         )}
         {viewMode === 'map' && (
           <button
             type="button"
             onClick={() => setTopBarOpen(false)}
-            className="px-3 py-2 rounded-lg text-sm font-semibold text-slate-500 hover:text-slate-800 hover:bg-slate-100"
+            className="px-3 py-2 rounded-lg text-sm font-semibold text-fg-muted hover:text-fg hover:bg-surface-2"
           >
-            ▴ Thu gọn
+            <ChevronUp className="w-4 h-4 inline -mt-0.5" /> Thu gọn
           </button>
         )}
       </div>
@@ -1106,15 +1096,15 @@ export default function HousesPage() {
 
       {viewMode === 'table' ? (
       /* Bảng danh sách */
-      <div className="flex-1 overflow-auto p-6">
+      <div className="flex-1 overflow-auto px-3 sm:px-6 py-4">
         {listError && (
-          <div className="bg-rose-50 border border-rose-200 text-rose-700 rounded-lg p-3 text-sm mb-4">
+          <div className="bg-danger/10 border border-danger/30 text-danger rounded-lg p-3 text-sm mb-4">
             {listError}
           </div>
         )}
-        <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+        <div className="glass overflow-hidden">
           <table className="w-full text-sm">
-            <thead className="bg-slate-50 text-slate-500 text-xs uppercase">
+            <thead className="bg-surface-2/60 text-fg-subtle text-[11px] uppercase tracking-wider">
               <tr>
                 <th className="text-left px-4 py-3">
                   <button
@@ -1125,10 +1115,10 @@ export default function HousesPage() {
                       setPage(1);
                     }}
                     title="Sắp xếp theo số nhà"
-                    className="inline-flex items-center gap-1 uppercase hover:text-slate-800"
+                    className="inline-flex items-center gap-1 uppercase hover:text-fg"
                   >
                     Số nhà
-                    <span className={sortDir ? 'text-blue-600' : 'text-slate-300'}>
+                    <span className={sortDir ? 'text-accent' : 'text-fg-subtle'}>
                       {sortDir === 'asc' ? '▲' : sortDir === 'desc' ? '▼' : '⇅'}
                     </span>
                   </button>
@@ -1142,17 +1132,17 @@ export default function HousesPage() {
                 {/* <th className="text-left px-4 py-3">Mã QR</th> */}
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-100">
+            <tbody className="divide-y divide-line">
               {loading && (
                 <tr>
-                  <td colSpan={8} className="text-center py-8 text-slate-400">
+                  <td colSpan={8} className="text-center py-8 text-fg-subtle">
                     Đang tải…
                   </td>
                 </tr>
               )}
               {!loading && data?.items.length === 0 && (
                 <tr>
-                  <td colSpan={8} className="text-center py-8 text-slate-400">
+                  <td colSpan={8} className="text-center py-8 text-fg-subtle">
                     Không có hồ sơ nào phù hợp
                   </td>
                 </tr>
@@ -1162,31 +1152,31 @@ export default function HousesPage() {
                   <tr
                     key={house.id}
                     onClick={() => openDetail(house.id)}
-                    className="cursor-pointer hover:bg-blue-50/50"
+                    className="cursor-pointer transition-colors duration-200 hover:bg-surface-2/50"
                   >
-                    <td className="px-4 py-3 font-bold text-slate-900">{house.houseNumber}</td>
+                    <td className="px-4 py-3 font-bold text-fg">{house.houseNumber}</td>
                     <td className="px-4 py-3">{house.ownerName}</td>
                     <td className="px-4 py-3 text-xs">
                       {BUILDING_TYPE_LABELS[house.buildingType]}
                     </td>
                     <td className="px-4 py-3">{house.street}</td>
                     <td className="px-4 py-3">{house.ward}</td>
-                    <td className="px-4 py-3 text-xs text-slate-500">
+                    <td className="px-4 py-3 text-xs text-fg-muted">
                       {house.approvedAt ? new Date(house.approvedAt).toLocaleDateString('vi-VN') : '—'}
                     </td>
                     <td className="px-4 py-3">
                       <span
-                        className={`px-2 py-0.5 rounded text-[11px] font-bold border ${STATUS_BADGE[house.status]}`}
+                        className={`inline-flex px-2 py-0.5 rounded-full text-[11px] font-bold border ${STATUS_BADGE[house.status]}`}
                       >
                         {HOUSE_STATUS_LABELS[house.status]}
                       </span>
                       <span
-                        className={`block mt-1 px-2 py-0.5 rounded text-[10px] font-bold border w-fit ${REVIEW_STAGE_BADGE[house.reviewStage]}`}
+                        className={`block mt-1 px-2 py-0.5 rounded-full text-[10px] font-bold border w-fit ${REVIEW_STAGE_BADGE[house.reviewStage]}`}
                       >
                         {HOUSE_REVIEW_STAGE_LABELS[house.reviewStage]}
                       </span>
                     </td>
-                    {/* <td className="px-4 py-3 font-mono text-xs text-slate-400">
+                    {/* <td className="px-4 py-3 font-mono text-xs text-fg-subtle">
                       {house.qrCode}
                     </td> */}
                   </tr>
@@ -1196,7 +1186,7 @@ export default function HousesPage() {
         </div>
 
         {data && data.total > 0 && (
-          <div className="flex items-center justify-between mt-4 text-sm text-slate-500">
+          <div className="flex items-center justify-between mt-4 text-sm text-fg-muted">
             <span>
               Tổng {data.total} hồ sơ — Trang {data.page}/{totalPages}
             </span>
@@ -1204,7 +1194,7 @@ export default function HousesPage() {
               <button
                 disabled={page <= 1}
                 onClick={() => setPage((p) => p - 1)}
-                className="px-3 py-1.5 rounded border border-slate-300 disabled:opacity-40"
+                className="px-3 py-1.5 rounded border border-line disabled:opacity-40"
               >
                 Trước
               </button>
@@ -1217,30 +1207,30 @@ export default function HousesPage() {
                     {showFirst && (
                       <button
                         onClick={() => setPage(1)}
-                        className="px-3 py-1.5 rounded border border-slate-300 text-slate-600 hover:bg-slate-50"
+                        className="px-3 py-1.5 rounded border border-line text-fg-muted hover:bg-surface-2"
                       >
                         Trang đầu
                       </button>
                     )}
-                    {showFirstEllipsis && <span className="px-1 text-slate-400">…</span>}
+                    {showFirstEllipsis && <span className="px-1 text-fg-subtle">…</span>}
                     {pages.map((p) => (
                       <button
                         key={p}
                         onClick={() => setPage(p)}
                         className={`px-3 py-1.5 rounded border text-sm font-semibold ${
                           p === page
-                            ? 'bg-blue-600 border-blue-600 text-white'
-                            : 'border-slate-300 text-slate-600 hover:bg-slate-50'
+                            ? 'bg-accent/15 border-accent text-accent shadow-glow-accent'
+                            : 'border-line text-fg-muted hover:bg-surface-2'
                         }`}
                       >
                         {p}
                       </button>
                     ))}
-                    {showLastEllipsis && <span className="px-1 text-slate-400">…</span>}
+                    {showLastEllipsis && <span className="px-1 text-fg-subtle">…</span>}
                     {showLast && (
                       <button
                         onClick={() => setPage(totalPages)}
-                        className="px-3 py-1.5 rounded border border-slate-300 text-slate-600 hover:bg-slate-50"
+                        className="px-3 py-1.5 rounded border border-line text-fg-muted hover:bg-surface-2"
                       >
                         Trang cuối
                       </button>
@@ -1252,7 +1242,7 @@ export default function HousesPage() {
               <button
                 disabled={page >= totalPages}
                 onClick={() => setPage((p) => p + 1)}
-                className="px-3 py-1.5 rounded border border-slate-300 disabled:opacity-40"
+                className="px-3 py-1.5 rounded border border-line disabled:opacity-40"
               >
                 Sau
               </button>
@@ -1268,46 +1258,46 @@ export default function HousesPage() {
         <aside
           className={`${
             mapListOpen ? 'block' : 'hidden'
-          } absolute inset-y-0 left-0 z-[1100] w-72 max-w-[85%] shadow-xl md:static md:z-auto md:w-80 md:max-w-none md:shadow-none shrink-0 border-r border-slate-200 bg-white overflow-y-auto p-3 space-y-2`}
+          } absolute top-3 bottom-3 left-3 z-[1100] w-72 max-w-[85%] md:w-80 glass !bg-surface/75 shadow-2xl overflow-y-auto p-3 space-y-2`}
         >
           <div className="flex items-center justify-between">
-            <span className="text-xs font-bold text-slate-500 uppercase">
+            <span className="text-xs font-bold text-fg-muted uppercase">
               Danh sách số nhà ({(nearbyResults ?? mapHouses).length})
             </span>
             <button
               type="button"
               onClick={() => setMapListOpen(false)}
-              className="text-xs font-semibold text-slate-500 hover:text-slate-800 px-2 py-1 rounded hover:bg-slate-100"
+              className="text-xs font-semibold text-fg-muted hover:text-fg px-2 py-1 rounded hover:bg-surface-2"
             >
               Ẩn ✕
             </button>
           </div>
           {mapError && (
-            <div className="bg-rose-50 border border-rose-200 text-rose-700 rounded-lg p-3 text-sm">
+            <div className="bg-danger/10 border border-danger/30 text-danger rounded-lg p-3 text-sm">
               {mapError}
             </div>
           )}
 
           {nearbyResults !== null && (
-            <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-xs space-y-1">
+            <div className="bg-accent/10 border border-accent/30 rounded-lg p-3 text-xs space-y-1">
               <div className="flex items-center justify-between">
-                <span className="font-bold text-blue-700">
+                <span className="font-bold text-accent">
                   Trong bán kính {NEARBY_RADIUS_METERS}m: {nearbyResults.length} hồ sơ
                 </span>
-                <button onClick={clearNearby} className="text-blue-600 hover:underline font-semibold">
+                <button onClick={clearNearby} className="text-accent hover:underline font-semibold">
                   Xóa
                 </button>
               </div>
-              <p className="text-blue-500">Vừa tra cứu theo tọa độ đã bấm trên bản đồ.</p>
+              <p className="text-accent">Vừa tra cứu theo tọa độ đã bấm trên bản đồ.</p>
             </div>
           )}
 
           {(mapLoading || nearbyLoading) && (
-            <p className="text-slate-400 text-sm text-center py-4">Đang tải…</p>
+            <p className="text-fg-subtle text-sm text-center py-4">Đang tải…</p>
           )}
 
           {!mapLoading && !nearbyLoading && (nearbyResults ?? mapHouses).length === 0 && (
-            <p className="text-slate-400 text-sm text-center py-4">
+            <p className="text-fg-subtle text-sm text-center py-4">
               Không có hồ sơ nào phù hợp
             </p>
           )}
@@ -1319,17 +1309,17 @@ export default function HousesPage() {
                   <div
                     key={h.id}
                     onClick={() => pickFromMapList(h.id, h.latitude, h.longitude)}
-                    className="p-3 rounded-lg border border-slate-200 hover:border-blue-300 hover:bg-blue-50/50 cursor-pointer transition"
+                    className="p-3 rounded-lg border border-line hover:border-accent/30 hover:bg-accent/10 cursor-pointer transition"
                   >
                     <div className="flex items-center justify-between">
-                      <h3 className="font-bold text-sm text-slate-900">
+                      <h3 className="font-bold text-sm text-fg">
                         Số {h.houseNumber} {h.street}
                       </h3>
-                      <span className="text-[10px] font-mono text-blue-600 shrink-0 ml-2">
+                      <span className="text-[10px] font-mono text-accent shrink-0 ml-2">
                         {h.distance}m
                       </span>
                     </div>
-                    <p className="text-xs text-slate-500 truncate">{h.ownerName}</p>
+                    <p className="text-xs text-fg-muted truncate">{h.ownerName}</p>
                     <span
                       className={`inline-block mt-1 px-1.5 py-0.5 rounded text-[10px] font-bold border ${STATUS_BADGE[h.status]}`}
                     >
@@ -1341,12 +1331,12 @@ export default function HousesPage() {
                   <div
                     key={h.id}
                     onClick={() => pickFromMapList(h.id, h.latitude, h.longitude)}
-                    className="p-3 rounded-lg border border-slate-200 hover:border-blue-300 hover:bg-blue-50/50 cursor-pointer transition"
+                    className="p-3 rounded-lg border border-line hover:border-accent/30 hover:bg-accent/10 cursor-pointer transition"
                   >
-                    <h3 className="font-bold text-sm text-slate-900">
+                    <h3 className="font-bold text-sm text-fg">
                       Số {h.houseNumber} {h.street}
                     </h3>
-                    <p className="text-xs text-slate-500 truncate">{h.ownerName}</p>
+                    <p className="text-xs text-fg-muted truncate">{h.ownerName}</p>
                     <span
                       className={`inline-block mt-1 px-1.5 py-0.5 rounded text-[10px] font-bold border ${STATUS_BADGE[h.status]}`}
                     >
@@ -1361,7 +1351,7 @@ export default function HousesPage() {
             <button
               type="button"
               onClick={() => setMapListOpen(true)}
-              className="absolute top-3 left-3 z-[1000] bg-white rounded-lg shadow-md border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+              className="absolute top-3 left-3 z-[1000] bg-surface rounded-lg shadow-md border border-line px-3 py-1.5 text-xs font-semibold text-fg hover:bg-surface-2"
             >
               ☰ Danh sách ({(nearbyResults ?? mapHouses).length})
             </button>
@@ -1380,22 +1370,22 @@ export default function HousesPage() {
       {/* Drawer chi tiết */}
       {selectedId && (
         <div className="fixed inset-0 z-[600]">
-          <div className="absolute inset-0 bg-slate-900/40" onClick={closeDetail} />
-          <div className="absolute top-0 right-0 h-full w-full sm:w-[480px] bg-white shadow-2xl flex flex-col">
-            <div className="p-4 bg-slate-900 text-white flex items-center justify-between shrink-0">
+          <div className="absolute inset-0 bg-black/50" onClick={closeDetail} />
+          <div className="absolute top-0 right-0 h-full w-full sm:w-[480px] bg-surface shadow-2xl flex flex-col">
+            <div className="p-4 bg-shell text-fg border-b border-line flex items-center justify-between shrink-0">
               <h2 className="font-bold text-base">Chi Tiết Hồ Sơ Số Nhà</h2>
-              <button onClick={closeDetail} className="text-slate-400 hover:text-white text-lg">
+              <button onClick={closeDetail} className="text-fg-subtle hover:text-fg text-lg">
                 ×
               </button>
             </div>
 
             <div className="flex-1 overflow-y-auto p-5 space-y-5">
               {detailError && (
-                <div className="bg-rose-50 border border-rose-200 text-rose-700 rounded-lg p-3 text-sm">
+                <div className="bg-danger/10 border border-danger/30 text-danger rounded-lg p-3 text-sm">
                   {detailError}
                 </div>
               )}
-              {!detail && !detailError && <p className="text-slate-400 text-sm">Đang tải…</p>}
+              {!detail && !detailError && <p className="text-fg-subtle text-sm">Đang tải…</p>}
               {detail && (
                 <>
                   <div className="space-y-1">
@@ -1409,21 +1399,21 @@ export default function HousesPage() {
                     >
                       {HOUSE_REVIEW_STAGE_LABELS[detail.reviewStage]}
                     </span>
-                    <h3 className="text-2xl font-extrabold text-slate-900">
+                    <h3 className="text-2xl font-extrabold text-fg">
                       Số {detail.houseNumber} {detail.street}
                     </h3>
                     {/* TN-21 — địa chỉ đầy đủ 5 cấp (góp ý khách hàng 11/09/2026): ấp, xã, tỉnh
                         (số nhà + đường đã hiện ở tiêu đề trên) — dùng chung công thức với mobile
                         qua `formatFullAddress` (truyền houseNumber/street rỗng để không lặp lại). */}
-                    <p className="text-xs text-slate-500">
+                    <p className="text-xs text-fg-muted">
                       {formatFullAddress(
                         { houseNumber: '', street: '', ward: detail.ward, hamletName: detail.hamlet?.name },
                         provinceName,
                       )}
                     </p>
-                    <p className="text-[11px] text-slate-400">
+                    <p className="text-[11px] text-fg-subtle">
                       Khởi tạo bởi{' '}
-                      <span className="font-medium text-slate-600">
+                      <span className="font-medium text-fg-muted">
                         {detail.createdBy
                           ? `${detail.createdBy.fullName} (${USER_ROLE_LABELS[detail.createdBy.role]})`
                           : 'Tài khoản đã xóa'}
@@ -1432,77 +1422,77 @@ export default function HousesPage() {
                     </p>
                   </div>
 
-                  <div className="bg-slate-50 rounded-xl p-4 border border-slate-200 space-y-3">
-                    <h4 className="font-bold text-xs uppercase text-slate-500 tracking-wider">
+                  <div className="bg-surface-2 rounded-xl p-4 border border-line space-y-3">
+                    <h4 className="font-bold text-xs uppercase text-fg-muted tracking-wider">
                       Chủ sở hữu
                     </h4>
                     <div className="grid grid-cols-2 gap-2 text-sm">
                       <div>
-                        <p className="text-xs text-slate-400">Họ tên</p>
+                        <p className="text-xs text-fg-subtle">Họ tên</p>
                         <p className="font-semibold">{detail.ownerName}</p>
                       </div>
                       <div>
-                        <p className="text-xs text-slate-400">Điện thoại</p>
+                        <p className="text-xs text-fg-subtle">Điện thoại</p>
                         <p className="font-semibold">{detail.ownerPhone || '—'}</p>
                       </div>
                       <div>
-                        <p className="text-xs text-slate-400">Số CCCD/CMND</p>
+                        <p className="text-xs text-fg-subtle">Số CCCD/CMND</p>
                         <p className="font-semibold">{detail.ownerIdNumber || '—'}</p>
                       </div>
                     </div>
 
-                    <h4 className="font-bold text-xs uppercase text-slate-500 tracking-wider border-t border-slate-200 pt-3">
+                    <h4 className="font-bold text-xs uppercase text-fg-muted tracking-wider border-t border-line pt-3">
                       Đặc điểm công trình
                     </h4>
                     <div className="grid grid-cols-3 gap-2 text-sm">
                       <div>
-                        <p className="text-xs text-slate-400">Loại nhà</p>
+                        <p className="text-xs text-fg-subtle">Loại nhà</p>
                         <p className="font-semibold text-xs">
                           {BUILDING_TYPE_LABELS[detail.buildingType]}
                         </p>
                       </div>
                       <div>
-                        <p className="text-xs text-slate-400">Số tầng</p>
+                        <p className="text-xs text-fg-subtle">Số tầng</p>
                         <p className="font-semibold">{detail.floors ?? '—'}</p>
                       </div>
                       <div>
-                        <p className="text-xs text-slate-400">Diện tích</p>
+                        <p className="text-xs text-fg-subtle">Diện tích</p>
                         <p className="font-semibold">
                           {detail.area ? `${detail.area} m²` : '—'}
                         </p>
                       </div>
                     </div>
                     {(detail.soTo || detail.soThua) && (
-                      <p className="text-xs text-slate-500">
+                      <p className="text-xs text-fg-muted">
                         Thửa {detail.soThua ?? '—'} / Tờ {detail.soTo ?? '—'}
                       </p>
                     )}
-                    <div className="grid grid-cols-3 gap-2 text-sm border-t border-slate-200 pt-3">
+                    <div className="grid grid-cols-3 gap-2 text-sm border-t border-line pt-3">
                       <div>
-                        <p className="text-xs text-slate-400">Hiện trạng nhà</p>
+                        <p className="text-xs text-fg-subtle">Hiện trạng nhà</p>
                         <p className="font-semibold text-xs">
                           {detail.usageStatus ? HOUSE_USAGE_STATUS_LABELS[detail.usageStatus] : '—'}
                         </p>
                       </div>
                       <div>
-                        <p className="text-xs text-slate-400">Nhu cầu gắn biển</p>
+                        <p className="text-xs text-fg-subtle">Nhu cầu gắn biển</p>
                         <p className="font-semibold text-xs">
                           {detail.plateNeed ? PLATE_NEED_LABELS[detail.plateNeed] : '—'}
                         </p>
                       </div>
                       <div>
-                        <p className="text-xs text-slate-400">Phía đường</p>
+                        <p className="text-xs text-fg-subtle">Phía đường</p>
                         <p className="font-semibold text-xs">{NUMBERING_SIDE_LABELS[detail.side]}</p>
                       </div>
                     </div>
                     {detail.note && (
-                      <p className="text-xs text-slate-500 border-t border-slate-200 pt-3">
+                      <p className="text-xs text-fg-muted border-t border-line pt-3">
                         Ghi chú: {detail.note}
                       </p>
                     )}
                   </div>
 
-                  <div className="bg-slate-50 rounded-xl p-4 border border-slate-200 space-y-4">
+                  <div className="bg-surface-2 rounded-xl p-4 border border-line space-y-4">
                     {(
                       [
                         { type: PhotoType.FACADE, label: 'Ảnh mặt tiền', uploadId: 'house-photo-upload-facade' },
@@ -1514,11 +1504,11 @@ export default function HousesPage() {
                       return (
                         <div key={group.type}>
                           <div className="flex items-center justify-between">
-                            <h4 className="font-bold text-xs uppercase text-slate-500 tracking-wider">
+                            <h4 className="font-bold text-xs uppercase text-fg-muted tracking-wider">
                               {group.label}
                             </h4>
                             {canEdit && (
-                              <label className="text-xs text-blue-600 font-semibold cursor-pointer hover:underline">
+                              <label className="text-xs text-accent font-semibold cursor-pointer hover:underline">
                                 {uploading ? 'Đang tải...' : '+ Tải ảnh lên'}
                                 <input
                                   id={group.uploadId}
@@ -1546,12 +1536,12 @@ export default function HousesPage() {
                                         uploadedAt: photo.createdAt,
                                       })
                                     }
-                                    className="w-full h-20 object-cover rounded-lg border border-slate-200 cursor-pointer hover:opacity-90 transition"
+                                    className="w-full h-20 object-cover rounded-lg border border-line cursor-pointer hover:opacity-90 transition"
                                   />
                                   {canEdit && (
                                     <button
                                       onClick={() => handleDeletePhoto(photo.id)}
-                                      className="absolute top-1 right-1 bg-rose-600 text-white rounded-full w-5 h-5 text-xs opacity-0 group-hover:opacity-100 transition"
+                                      className="absolute top-1 right-1 bg-danger text-white rounded-full w-5 h-5 text-xs opacity-0 group-hover:opacity-100 transition"
                                     >
                                       ×
                                     </button>
@@ -1560,18 +1550,18 @@ export default function HousesPage() {
                               ))}
                             </div>
                           ) : (
-                            <p className="text-xs text-slate-400 mt-1">Chưa có ảnh</p>
+                            <p className="text-xs text-fg-subtle mt-1">Chưa có ảnh</p>
                           )}
                         </div>
                       );
                     })}
                   </div>
 
-                  <div className="bg-slate-50 rounded-xl p-4 border border-slate-200 space-y-3">
-                    <h4 className="font-bold text-xs uppercase text-slate-500 tracking-wider">
+                  <div className="bg-surface-2 rounded-xl p-4 border border-line space-y-3">
+                    <h4 className="font-bold text-xs uppercase text-fg-muted tracking-wider">
                       Tọa độ GPS & Mã QR
                     </h4>
-                    <div className="flex items-center space-x-3 bg-white p-3 rounded-lg border border-slate-200">
+                    <div className="flex items-center space-x-3 bg-surface p-3 rounded-lg border border-line">
                       {/* eslint-disable-next-line @next/next/no-img-element */}
                       <img
                         src={`${apiUrl}/api/houses/${detail.id}/qrcode.png`}
@@ -1579,17 +1569,17 @@ export default function HousesPage() {
                         className="w-16 h-16"
                       />
                       <div className="flex-1 min-w-0">
-                        <p className="font-mono text-xs font-bold text-slate-800 truncate">
+                        <p className="font-mono text-xs font-bold text-fg truncate">
                           {detail.qrCode}
                         </p>
-                        <p className="text-[11px] text-slate-500 font-mono">
+                        <p className="text-[11px] text-fg-muted font-mono">
                           GPS: {detail.latitude.toFixed(5)}, {detail.longitude.toFixed(5)}
                         </p>
                         <a
                           href={`/lookup/${detail.id}`}
                           target="_blank"
                           rel="noopener noreferrer"
-                          className="text-[11px] text-blue-600 hover:underline"
+                          className="text-[11px] text-accent hover:underline"
                         >
                           Xem trang tra cứu công khai →
                         </a>
@@ -1598,12 +1588,12 @@ export default function HousesPage() {
                   </div>
 
                   {/* Phase 8 — Biển số nhà (tách khỏi qrCode ở trên, xem module house-plates) */}
-                  <div className="bg-slate-50 rounded-xl p-4 border border-slate-200 space-y-3">
-                    <h4 className="font-bold text-xs uppercase text-slate-500 tracking-wider">
+                  <div className="bg-surface-2 rounded-xl p-4 border border-line space-y-3">
+                    <h4 className="font-bold text-xs uppercase text-fg-muted tracking-wider">
                       Biển số nhà
                     </h4>
                     {plateActionError && (
-                      <p className="text-rose-600 text-xs">{plateActionError}</p>
+                      <p className="text-danger text-xs">{plateActionError}</p>
                     )}
                     {(() => {
                       const activePlate = plates.find(
@@ -1613,7 +1603,7 @@ export default function HousesPage() {
                       return (
                         <>
                           {activePlate ? (
-                            <div className="bg-white p-3 rounded-lg border border-slate-200 space-y-2">
+                            <div className="bg-surface p-3 rounded-lg border border-line space-y-2">
                               <div className="flex items-center space-x-3">
                                 {/* eslint-disable-next-line @next/next/no-img-element */}
                                 <img
@@ -1622,24 +1612,24 @@ export default function HousesPage() {
                                   className="w-14 h-14"
                                 />
                                 <div className="flex-1 min-w-0">
-                                  <p className="font-mono text-xs font-bold text-slate-800 truncate">
+                                  <p className="font-mono text-xs font-bold text-fg truncate">
                                     {activePlate.plateCode}
                                   </p>
                                   <span
                                     className={`inline-block mt-0.5 px-1.5 py-0.5 rounded text-[10px] font-bold border ${
                                       activePlate.status === PlateStatus.INSTALLED
-                                        ? 'bg-emerald-100 text-emerald-800 border-emerald-200'
-                                        : 'bg-amber-100 text-amber-800 border-amber-200'
+                                        ? 'bg-ok/15 text-ok border-ok/30'
+                                        : 'bg-warn/15 text-warn border-warn/30'
                                     }`}
                                   >
                                     {PLATE_STATUS_LABELS[activePlate.status]}
                                   </span>
-                                  <p className="text-[10px] text-slate-400 mt-0.5">
+                                  <p className="text-[10px] text-fg-subtle mt-0.5">
                                     {PLATE_ISSUE_REASON_LABELS[activePlate.issueReason]} lúc{' '}
                                     {new Date(activePlate.issuedAt).toLocaleString('vi-VN')}
                                   </p>
                                   {activePlate.notInstalledReason && (
-                                    <p className="text-[10px] text-amber-600 mt-0.5">
+                                    <p className="text-[10px] text-warn mt-0.5">
                                       Chưa gắn được: {activePlate.notInstalledReason}
                                     </p>
                                   )}
@@ -1649,7 +1639,7 @@ export default function HousesPage() {
                                 <button
                                   onClick={() => handleInstallPlate(activePlate.id)}
                                   disabled={plateActionLoading}
-                                  className="w-full bg-emerald-600 hover:bg-emerald-700 disabled:opacity-60 text-white text-xs font-semibold py-1.5 rounded-lg"
+                                  className="w-full bg-ok hover:bg-ok/90 disabled:opacity-60 text-white text-xs font-semibold py-1.5 rounded-lg"
                                 >
                                   Xác nhận đã gắn
                                 </button>
@@ -1659,21 +1649,21 @@ export default function HousesPage() {
                                   <button
                                     onClick={() => handleIssuePlate(PlateIssueReason.REPLACEMENT)}
                                     disabled={plateActionLoading}
-                                    className="flex-1 border border-slate-300 text-slate-600 hover:bg-slate-50 disabled:opacity-60 text-xs font-semibold py-1.5 rounded-lg"
+                                    className="flex-1 border border-line text-fg-muted hover:bg-surface-2 disabled:opacity-60 text-xs font-semibold py-1.5 rounded-lg"
                                   >
                                     Cấp đổi
                                   </button>
                                   <button
                                     onClick={() => handleIssuePlate(PlateIssueReason.REISSUE)}
                                     disabled={plateActionLoading}
-                                    className="flex-1 border border-slate-300 text-slate-600 hover:bg-slate-50 disabled:opacity-60 text-xs font-semibold py-1.5 rounded-lg"
+                                    className="flex-1 border border-line text-fg-muted hover:bg-surface-2 disabled:opacity-60 text-xs font-semibold py-1.5 rounded-lg"
                                   >
                                     Cấp lại
                                   </button>
                                   <button
                                     onClick={() => handleRevokePlate(activePlate.id)}
                                     disabled={plateActionLoading}
-                                    className="flex-1 border border-rose-300 text-rose-600 hover:bg-rose-50 disabled:opacity-60 text-xs font-semibold py-1.5 rounded-lg"
+                                    className="flex-1 border border-danger/30 text-danger hover:bg-danger/10 disabled:opacity-60 text-xs font-semibold py-1.5 rounded-lg"
                                   >
                                     Thu hồi
                                   </button>
@@ -1682,12 +1672,12 @@ export default function HousesPage() {
                             </div>
                           ) : (
                             <div className="text-center py-2">
-                              <p className="text-xs text-slate-400 mb-2">Chưa cấp biển số</p>
+                              <p className="text-xs text-fg-subtle mb-2">Chưa cấp biển số</p>
                               {canEdit && (
                                 <button
                                   onClick={() => handleIssuePlate(PlateIssueReason.NEW)}
                                   disabled={plateActionLoading}
-                                  className="bg-blue-600 hover:bg-blue-700 disabled:opacity-60 text-white text-xs font-semibold px-3 py-1.5 rounded-lg"
+                                  className="bg-brand hover:bg-brand/90 disabled:opacity-60 text-white text-xs font-semibold px-3 py-1.5 rounded-lg"
                                 >
                                   Cấp biển mới
                                 </button>
@@ -1697,12 +1687,12 @@ export default function HousesPage() {
 
                           {pastPlates.length > 0 && (
                             <details className="text-xs">
-                              <summary className="text-slate-500 cursor-pointer select-none">
+                              <summary className="text-fg-muted cursor-pointer select-none">
                                 Lịch sử biển số ({pastPlates.length})
                               </summary>
                               <ul className="mt-2 space-y-1">
                                 {pastPlates.map((p) => (
-                                  <li key={p.id} className="text-slate-500 font-mono">
+                                  <li key={p.id} className="text-fg-muted font-mono">
                                     {p.plateCode} — {PLATE_STATUS_LABELS[p.status]}
                                     {p.revokedReason ? ` (${p.revokedReason})` : ''}
                                   </li>
@@ -1716,30 +1706,30 @@ export default function HousesPage() {
                   </div>
 
                   {history.length > 0 && (
-                    <div className="bg-slate-50 rounded-xl p-4 border border-slate-200 space-y-2">
-                      <h4 className="font-bold text-xs uppercase text-slate-500 tracking-wider">
+                    <div className="bg-surface-2 rounded-xl p-4 border border-line space-y-2">
+                      <h4 className="font-bold text-xs uppercase text-fg-muted tracking-wider">
                         Lịch sử thay đổi
                       </h4>
                       <ul className="space-y-2 text-xs">
                         {history.map((h) => (
-                          <li key={h.id} className="border-b border-slate-200 pb-2 last:border-0">
+                          <li key={h.id} className="border-b border-line pb-2 last:border-0">
                             <span className="font-semibold">
                               {HISTORY_ACTION_LABELS[h.action] ?? h.action}
                             </span>{' '}
-                            <span className="text-slate-400">
+                            <span className="text-fg-subtle">
                               — {new Date(h.createdAt).toLocaleString('vi-VN')}
                             </span>
                             {' '}
-                            <span className="text-slate-500">
+                            <span className="text-fg-muted">
                               bởi{' '}
-                              <span className="font-medium text-slate-700">
+                              <span className="font-medium text-fg">
                                 {h.changedBy
                                   ? `${h.changedBy.fullName} (${USER_ROLE_LABELS[h.changedBy.role]})`
                                   : 'Tài khoản đã xóa'}
                               </span>
                             </span>
                             {h.action === 'UPDATE' && Array.isArray(h.changes) && (
-                              <ul className="mt-1 space-y-0.5 text-slate-500">
+                              <ul className="mt-1 space-y-0.5 text-fg-muted">
                                 {h.changes.map((c, i) => (
                                   <li key={i}>
                                     <span className="font-medium">{c.field}</span>:{' '}
@@ -1755,7 +1745,7 @@ export default function HousesPage() {
                                 if (!value) return null;
                                 return (
                                   <div key={i} className="mt-1 flex items-center gap-2">
-                                    <span className="text-slate-500">
+                                    <span className="text-fg-muted">
                                       {PHOTO_TYPE_LABELS[value.type] ?? value.type}
                                     </span>
                                     {h.action === 'PHOTO_ADD' && (
@@ -1770,7 +1760,7 @@ export default function HousesPage() {
                                             uploadedAt: h.createdAt,
                                           })
                                         }
-                                        className="w-10 h-10 object-cover rounded border border-slate-200 cursor-pointer hover:opacity-90 transition"
+                                        className="w-10 h-10 object-cover rounded border border-line cursor-pointer hover:opacity-90 transition"
                                       />
                                     )}
                                   </div>
@@ -1786,19 +1776,19 @@ export default function HousesPage() {
             </div>
 
             {detail && (
-              <div className="p-4 bg-slate-50 border-t border-slate-200 shrink-0 flex gap-2">
+              <div className="p-4 bg-surface-2 border-t border-line shrink-0 flex gap-2">
                 <a
                   href={`/houses/${detail.id}/label`}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="flex-1 bg-slate-700 hover:bg-slate-800 text-white py-2 rounded-lg text-sm font-bold text-center"
+                  className="flex-1 bg-surface-2 hover:bg-line text-fg border border-line py-2 rounded-lg text-sm font-bold text-center"
                 >
                   In Tem QR
                 </a>
                 {canEdit && (
                   <button
                     onClick={() => openEditModal(detail)}
-                    className="flex-1 bg-blue-600 hover:bg-blue-700 text-white py-2 rounded-lg text-sm font-bold"
+                    className="flex-1 bg-brand hover:bg-brand/90 text-white py-2 rounded-lg text-sm font-bold"
                   >
                     Cập Nhật Thông Tin
                   </button>
@@ -1811,23 +1801,23 @@ export default function HousesPage() {
 
       {/* Modal thêm/sửa */}
       {modalOpen && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[1000] flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl shadow-soft w-full max-w-2xl overflow-hidden max-h-[90vh] flex flex-col">
-            <div className="px-5 py-4 bg-slate-900 text-white flex items-center justify-between shrink-0">
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[1000] flex items-center justify-center p-4">
+          <div className="bg-surface rounded-2xl shadow-soft w-full max-w-2xl overflow-hidden max-h-[90vh] flex flex-col">
+            <div className="px-5 py-4 bg-shell text-fg border-b border-line flex items-center justify-between shrink-0">
               <h3 className="font-bold text-base">
                 {editingId ? 'Cập Nhật Hồ Sơ' : 'Thêm Số Nhà Mới'}
               </h3>
               <button
                 onClick={closeModal}
-                className="w-7 h-7 rounded-lg flex items-center justify-center text-slate-400 hover:text-white hover:bg-white/10 transition"
+                className="w-7 h-7 rounded-lg flex items-center justify-center text-fg-subtle hover:text-fg hover:bg-surface-2 transition"
               >
                 ×
               </button>
             </div>
 
-            <form onSubmit={handleFormSubmit} className="p-5 space-y-4 overflow-y-auto bg-slate-50">
+            <form onSubmit={handleFormSubmit} className="p-5 space-y-4 overflow-y-auto bg-surface-2">
               {formError && (
-                <div className="bg-rose-50 border border-rose-200 text-rose-700 rounded-xl p-3 text-sm">
+                <div className="bg-danger/10 border border-danger/30 text-danger rounded-xl p-3 text-sm">
                   {formError}
                 </div>
               )}
@@ -1900,7 +1890,7 @@ export default function HousesPage() {
                   </FormField>
                 </div>
 
-                <h4 className="text-[11px] font-bold text-blue-700 uppercase tracking-wider border-t border-slate-200 pt-3">
+                <h4 className="text-[11px] font-bold text-accent uppercase tracking-wider border-t border-line pt-3">
                   Đặc điểm công trình
                 </h4>
                 <div className="grid grid-cols-3 gap-3">
@@ -2138,16 +2128,16 @@ export default function HousesPage() {
                 <button
                   type="button"
                   onClick={closeModal}
-                  className="px-4 py-2 bg-white border border-slate-300 text-slate-700 rounded-xl text-sm font-semibold hover:bg-slate-100 transition"
+                  className="px-4 py-2 bg-surface border border-line text-fg rounded-xl text-sm font-semibold hover:bg-surface-2 transition"
                 >
                   Hủy
                 </button>
                 <button
                   type="submit"
                   disabled={saving}
-                  className="px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-sm font-semibold disabled:opacity-60 transition shadow-soft flex items-center gap-2"
+                  className="px-5 py-2 bg-brand hover:bg-brand/90 text-white rounded-xl text-sm font-semibold disabled:opacity-60 transition shadow-soft flex items-center gap-2"
                 >
-                  {saving && <span className="w-3.5 h-3.5 rounded-full border-2 border-white/40 border-t-white animate-spin" />}
+                  {saving && <span className="w-3.5 h-3.5 rounded-full border-2 border-line/40 border-t-white animate-spin" />}
                   {saving ? 'Đang lưu…' : 'Lưu'}
                 </button>
               </div>
@@ -2159,12 +2149,12 @@ export default function HousesPage() {
       {/* Popup xem ảnh phóng to — kèm người upload & thời điểm upload */}
       {lightbox && (
         <div
-          className="fixed inset-0 z-[2000] bg-slate-950/80 flex items-center justify-center p-4"
+          className="fixed inset-0 z-[2000] bg-black/85 flex items-center justify-center p-4"
           onClick={() => setLightbox(null)}
         >
           <button
             onClick={() => setLightbox(null)}
-            className="absolute top-4 right-4 text-white text-3xl leading-none hover:text-slate-300"
+            className="absolute top-4 right-4 text-white text-3xl leading-none hover:text-fg-subtle"
             aria-label="Đóng"
           >
             ×
@@ -2180,7 +2170,7 @@ export default function HousesPage() {
               className="max-w-full min-h-0 flex-1 rounded-lg shadow-2xl object-contain"
             />
             {(lightbox.uploadedBy || lightbox.uploadedAt) && (
-              <div className="shrink-0 bg-slate-900/90 text-slate-200 rounded-lg px-4 py-2 text-xs text-center">
+              <div className="shrink-0 bg-black/70 text-white/80 rounded-lg px-4 py-2 text-xs text-center">
                 Tải lên bởi{' '}
                 <span className="font-semibold text-white">
                   {lightbox.uploadedBy

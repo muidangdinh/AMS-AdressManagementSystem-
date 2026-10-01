@@ -7,7 +7,7 @@ import type { PermissionDef, RoleSummary } from '@tayninh/shared';
 import { useAuth } from '@/lib/auth-context';
 import { ApiError } from '@/lib/api';
 import { rolesApi } from '@/lib/roles-api';
-import { ButtonSpinner, EmptyState, FIELD_CLASS, FormField, PageHeader } from '@/components/ui';
+import { ButtonSpinner, EmptyState, FIELD_CLASS, FormField, PageHeader, ToggleSwitch } from '@/components/ui';
 
 interface RoleForm {
   code: string;
@@ -150,7 +150,7 @@ export default function RolesAdminPage() {
         actions={
           <button
             onClick={openNew}
-            className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-xl text-sm font-semibold shadow-soft transition"
+            className="bg-brand hover:bg-brand/90 text-white px-4 py-2 rounded-xl text-sm font-semibold shadow-soft transition"
           >
             + Thêm vai trò
           </button>
@@ -158,21 +158,21 @@ export default function RolesAdminPage() {
       />
 
       {loadError && (
-        <div className="bg-rose-50 border border-rose-200 text-rose-700 rounded-lg p-3 text-sm">
+        <div className="bg-danger/10 border border-danger/30 text-danger rounded-lg p-3 text-sm">
           {loadError}
         </div>
       )}
 
-      <div className="bg-white rounded-xl border border-slate-200 shadow-card overflow-x-auto">
+      <div className="glass overflow-x-auto">
         {loading ? (
-          <div className="flex items-center justify-center gap-2 py-10 text-sm text-slate-400">
+          <div className="flex items-center justify-center gap-2 py-10 text-sm text-fg-subtle">
             <ButtonSpinner /> Đang tải…
           </div>
         ) : roles.length === 0 ? (
           <EmptyState text="Chưa có vai trò nào" />
         ) : (
           <table className="w-full text-sm">
-            <thead className="bg-slate-50 text-[11px] uppercase text-slate-500 text-left">
+            <thead className="bg-surface-2 text-[11px] uppercase text-fg-muted text-left">
               <tr>
                 <th className="px-4 py-2.5">Tên vai trò</th>
                 <th className="px-4 py-2.5">Mã</th>
@@ -182,13 +182,13 @@ export default function RolesAdminPage() {
                 <th className="px-4 py-2.5" />
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-100">
+            <tbody className="divide-y divide-line">
               {roles.map((r) => (
-                <tr key={r.id} className={r.isActive ? '' : 'text-slate-400'}>
+                <tr key={r.id} className={r.isActive ? '' : 'text-fg-subtle'}>
                   <td className="px-4 py-2.5 font-semibold">
                     {r.name}
                     {r.isSystem && (
-                      <span className="ml-2 text-[10px] text-slate-400 uppercase">hệ thống</span>
+                      <span className="ml-2 text-[10px] text-fg-subtle uppercase">hệ thống</span>
                     )}
                   </td>
                   <td className="px-4 py-2.5 font-mono text-xs">{r.code}</td>
@@ -197,7 +197,7 @@ export default function RolesAdminPage() {
                   <td className="px-4 py-2.5">
                     <span
                       className={`px-2 py-0.5 rounded text-[11px] font-bold ${
-                        r.isActive ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-100 text-slate-500'
+                        r.isActive ? 'bg-ok/15 text-ok' : 'bg-surface-2 text-fg-muted'
                       }`}
                     >
                       {r.isActive ? 'Đang dùng' : 'Tạm ẩn'}
@@ -206,14 +206,14 @@ export default function RolesAdminPage() {
                   <td className="px-4 py-2.5 text-right space-x-3">
                     <button
                       onClick={() => openEdit(r)}
-                      className="text-xs font-semibold text-blue-600 hover:underline"
+                      className="text-xs font-semibold text-accent hover:underline"
                     >
                       Sửa
                     </button>
                     {!r.isSystem && r.userCount === 0 && (
                       <button
                         onClick={() => handleDelete(r)}
-                        className="text-xs font-semibold text-rose-600 hover:underline"
+                        className="text-xs font-semibold text-danger hover:underline"
                       >
                         Xóa
                       </button>
@@ -228,15 +228,15 @@ export default function RolesAdminPage() {
 
       {editing !== null && (
         <div
-          className="fixed inset-0 z-[1000] bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4"
+          className="fixed inset-0 z-[1000] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4"
           onClick={() => !saving && setEditing(null)}
         >
           <form
             onSubmit={handleSubmit}
             onClick={(e) => e.stopPropagation()}
-            className="bg-white rounded-2xl shadow-soft w-full max-w-2xl max-h-[90vh] overflow-auto"
+            className="bg-surface rounded-2xl shadow-soft w-full max-w-2xl max-h-[90vh] overflow-auto"
           >
-            <div className="px-5 py-4 bg-slate-900 text-white text-sm font-bold rounded-t-2xl">
+            <div className="px-5 py-4 bg-shell text-fg border-b border-line text-sm font-bold rounded-t-2xl">
               {isNew ? 'Thêm vai trò' : `Sửa vai trò: ${form.name}`}
             </div>
             <div className="p-5 space-y-3">
@@ -250,7 +250,7 @@ export default function RolesAdminPage() {
                     placeholder="vd: viewer, reporter"
                     pattern="[a-z][a-z0-9_]*"
                     title="Chữ thường, số, gạch dưới; bắt đầu bằng chữ"
-                    className={`${FIELD_CLASS} disabled:bg-slate-100 font-mono`}
+                    className={`${FIELD_CLASS} disabled:bg-surface-2 font-mono`}
                   />
                 </FormField>
                 <FormField label="Tên hiển thị" required>
@@ -271,29 +271,32 @@ export default function RolesAdminPage() {
                 />
               </FormField>
               {!isNew && (
-                <label className="flex items-center gap-2 text-sm text-slate-700">
-                  <input
-                    type="checkbox"
+                <label className="flex items-center gap-2.5 text-sm text-fg">
+                  <ToggleSwitch
                     checked={form.isActive}
-                    onChange={(e) => setForm({ ...form, isActive: e.target.checked })}
+                    onChange={(v) => setForm({ ...form, isActive: v })}
+                    label="Vai trò đang dùng"
                   />
                   Vai trò đang dùng
                 </label>
               )}
 
               <div>
-                <p className="text-xs font-semibold uppercase text-slate-500 mb-2">Quyền của vai trò</p>
-                <div className="space-y-3 rounded-lg border border-slate-200 p-3 max-h-72 overflow-auto">
+                <p className="text-xs font-semibold uppercase text-fg-muted mb-2">Quyền của vai trò</p>
+                <div className="space-y-3 rounded-lg border border-line p-3 max-h-72 overflow-auto">
                   {permissionGroups.map(([group, perms]) => (
                     <div key={group}>
-                      <p className="text-[11px] font-bold text-slate-600 mb-1">{group}</p>
+                      <p className="text-[11px] font-bold text-fg-muted mb-1">{group}</p>
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-1">
                         {perms.map((p) => (
-                          <label key={p.code} className="flex items-center gap-2 text-sm text-slate-700">
-                            <input
-                              type="checkbox"
+                          <label
+                            key={p.code}
+                            className="flex items-center gap-2.5 text-sm text-fg rounded-md px-1.5 py-1 hover:bg-surface-2"
+                          >
+                            <ToggleSwitch
                               checked={form.permissionCodes.includes(p.code)}
                               onChange={() => togglePermission(p.code)}
+                              label={p.name}
                             />
                             <span>{p.name}</span>
                           </label>
@@ -305,7 +308,7 @@ export default function RolesAdminPage() {
               </div>
 
               {formError && (
-                <div className="bg-rose-50 border border-rose-200 text-rose-700 rounded-lg p-2.5 text-sm">
+                <div className="bg-danger/10 border border-danger/30 text-danger rounded-lg p-2.5 text-sm">
                   {formError}
                 </div>
               )}
@@ -315,14 +318,14 @@ export default function RolesAdminPage() {
                 type="button"
                 onClick={() => setEditing(null)}
                 disabled={saving}
-                className="px-4 py-2 rounded-xl text-sm font-semibold text-slate-600 hover:bg-slate-100"
+                className="px-4 py-2 rounded-xl text-sm font-semibold text-fg-muted hover:bg-surface-2"
               >
                 Huỷ
               </button>
               <button
                 type="submit"
                 disabled={saving}
-                className="bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white px-4 py-2 rounded-xl text-sm font-semibold flex items-center gap-2"
+                className="bg-brand hover:bg-brand/90 disabled:opacity-50 text-white px-4 py-2 rounded-xl text-sm font-semibold flex items-center gap-2"
               >
                 {saving && <ButtonSpinner light />}
                 Lưu

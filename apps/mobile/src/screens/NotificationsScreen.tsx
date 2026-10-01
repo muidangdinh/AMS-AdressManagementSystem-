@@ -77,6 +77,10 @@ export default function NotificationsScreen() {
       markNotificationRead(n.id).catch(() => refresh());
     }
     // Chỉ nhiệm vụ khảo sát có màn hình trên mobile; hồ sơ hành chính/công việc xem ở web.
+    if (n.entityType === NotificationEntity.INSTALL_ASSIGNMENT) {
+      navigation.navigate('Main', { screen: 'Install' });
+      return;
+    }
     if (n.entityType === NotificationEntity.SURVEY_ASSIGNMENT) {
       navigation.navigate('Main', { screen: 'Assignments' });
     }

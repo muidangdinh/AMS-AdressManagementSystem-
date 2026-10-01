@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { STATUS_COLOR, TAYNINH_CENTER, type HouseMapProps } from './map-types';
+import { createSatelliteLayer, createStreetLayer } from '@/lib/map-tiles';
 
 /**
  * Bản đồ GIS hiển thị số nhà (Phase 3 — I) — bản Leaflet dùng tile REST công khai của Esri
@@ -46,20 +47,8 @@ export default function HouseMapLeaflet({
       15,
     );
 
-    // World_Street_Map (vector) không phủ chi tiết đều khắp thế giới như ảnh vệ tinh —
-    // tỉnh/thị trấn nhỏ như Tây Ninh thường hết dữ liệu thật ở zoom sâu, Esri trả về tile
-    // "Map data not yet available". `maxNativeZoom` giới hạn đúng mức zoom server còn dữ
-    // liệu thật; `maxZoom` (mức cho phép người dùng zoom) vẫn cao hơn — Leaflet tự phóng to
-    // tile cuối cùng còn dữ liệu thay vì hiện tile lỗi khi zoom sâu hơn mức đó.
-    const streetLayer = L.tileLayer(
-      'https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}',
-      { maxZoom: 19, maxNativeZoom: 15, attribution: 'Tiles &copy; Esri' },
-    ).addTo(map);
-
-    const satelliteLayer = L.tileLayer(
-      'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
-      { maxZoom: 19, maxNativeZoom: 18, attribution: 'Tiles &copy; Esri' },
-    );
+    const streetLayer = createStreetLayer().addTo(map);
+    const satelliteLayer = createSatelliteLayer();
 
     L.control.zoom({ position: 'bottomright' }).addTo(map);
 
@@ -116,7 +105,7 @@ export default function HouseMapLeaflet({
       const color = STATUS_COLOR[h.status] ?? '#64748b';
       const icon = L.divIcon({
         className: 'custom-house-marker',
-        html: `<div style="width:28px;height:28px;border-radius:50%;background:${color};color:white;font-weight:bold;font-size:11px;display:flex;align-items:center;justify-content:center;border:2px solid white;box-shadow:0 2px 6px rgba(0,0,0,0.4);">${h.houseNumber}</div>`,
+        html: `<div style="width:28px;height:28px;border-radius:50%;background:${color};color:white;font-weight:bold;font-size:11px;display:flex;align-items:center;justify-content:center;border:2px solid rgba(255,255,255,0.9);box-shadow:0 0 0 2px rgba(11,17,32,0.55),0 0 14px ${color};">${h.houseNumber}</div>`,
         iconSize: [28, 28],
         iconAnchor: [14, 14],
       });
@@ -182,17 +171,17 @@ export default function HouseMapLeaflet({
   return (
     <div className="relative h-full w-full">
       <div ref={containerRef} className="h-full w-full" />
-      <div className="absolute top-3 right-3 z-[500] bg-white rounded-lg shadow-md p-1 border border-slate-200 flex space-x-1 text-xs">
+      <div className="absolute top-3 right-3 z-[500] glass !rounded-lg !bg-surface/80 p-1 flex space-x-1 text-xs">
         <button
           onClick={() => setLayer('street')}
-          className={`px-2.5 py-1.5 rounded font-semibold transition ${layer === 'street' ? 'bg-blue-600 text-white' : 'text-slate-600 hover:bg-slate-100'
+          className={`px-2.5 py-1.5 rounded font-semibold transition ${layer === 'street' ? 'bg-brand text-white' : 'text-fg-muted hover:bg-surface-2'
             }`}
         >
           Giao thông
         </button>
         <button
           onClick={() => setLayer('satellite')}
-          className={`px-2.5 py-1.5 rounded font-semibold transition ${layer === 'satellite' ? 'bg-blue-600 text-white' : 'text-slate-600 hover:bg-slate-100'
+          className={`px-2.5 py-1.5 rounded font-semibold transition ${layer === 'satellite' ? 'bg-brand text-white' : 'text-fg-muted hover:bg-surface-2'
             }`}
         >
           Vệ tinh

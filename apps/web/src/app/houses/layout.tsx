@@ -3,38 +3,68 @@
 import { useEffect, useRef, useState } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import Link from 'next/link';
+import {
+  ChevronDown,
+  Database,
+  FileText,
+  Globe,
+  Hammer,
+  LayoutDashboard,
+  ListOrdered,
+  MapPin,
+  Moon,
+  Route,
+  ShieldCheck,
+  Sun,
+  UserCheck,
+  type LucideIcon,
+} from 'lucide-react';
 import { PERMISSIONS, USER_ROLE_LABELS, UserRole } from '@tayninh/shared';
 import { useAuth } from '@/lib/auth-context';
+import { useTheme } from '@/lib/theme';
 import NotificationBell from '@/components/NotificationBell';
 // import WardSelector from '@/components/WardSelector';
 
-const NAV_ICONS: Record<string, JSX.Element> = {
-  dashboard: (
-    <path d="M3 13h4v-2H3v2zm0 6h4v-6H3v6zm6 0h4V9H9v10zm6 0h4V3h-4v16z" />
-  ),
-  houses: <path d="M12 3l9 8h-3v9h-5v-6H11v6H6v-9H3l9-8z" />,
-  cases: (
-    <path d="M4 7V5a2 2 0 0 1 2-2h4l2 2h6a2 2 0 0 1 2 2v2H4zm0 2h16v9a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V9z" />
-  ),
-  surveys: (
-    <path d="M9 3v2H4v16h16V5h-5V3H9zm3 5a3 3 0 1 1 0 6 3 3 0 0 1 0-6zm-6 9c1-2 3.5-3 6-3s5 1 6 3H6z" />
-  ),
-  numbering: (
-    <path d="M4 4h4v4H4V4zm6 1h10v2H10V5zM4 10h4v4H4v-4zm6 1h10v2H10v-2zM4 16h4v4H4v-4zm6 1h10v2H10v-2z" />
-  ),
-  addresses: (
-    <path d="M12 2a7 7 0 0 0-7 7c0 5.25 7 13 7 13s7-7.75 7-13a7 7 0 0 0-7-7zm0 9.5A2.5 2.5 0 1 1 12 6.5a2.5 2.5 0 0 1 0 5z" />
-  ),
-  users: (
-    <path d="M16 11a3 3 0 1 0-3-3 3 3 0 0 0 3 3zM8 11a3 3 0 1 0-3-3 3 3 0 0 0 3 3zm0 2c-2.33 0-7 1.17-7 3.5V19h14v-2.5C15 14.17 10.33 13 8 13zm8 0c-.29 0-.62.02-.97.05A4.2 4.2 0 0 1 17 16.5V19h6v-2.5c0-2.33-4.67-3.5-7-3.5z" />
-  ),
+/** Icon Lucide cho từng mục điều hướng (UI.md — nhóm icon công nghệ cạnh chữ). */
+const NAV_ICONS: Record<string, LucideIcon> = {
+  dashboard: LayoutDashboard,
+  houses: Database,
+  cases: FileText,
+  surveys: Route,
+  installs: Hammer,
+  numbering: ListOrdered,
+  addresses: MapPin,
+  users: UserCheck,
+  roles: ShieldCheck,
 };
 
 function NavIcon({ name, large }: { name: string; large?: boolean }) {
+  const Icon = NAV_ICONS[name];
+  return <Icon className={`${large ? 'w-5 h-5' : 'w-4 h-4'} shrink-0`} strokeWidth={1.9} />;
+}
+
+/** Nhãn nhóm trong sidebar dọc. */
+function NavGroup({ label }: { label: string }) {
   return (
-    <svg viewBox="0 0 24 24" fill="currentColor" className={`${large ? 'w-5 h-5' : 'w-4 h-4'} shrink-0`}>
-      {NAV_ICONS[name]}
-    </svg>
+    <p className="px-3 pt-4 pb-1 text-[10px] font-bold uppercase tracking-[0.14em] text-fg-subtle first:pt-1">
+      {label}
+    </p>
+  );
+}
+
+function ThemeToggle() {
+  const { theme, toggle } = useTheme();
+  const dark = theme === 'dark';
+  return (
+    <button
+      type="button"
+      onClick={toggle}
+      aria-label={dark ? 'Chuyển sang giao diện sáng' : 'Chuyển sang giao diện tối'}
+      title={dark ? 'Giao diện sáng' : 'Giao diện tối'}
+      className="w-9 h-9 flex items-center justify-center rounded-lg bg-surface-2/50 hover:bg-surface-2 border border-line text-fg-muted hover:text-accent transition-all duration-300 active:scale-95"
+    >
+      {dark ? <Sun className="w-[18px] h-[18px]" /> : <Moon className="w-[18px] h-[18px]" />}
+    </button>
   );
 }
 
@@ -64,13 +94,13 @@ function NavLink({
     <Link
       href={href}
       onClick={onNavigate}
-      className={`flex items-center rounded-lg font-semibold transition-all duration-150 ${
-        touch ? 'gap-3 px-4 py-3 text-sm active:scale-[0.98]' : 'gap-1.5 px-3 py-1.5 text-xs'
+      className={`relative flex items-center rounded-lg font-semibold transition-all duration-300 ${
+        touch ? 'gap-3 px-4 py-3 text-sm active:scale-[0.98]' : 'gap-2.5 px-3 py-2 text-[13px]'
       } ${block ? 'w-full' : ''} ${
         active
-          ? // Menu cảm ứng: thêm vạch nhấn xanh bên trái cho mục đang ở (inset shadow — không đổi bố cục).
-            `bg-white/10 text-white ${touch ? 'shadow-[inset_3px_0_0_0_#3b82f6]' : ''}`
-          : 'text-slate-400 hover:text-white hover:bg-white/5'
+          ? // Mục đang ở: nền cyan mờ + vạch cyan phát sáng bên trái (inset shadow — không đổi bố cục).
+            'bg-accent/10 text-accent shadow-[inset_3px_0_0_0_rgb(var(--accent)),-4px_0_14px_-6px_rgb(var(--accent))]'
+          : 'text-fg-muted hover:text-fg hover:bg-surface-2/60'
       }`}
     >
       <NavIcon name={icon} large={touch} />
@@ -120,18 +150,16 @@ function LocateButton({
       type="button"
       onClick={handleClick}
       disabled={locating}
-      className={`flex items-center rounded-lg font-semibold transition-all duration-150 text-slate-400 hover:text-white hover:bg-white/5 disabled:opacity-50 shrink-0 ${
-        touch ? 'gap-3 px-4 py-3 text-sm active:scale-[0.98]' : 'gap-1.5 px-3 py-1.5 text-xs'
+      className={`flex items-center rounded-lg font-semibold transition-all duration-300 text-fg-muted hover:text-fg hover:bg-surface-2/60 disabled:opacity-50 shrink-0 ${
+        touch ? 'gap-3 px-4 py-3 text-sm active:scale-[0.98]' : 'gap-2.5 px-3 py-2 text-[13px]'
       } ${block ? 'w-full' : ''}`}
     >
       {locating ? (
         <span
-          className={`${touch ? 'w-4 h-4' : 'w-3.5 h-3.5'} rounded-full border-2 border-slate-400 border-t-white animate-spin shrink-0`}
+          className={`${touch ? 'w-4 h-4' : 'w-3.5 h-3.5'} rounded-full border-2 border-line border-t-accent animate-spin shrink-0`}
         />
       ) : (
-        <svg viewBox="0 0 24 24" fill="currentColor" className={`${touch ? 'w-5 h-5' : 'w-4 h-4'} shrink-0`}>
-          <path d="M12 8c-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4-1.79-4-4-4zm8.94 3c-.46-4.17-3.77-7.48-7.94-7.94V1h-2v2.06C6.83 3.52 3.52 6.83 3.06 11H1v2h2.06c.46 4.17 3.77 7.48 7.94 7.94V23h2v-2.06c4.17-.46 7.48-3.77 7.94-7.94H23v-2h-2.06zM12 19c-3.87 0-7-3.13-7-7s3.13-7 7-7 7 3.13 7 7-3.13 7-7 7z" />
-        </svg>
+        <Globe className={`${touch ? 'w-5 h-5' : 'w-4 h-4'} shrink-0`} strokeWidth={1.9} />
       )}
       Bản đồ số nhà
     </button>
@@ -239,18 +267,20 @@ export default function HousesLayout({ children }: { children: React.ReactNode }
 
   if (isLoading || !user) {
     return (
-      <div className="min-h-screen flex items-center justify-center text-slate-400 text-sm gap-2">
-        <span className="w-4 h-4 rounded-full border-2 border-slate-300 border-t-blue-600 animate-spin" />
+      <div className="min-h-screen flex items-center justify-center bg-canvas text-fg-muted text-sm gap-2">
+        <span className="w-4 h-4 rounded-full border-2 border-line border-t-accent animate-spin" />
         Đang tải…
       </div>
     );
   }
 
   const initial = user.fullName?.trim()?.[0]?.toUpperCase() ?? '?';
+  // Menu Thi công: người quản lý (giao việc) hoặc nghiệm thu mới dùng trang web này; cán bộ thi công làm trên mobile.
+  const canSeeInstalls = hasPermission(PERMISSIONS.INSTALL_MANAGE) || hasPermission(PERMISSIONS.INSTALL_REVIEW);
 
   return (
     <div className="relative h-screen flex flex-col bg-app-shell overflow-hidden print:h-auto print:overflow-visible print:bg-white">
-      <header className="print:hidden bg-slate-900/95 backdrop-blur text-white h-16 px-4 sm:px-6 flex items-center justify-between gap-2 shrink-0 shadow-lg z-20 sticky top-0">
+      <header className="print:hidden bg-shell/80 backdrop-blur-md border-b border-line text-fg h-16 px-4 sm:px-6 flex items-center justify-between gap-4 shrink-0 z-20 sticky top-0">
         <Link
           href="/houses/dashboard"
           aria-label="Tây Ninh GIS — Hệ thống Đánh số & Gắn biển số nhà"
@@ -265,54 +295,51 @@ export default function HousesLayout({ children }: { children: React.ReactNode }
               alt="Tây Ninh GIS"
               width={1600}
               height={397}
-              className="absolute top-0 -left-[3px] sm:left-0 h-14 w-auto max-w-none"
+              className="absolute top-0 -left-[3px] sm:left-0 h-14 w-auto max-w-none invert dark:invert-0"
             />
           </div>
         </Link>
 
-        <div className="flex items-center gap-3 shrink-0">
+        <div className="flex items-center gap-2.5 shrink-0">
           {/* <WardSelector /> */}
+          <ThemeToggle />
           <NotificationBell />
           {/* Hồ sơ người dùng — bấm mở dropdown "Tài khoản" / "Đăng xuất". */}
-          <div className="relative pl-3 border-l border-white/10" ref={accountMenuRef}>
+          <div className="relative pl-3 border-l border-line" ref={accountMenuRef}>
             <button
               onClick={() => setAccountMenuOpen((v) => !v)}
               aria-haspopup="menu"
               aria-expanded={accountMenuOpen}
-              className="flex items-center gap-2.5 rounded-lg px-1.5 py-1 hover:bg-white/5 transition-colors"
+              className="flex items-center gap-2.5 rounded-lg px-1.5 py-1 hover:bg-surface-2/60 transition-colors"
             >
-              <div className="w-8 h-8 rounded-full bg-blue-600 flex items-center justify-center text-xs font-bold shrink-0">
+              <div className="relative w-8 h-8 rounded-full bg-brand-gradient text-white flex items-center justify-center text-xs font-bold shrink-0 shadow-glow-accent">
                 {initial}
               </div>
               <div className="hidden sm:block text-right text-xs leading-tight">
-                <p className="font-semibold text-slate-100">{user.fullName}</p>
-                <p className="text-slate-400">
+                <p className="font-semibold text-fg">{user.fullName}</p>
+                <p className="text-fg-subtle">
                   {user.roles?.length
                     ? user.roles.map((r) => r.name).join(', ')
                     : USER_ROLE_LABELS[user.role as UserRole]}
                 </p>
               </div>
-              <svg
-                viewBox="0 0 24 24"
-                fill="currentColor"
-                className={`hidden sm:block w-3.5 h-3.5 text-slate-400 transition-transform ${
+              <ChevronDown
+                className={`hidden sm:block w-3.5 h-3.5 text-fg-subtle transition-transform ${
                   accountMenuOpen ? 'rotate-180' : ''
                 }`}
-              >
-                <path d="M7 10l5 5 5-5z" />
-              </svg>
+              />
             </button>
 
             {accountMenuOpen && (
               <div
                 role="menu"
-                className="absolute right-0 top-full mt-2 w-48 bg-white rounded-xl shadow-soft border border-slate-200 py-1.5 text-slate-700 z-30"
+                className="absolute right-0 top-full mt-2 w-48 glass !bg-surface/95 py-1.5 text-fg z-30"
               >
                 <Link
                   href="/houses/account"
                   role="menuitem"
                   onClick={() => setAccountMenuOpen(false)}
-                  className="flex items-center gap-2.5 px-4 py-2 text-sm font-medium hover:bg-slate-50"
+                  className="flex items-center gap-2.5 px-4 py-2 text-sm font-medium hover:bg-surface-2/70"
                 >
                   Tài khoản
                 </Link>
@@ -322,7 +349,7 @@ export default function HousesLayout({ children }: { children: React.ReactNode }
                     setAccountMenuOpen(false);
                     logout();
                   }}
-                  className="w-full flex items-center gap-2.5 px-4 py-2 text-sm font-medium text-left text-rose-600 hover:bg-rose-50"
+                  className="w-full flex items-center gap-2.5 px-4 py-2 text-sm font-medium text-left text-danger hover:bg-danger/10"
                 >
                   Đăng xuất
                 </button>
@@ -336,7 +363,7 @@ export default function HousesLayout({ children }: { children: React.ReactNode }
             aria-label="Bật/tắt menu điều hướng"
             aria-expanded={navOpen}
             aria-controls="mobile-nav"
-            className="md:hidden w-9 h-9 flex items-center justify-center rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 transition-colors active:scale-95"
+            className="md:hidden w-9 h-9 flex items-center justify-center rounded-lg bg-surface-2/50 hover:bg-surface-2 border border-line transition-colors active:scale-95"
           >
             {/* 3 thanh biến hình: thanh trên/dưới xoay thành dấu ✕, thanh giữa mờ đi — mượt hơn đổi icon. */}
             <span aria-hidden className="relative block w-5 h-3.5">
@@ -371,7 +398,7 @@ export default function HousesLayout({ children }: { children: React.ReactNode }
           <div
             aria-hidden
             onClick={closeNav}
-            className={`print:hidden md:hidden absolute left-0 right-0 bottom-0 top-16 z-20 bg-slate-950/50 backdrop-blur-[2px] transition-opacity ${
+            className={`print:hidden md:hidden absolute left-0 right-0 bottom-0 top-16 z-20 bg-canvas/60 backdrop-blur-[2px] transition-opacity ${
               navShown ? 'opacity-100 duration-300' : 'opacity-0 duration-200 pointer-events-none'
             }`}
           />
@@ -389,9 +416,9 @@ export default function HousesLayout({ children }: { children: React.ReactNode }
                 : 'grid-rows-[0fr] pointer-events-none duration-[300ms] ease-in'
             }`}
           >
-            <nav aria-label="Điều hướng chính" className="min-h-0 overflow-hidden bg-slate-900 text-white">
+            <nav aria-label="Điều hướng chính" className="min-h-0 overflow-hidden bg-shell text-fg">
               <div
-                className={`flex flex-col gap-1 p-2 border-t border-white/10 max-h-[calc(100vh-4rem)] overflow-y-auto transition-opacity ${
+                className={`flex flex-col gap-1 p-2 border-t border-line max-h-[calc(100vh-4rem)] overflow-y-auto transition-opacity ${
                   navShown ? 'opacity-100 duration-300 delay-75' : 'opacity-0 duration-150'
                 }`}
               >
@@ -415,6 +442,13 @@ export default function HousesLayout({ children }: { children: React.ReactNode }
                     Khảo sát
                   </NavLink>
                 </NavItem>
+                {canSeeInstalls && (
+                  <NavItem index={4}>
+                    <NavLink href="/houses/installs" icon="installs" block touch onNavigate={closeNav}>
+                      Thi công
+                    </NavLink>
+                  </NavItem>
+                )}
                 <NavItem index={4}>
                   <NavLink href="/houses/numbering" icon="numbering" block touch onNavigate={closeNav}>
                     Đánh số
@@ -436,7 +470,7 @@ export default function HousesLayout({ children }: { children: React.ReactNode }
                 )}
                 {hasPermission(PERMISSIONS.ROLE_MANAGE) && (
                   <NavItem index={7}>
-                    <NavLink href="/houses/roles" icon="users" block touch onNavigate={closeNav}>
+                    <NavLink href="/houses/roles" icon="roles" block touch onNavigate={closeNav}>
                       Vai trò & phân quyền
                     </NavLink>
                   </NavItem>
@@ -452,7 +486,8 @@ export default function HousesLayout({ children }: { children: React.ReactNode }
 
       <div className="flex-1 flex overflow-hidden">
         {/* Sidebar dọc — desktop/tablet (≥ md) */}
-        <nav className="print:hidden hidden md:flex md:flex-col gap-1 w-56 shrink-0 bg-slate-900/95 text-white p-3 overflow-y-auto border-r border-white/5">
+        <nav className="print:hidden hidden md:flex md:flex-col gap-1 w-60 shrink-0 bg-shell/95 backdrop-blur-md text-fg p-3 overflow-y-auto border-r border-line">
+          <NavGroup label="Nghiệp vụ" />
           <NavLink href="/houses/dashboard" icon="dashboard" block>
             Tổng quan
           </NavLink>
@@ -465,13 +500,25 @@ export default function HousesLayout({ children }: { children: React.ReactNode }
           <NavLink href="/houses/surveys" icon="surveys" block>
             Khảo sát
           </NavLink>
+          {canSeeInstalls && (
+            <NavLink href="/houses/installs" icon="installs" block>
+              Thi công
+            </NavLink>
+          )}
           <NavLink href="/houses/numbering" icon="numbering" block>
             Đánh số
           </NavLink>
+          <LocateButton block />
           {hasPermission(PERMISSIONS.ADDRESS_WRITE) && (
-            <NavLink href="/houses/addresses" icon="addresses" block>
-              Quản lý tuyến đường
-            </NavLink>
+            <>
+              <NavGroup label="Danh mục" />
+              <NavLink href="/houses/addresses" icon="addresses" block>
+                Quản lý tuyến đường
+              </NavLink>
+            </>
+          )}
+          {(hasPermission(PERMISSIONS.USER_MANAGE) || hasPermission(PERMISSIONS.ROLE_MANAGE)) && (
+            <NavGroup label="Hệ thống" />
           )}
           {hasPermission(PERMISSIONS.USER_MANAGE) && (
             <NavLink href="/houses/users" icon="users" block>
@@ -479,11 +526,10 @@ export default function HousesLayout({ children }: { children: React.ReactNode }
             </NavLink>
           )}
           {hasPermission(PERMISSIONS.ROLE_MANAGE) && (
-            <NavLink href="/houses/roles" icon="users" block>
+            <NavLink href="/houses/roles" icon="roles" block>
               Vai trò & phân quyền
             </NavLink>
           )}
-          <LocateButton block />
         </nav>
 
         <main className="flex-1 overflow-hidden print:overflow-visible print:flex-none">

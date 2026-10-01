@@ -97,6 +97,7 @@ const EVENT_ICON: Record<AssignmentEventAction, string> = {
   [AssignmentEventAction.ISSUE_REPORTED]: 'flag-outline',
   [AssignmentEventAction.HELP_REQUESTED]: 'lifebuoy',
   [AssignmentEventAction.HOUSE_RESURVEYED]: 'file-document-edit-outline',
+  [AssignmentEventAction.REASSIGNED]: 'account-switch-outline',
 };
 
 /** Phase 11 Đợt 2 — dòng thời gian lấy từ nhật ký sự kiện thật do API ghi lại. */
@@ -338,6 +339,7 @@ export default function AssignmentsScreen() {
                     {isActive && <Text style={styles.activeBadge}>ĐANG CHỌN</Text>}
                   </View>
                   <Text style={styles.itemSub}>{item.zone.ward?.name ?? 'Chưa gán xã/phường'}</Text>
+                  {item.route && <Text style={styles.itemRoute}>Tuyến: {item.route.name}</Text>}
                   <Text style={styles.itemMeta}>
                     {item._count?.houses ?? 0}{item.targetCount ? ` / ${item.targetCount}` : ''} nhà đã khảo sát
                     {item.dueDate ? ` • Hạn ${new Date(item.dueDate).toLocaleDateString('vi-VN')}` : ''}
@@ -557,6 +559,7 @@ const styles = StyleSheet.create({
   itemTitle: { fontWeight: '700', fontSize: 13, color: '#0f172a' },
   activeBadge: { fontSize: 9, fontWeight: '700', color: '#2563eb' },
   itemSub: { fontSize: 12, color: '#475569' },
+  itemRoute: { fontSize: 12, color: '#1d4ed8', fontWeight: '600', marginTop: 2 },
   itemMeta: { fontSize: 10, color: '#94a3b8' },
   badge: { alignSelf: 'flex-start', borderRadius: 999, paddingHorizontal: 8, paddingVertical: 2, marginTop: 4 },
   badgeText: { fontSize: 10, fontWeight: '700' },

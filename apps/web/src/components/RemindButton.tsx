@@ -43,7 +43,7 @@ export default function RemindButton({
       disabled={busy || sent}
       className={
         className ??
-        'border border-amber-300 text-amber-700 hover:bg-amber-50 disabled:opacity-60 text-xs font-semibold px-2.5 py-1 rounded-lg transition'
+        'border border-warn/30 text-warn hover:bg-warn/10 disabled:opacity-60 text-xs font-semibold px-2.5 py-1 rounded-lg transition'
       }
     >
       {sent ? 'Đã nhắc ✓' : busy ? 'Đang gửi…' : 'Nhắc'}

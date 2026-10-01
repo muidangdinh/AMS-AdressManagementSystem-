@@ -56,10 +56,10 @@ const GaugeChart = dynamic(() => import('@/components/DashboardCharts').then((m)
 const StackedBarChart = dynamic(() => import('@/components/DashboardCharts').then((m) => m.StackedBarChart), { ssr: false });
 
 /** Nhãn phụ (badge) dùng chung cho các loại trạng thái khác nhau trong modal xem nhanh. */
-const NEUTRAL_BADGE = 'bg-slate-100 text-slate-700';
-const WARN_BADGE = 'bg-amber-100 text-amber-800';
-const OK_BADGE = 'bg-emerald-100 text-emerald-800';
-const BAD_BADGE = 'bg-rose-100 text-rose-800';
+const NEUTRAL_BADGE = 'bg-surface-2 text-fg';
+const WARN_BADGE = 'bg-warn/15 text-warn';
+const OK_BADGE = 'bg-ok/15 text-ok';
+const BAD_BADGE = 'bg-danger/15 text-danger';
 
 const PLATE_STATUS_BADGE: Record<PlateStatus, string> = {
   [PlateStatus.ISSUED]: WARN_BADGE,
@@ -113,19 +113,19 @@ interface ModalRow {
 const SEARCH_DEBOUNCE_MS = 350;
 
 const STATUS_BADGE: Record<HouseStatus, string> = {
-  [HouseStatus.APPROVED]: 'bg-emerald-100 text-emerald-800',
-  [HouseStatus.PENDING]: 'bg-amber-100 text-amber-800',
-  [HouseStatus.NEEDS_ADJUST]: 'bg-rose-100 text-rose-800',
+  [HouseStatus.APPROVED]: 'bg-ok/15 text-ok',
+  [HouseStatus.PENDING]: 'bg-warn/15 text-warn',
+  [HouseStatus.NEEDS_ADJUST]: 'bg-danger/15 text-danger',
 };
 
 type CardColor = 'blue' | 'emerald' | 'amber' | 'rose' | 'slate';
 
 const CARD_COLOR: Record<CardColor, { bg: string; text: string }> = {
-  blue: { bg: 'bg-blue-50', text: 'text-blue-600' },
-  emerald: { bg: 'bg-emerald-50', text: 'text-emerald-600' },
-  amber: { bg: 'bg-amber-50', text: 'text-amber-600' },
-  rose: { bg: 'bg-rose-50', text: 'text-rose-600' },
-  slate: { bg: 'bg-slate-100', text: 'text-slate-600' },
+  blue: { bg: 'bg-accent/10', text: 'text-accent' },
+  emerald: { bg: 'bg-ok/10', text: 'text-ok' },
+  amber: { bg: 'bg-warn/10', text: 'text-warn' },
+  rose: { bg: 'bg-danger/10', text: 'text-danger' },
+  slate: { bg: 'bg-surface-2', text: 'text-fg-muted' },
 };
 
 /** Lát donut "Đợt khảo sát" (mục Báo cáo tiến độ khảo sát) — đếm ở frontend từ danh sách đợt (API tổng quan không trả). */
@@ -162,8 +162,8 @@ function StatCard({
   return (
     <Wrapper
       onClick={onClick}
-      className={`group bg-white rounded-xl border border-slate-200 shadow-card p-4 flex items-center gap-3.5 text-left w-full ${
-        onClick ? 'hover:border-blue-200 hover:shadow-soft transition cursor-pointer' : ''
+      className={`group glass p-4 flex items-center gap-3.5 text-left w-full ${
+        onClick ? 'hover:border-accent/30 hover:shadow-soft transition cursor-pointer' : ''
       }`}
     >
       <div
@@ -174,8 +174,8 @@ function StatCard({
         {icon}
       </div>
       <div className="min-w-0">
-        <p className="text-2xl font-extrabold text-slate-900 leading-tight tabular-nums">{value}</p>
-        <p className="text-xs text-slate-500 font-medium truncate">{label}</p>
+        <p className="text-2xl font-extrabold text-fg leading-tight tabular-nums">{value}</p>
+        <p className="text-xs text-fg-muted font-medium truncate">{label}</p>
       </div>
     </Wrapper>
   );
@@ -195,8 +195,8 @@ function Section({
     <section className={title ? 'mb-6' : ''}>
       {title && (
         <div className="mb-2.5">
-          <h3 className="text-sm font-bold text-slate-800">{title}</h3>
-          {subtitle && <p className="text-xs text-slate-400">{subtitle}</p>}
+          <h3 className="text-sm font-bold text-fg">{title}</h3>
+          {subtitle && <p className="text-xs text-fg-subtle">{subtitle}</p>}
         </div>
       )}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3.5">{children}</div>
@@ -225,19 +225,19 @@ function RankedList<T>({
     <section className={title ? 'mb-6' : ''}>
       {title && (
         <div className="mb-2.5">
-          <h3 className={`text-sm font-bold ${danger ? 'text-rose-700' : 'text-slate-800'}`}>{title}</h3>
-          {subtitle && <p className="text-xs text-slate-400">{subtitle}</p>}
+          <h3 className={`text-sm font-bold ${danger ? 'text-danger' : 'text-fg'}`}>{title}</h3>
+          {subtitle && <p className="text-xs text-fg-subtle">{subtitle}</p>}
         </div>
       )}
       <div
-        className={`bg-white rounded-xl border shadow-card overflow-hidden ${
-          danger ? 'border-rose-200' : 'border-slate-200'
+        className={`bg-surface/60 backdrop-blur-md rounded-xl border shadow-lg overflow-hidden ${
+          danger ? 'border-danger/30' : 'border-line'
         }`}
       >
         {items.length === 0 ? (
           <EmptyState icon={danger ? '✅' : '📭'} text={emptyText} />
         ) : (
-          <ul className="divide-y divide-slate-100 max-h-80 overflow-auto">
+          <ul className="divide-y divide-line max-h-80 overflow-auto">
             {items.map((item, i) => renderItem(item, i))}
           </ul>
         )}
@@ -275,21 +275,21 @@ function DetailModal({
 }) {
   return (
     <div
-      className="fixed inset-0 z-[1000] bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4"
+      className="fixed inset-0 z-[1000] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4"
       onClick={onClose}
     >
       <div
-        className="bg-white rounded-2xl shadow-soft w-full max-w-lg max-h-[80vh] flex flex-col overflow-hidden"
+        className="bg-surface rounded-2xl shadow-soft w-full max-w-lg max-h-[80vh] flex flex-col overflow-hidden"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="flex items-start justify-between px-5 py-4 bg-slate-900 text-white shrink-0">
+        <div className="flex items-start justify-between px-5 py-4 bg-shell text-fg border-b border-line shrink-0">
           <div className="min-w-0">
             <h3 className="text-sm font-bold truncate">{title}</h3>
-            {subtitle && <p className="text-xs text-slate-400 mt-0.5">{subtitle}</p>}
+            {subtitle && <p className="text-xs text-fg-subtle mt-0.5">{subtitle}</p>}
           </div>
           <button
             onClick={onClose}
-            className="shrink-0 w-7 h-7 rounded-lg flex items-center justify-center text-slate-400 hover:text-white hover:bg-white/10 transition ml-3"
+            className="shrink-0 w-7 h-7 rounded-lg flex items-center justify-center text-fg-subtle hover:text-fg hover:bg-surface-2 transition ml-3"
             aria-label="Đóng"
           >
             ✕
@@ -298,16 +298,16 @@ function DetailModal({
 
         <div className="overflow-auto flex-1">
           {loading && (
-            <div className="flex items-center justify-center gap-2 py-10 text-sm text-slate-400">
+            <div className="flex items-center justify-center gap-2 py-10 text-sm text-fg-subtle">
               <ButtonSpinner /> Đang tải…
             </div>
           )}
-          {!loading && error && <p className="text-center py-8 text-sm text-rose-500">{error}</p>}
+          {!loading && error && <p className="text-center py-8 text-sm text-danger">{error}</p>}
           {!loading && !error && rows.length === 0 && (
             <EmptyState text="Không có bản ghi nào khớp" />
           )}
           {!loading && !error && rows.length > 0 && (
-            <ul className="divide-y divide-slate-100">
+            <ul className="divide-y divide-line">
               {rows.map((r) => {
                 const goHref = r.href && onHrefClick ? () => onHrefClick(r.href!) : undefined;
                 const goLocation = r.location && onRowClick ? () => onRowClick(r.location!) : undefined;
@@ -319,13 +319,13 @@ function DetailModal({
                     <Row
                       onClick={handler}
                       className={`w-full px-5 py-2.5 text-sm flex items-center justify-between gap-3 text-left ${
-                        clickable ? 'hover:bg-blue-50/50 cursor-pointer' : ''
+                        clickable ? 'hover:bg-accent/10 cursor-pointer' : ''
                       }`}
                     >
                       <span className="min-w-0">
-                        <span className="font-bold text-slate-900">{r.primary}</span>
+                        <span className="font-bold text-fg">{r.primary}</span>
                         {r.secondary && (
-                          <span className="block text-xs text-slate-400 truncate">{r.secondary}</span>
+                          <span className="block text-xs text-fg-subtle truncate">{r.secondary}</span>
                         )}
                       </span>
                       {r.badge && (
@@ -335,7 +335,7 @@ function DetailModal({
                           {r.badge.text}
                         </span>
                       )}
-                      {r.href && onHrefClick && <span className="shrink-0 text-slate-300">›</span>}
+                      {r.href && onHrefClick && <span className="shrink-0 text-fg-subtle">›</span>}
                     </Row>
                   </li>
                 );
@@ -345,7 +345,7 @@ function DetailModal({
         </div>
 
         {!loading && !error && totalCount !== null && totalCount > rows.length && (
-          <div className="px-5 py-2.5 border-t border-slate-100 text-[11px] text-slate-400 shrink-0">
+          <div className="px-5 py-2.5 border-t border-line text-[11px] text-fg-subtle shrink-0">
             Hiển thị {rows.length}/{totalCount} bản ghi — vào trang danh sách để xem đầy đủ.
           </div>
         )}
@@ -640,26 +640,26 @@ export default function DashboardPage() {
   return (
     <div className="h-full overflow-auto p-6">
       <section className="mb-6">
-        <div className="bg-white rounded-xl border border-slate-200 shadow-card p-3 flex flex-wrap gap-3 items-end">
+        <div className="glass p-3 flex flex-wrap gap-3 items-end">
           <div className="w-80">
-            <label className="block text-[11px] font-bold text-slate-500 uppercase mb-1">
+            <label className="block text-[11px] font-bold text-fg-muted uppercase mb-1">
               Tìm kiếm
             </label>
             <input
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Tên đường, tên chủ hộ, SĐT, CCCD/CMND…"
-              className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-full border border-line rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent"
             />
           </div>
           <div className="w-56">
-            <label className="block text-[11px] font-bold text-slate-500 uppercase mb-1">
+            <label className="block text-[11px] font-bold text-fg-muted uppercase mb-1">
               Ấp/Thôn/Tổ dân phố
             </label>
             <select
               value={hamletId}
               onChange={(e) => setHamletId(e.target.value)}
-              className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-full border border-line rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent"
             >
               <option value="">Tất cả</option>
               {hamlets.map((h) => (
@@ -674,7 +674,7 @@ export default function DashboardPage() {
             disabled={loading}
             title="Làm mới"
             aria-label="Làm mới"
-            className="ml-auto bg-slate-900 hover:bg-slate-800 disabled:opacity-50 text-white px-4 py-2 rounded-xl text-sm font-semibold shadow-soft transition flex items-center gap-2"
+            className="ml-auto bg-brand hover:bg-brand/90 disabled:opacity-50 text-white px-4 py-2 rounded-xl text-sm font-semibold shadow-soft transition flex items-center gap-2"
           >
             {loading ? (
               <>
@@ -693,15 +693,15 @@ export default function DashboardPage() {
         </div>
 
         {searchError && (
-          <div className="bg-rose-50 border border-rose-200 text-rose-700 rounded-lg p-3 text-sm mt-3">
+          <div className="bg-danger/10 border border-danger/30 text-danger rounded-lg p-3 text-sm mt-3">
             {searchError}
           </div>
         )}
 
         {(searching || results !== null) && (
-          <div className="bg-white rounded-xl border border-slate-200 shadow-card mt-3 overflow-hidden">
+          <div className="glass mt-3 overflow-hidden">
             {searching && (
-              <div className="flex items-center justify-center gap-2 py-6 text-sm text-slate-400">
+              <div className="flex items-center justify-center gap-2 py-6 text-sm text-fg-subtle">
                 <ButtonSpinner /> Đang tìm…
               </div>
             )}
@@ -709,17 +709,17 @@ export default function DashboardPage() {
               <EmptyState icon="🔍" text="Không tìm thấy hồ sơ nào khớp" />
             )}
             {!searching && results !== null && results.length > 0 && (
-              <ul className="divide-y divide-slate-100 max-h-96 overflow-auto">
+              <ul className="divide-y divide-line max-h-96 overflow-auto">
                 {results.map((h) => (
                   <li key={h.id}>
                     <button
                       onClick={() => goToMap(h)}
-                      className="w-full text-left px-4 py-2.5 text-sm hover:bg-blue-50/50 flex items-center justify-between gap-3"
+                      className="w-full text-left px-4 py-2.5 text-sm hover:bg-accent/10 flex items-center justify-between gap-3"
                     >
                       <span className="min-w-0">
-                        <span className="font-bold text-slate-900">{h.houseNumber}</span>{' '}
-                        <span className="text-slate-700">{h.street}</span>
-                        <span className="block text-xs text-slate-400 truncate">
+                        <span className="font-bold text-fg">{h.houseNumber}</span>{' '}
+                        <span className="text-fg">{h.street}</span>
+                        <span className="block text-xs text-fg-subtle truncate">
                           {h.ward}
                           {h.hamlet ? ` • ${h.hamlet.name}` : ''} • {h.ownerName}
                           {h.ownerPhone ? ` • ${h.ownerPhone}` : ''}
@@ -740,12 +740,12 @@ export default function DashboardPage() {
       </section>
 
       {error && (
-        <div className="bg-rose-50 border border-rose-200 text-rose-700 rounded-lg p-3 text-sm mb-4">
+        <div className="bg-danger/10 border border-danger/30 text-danger rounded-lg p-3 text-sm mb-4">
           {error}
         </div>
       )}
 
-      {!data && loading && <p className="text-slate-400 text-sm">Đang tải số liệu…</p>}
+      {!data && loading && <p className="text-fg-subtle text-sm">Đang tải số liệu…</p>}
 
       {data && (
         <>
@@ -834,12 +834,12 @@ export default function DashboardPage() {
                       reviewStage: item.stage,
                     })
                   }
-                  className="w-full flex items-center justify-between px-4 py-2.5 text-sm hover:bg-blue-50/50 text-left"
+                  className="w-full flex items-center justify-between px-4 py-2.5 text-sm hover:bg-accent/10 text-left"
                 >
-                  <span className="text-slate-700 font-medium">
+                  <span className="text-fg font-medium">
                     {HOUSE_REVIEW_STAGE_LABELS[item.stage]}
                   </span>
-                  <span className="font-bold text-slate-900">
+                  <span className="font-bold text-fg">
                     {item.count} ({item.pct}%)
                   </span>
                 </button>
@@ -872,15 +872,15 @@ export default function DashboardPage() {
               <li key={w.ward}>
                 <button
                   onClick={() => openHouses(`Nhà ở ${w.ward}`, undefined, { ward: w.ward })}
-                  className="w-full flex items-center justify-between px-4 py-2.5 text-sm hover:bg-blue-50/50 text-left"
+                  className="w-full flex items-center justify-between px-4 py-2.5 text-sm hover:bg-accent/10 text-left"
                 >
                   <span className="flex items-center gap-2.5">
-                    <span className="w-5 h-5 rounded-full bg-slate-100 text-slate-500 text-[11px] font-bold flex items-center justify-center">
+                    <span className="w-5 h-5 rounded-full bg-surface-2 text-fg-muted text-[11px] font-bold flex items-center justify-center">
                       {i + 1}
                     </span>
-                    <span className="text-slate-700 font-medium">{w.ward}</span>
+                    <span className="text-fg font-medium">{w.ward}</span>
                   </span>
-                  <span className="font-bold text-slate-900">{w.houseCount} nhà</span>
+                  <span className="font-bold text-fg">{w.houseCount} nhà</span>
                 </button>
               </li>
             )}
@@ -906,19 +906,19 @@ export default function DashboardPage() {
                     <li key={w.key}>
                       <button
                         onClick={() => openHouses(`Nhà ở ${w.name}`, undefined, { ward: w.name })}
-                        className="w-full flex items-center justify-between px-4 py-2.5 text-sm hover:bg-blue-50/50 text-left"
+                        className="w-full flex items-center justify-between px-4 py-2.5 text-sm hover:bg-accent/10 text-left"
                       >
                         <span className="flex items-center gap-2.5">
-                          <span className="w-5 h-5 rounded-full bg-slate-100 text-slate-500 text-[11px] font-bold flex items-center justify-center">
+                          <span className="w-5 h-5 rounded-full bg-surface-2 text-fg-muted text-[11px] font-bold flex items-center justify-center">
                             {i + 1}
                           </span>
-                          <span className="text-slate-700 font-medium">{w.name}</span>
+                          <span className="text-fg font-medium">{w.name}</span>
                         </span>
                         <span className="text-xs">
-                          <span className="font-bold text-emerald-600">{w.approved}</span>
-                          <span className="text-slate-400"> đã có số · </span>
-                          <span className="font-bold text-amber-600">{w.withoutNumber}</span>
-                          <span className="text-slate-400"> chưa có số</span>
+                          <span className="font-bold text-ok">{w.approved}</span>
+                          <span className="text-fg-subtle"> đã có số · </span>
+                          <span className="font-bold text-warn">{w.withoutNumber}</span>
+                          <span className="text-fg-subtle"> chưa có số</span>
                         </span>
                       </button>
                     </li>
@@ -951,15 +951,15 @@ export default function DashboardPage() {
               <li key={s.street}>
                 <button
                   onClick={() => openHouses(`Nhà ở đường ${s.street}`, undefined, { street: s.street })}
-                  className="w-full flex items-center justify-between px-4 py-2.5 text-sm hover:bg-blue-50/50 text-left"
+                  className="w-full flex items-center justify-between px-4 py-2.5 text-sm hover:bg-accent/10 text-left"
                 >
                   <span className="flex items-center gap-2.5">
-                    <span className="w-5 h-5 rounded-full bg-slate-100 text-slate-500 text-[11px] font-bold flex items-center justify-center">
+                    <span className="w-5 h-5 rounded-full bg-surface-2 text-fg-muted text-[11px] font-bold flex items-center justify-center">
                       {i + 1}
                     </span>
-                    <span className="text-slate-700 font-medium">{s.street}</span>
+                    <span className="text-fg font-medium">{s.street}</span>
                   </span>
-                  <span className="font-bold text-slate-900">{s.houseCount} nhà</span>
+                  <span className="font-bold text-fg">{s.houseCount} nhà</span>
                 </button>
               </li>
             )}
@@ -1005,14 +1005,14 @@ export default function DashboardPage() {
                       search: d.houseNumber,
                     })
                   }
-                  className="w-full flex items-center justify-between px-4 py-2.5 text-sm hover:bg-rose-50/50 text-left"
+                  className="w-full flex items-center justify-between px-4 py-2.5 text-sm hover:bg-danger/10 text-left"
                 >
                   <span className="min-w-0">
-                    <span className="font-bold text-slate-900">{d.houseNumber}</span>{' '}
-                    <span className="text-slate-700">{d.street}</span>
-                    <span className="block text-xs text-slate-400">{d.ward}</span>
+                    <span className="font-bold text-fg">{d.houseNumber}</span>{' '}
+                    <span className="text-fg">{d.street}</span>
+                    <span className="block text-xs text-fg-subtle">{d.ward}</span>
                   </span>
-                  <span className="shrink-0 px-2 py-0.5 rounded text-[11px] font-bold bg-rose-100 text-rose-800">
+                  <span className="shrink-0 px-2 py-0.5 rounded text-[11px] font-bold bg-danger/15 text-danger">
                     {d.count} nhà trùng
                   </span>
                 </button>
@@ -1092,7 +1092,7 @@ export default function DashboardPage() {
                 {/* Đợt khảo sát — đếm từ danh sách đợt (API tổng quan chỉ trả số đợt đang triển khai). */}
                 {campaignCounts && (
                   <div className="min-w-0">
-                    <p className="text-xs font-semibold text-slate-500 text-center mb-1">Đợt khảo sát</p>
+                    <p className="text-xs font-semibold text-fg-muted text-center mb-1">Đợt khảo sát</p>
                     <DonutChart
                       centerLabel="Tổng đợt"
                       centerValue={Object.values(campaignCounts).reduce((a, b) => a + b, 0)}
@@ -1108,7 +1108,7 @@ export default function DashboardPage() {
                   </div>
                 )}
                 <div className="min-w-0">
-                  <p className="text-xs font-semibold text-slate-500 text-center mb-1">Nhiệm vụ khảo sát</p>
+                  <p className="text-xs font-semibold text-fg-muted text-center mb-1">Nhiệm vụ khảo sát</p>
                   <DonutChart
                     centerLabel="Tổng nhiệm vụ"
                     centerValue={
@@ -1211,7 +1211,7 @@ export default function DashboardPage() {
                   data.surveys.assignments.completed +
                   data.surveys.assignments.needsRevisit ===
                   0 && (
-                  <p className="text-xs text-slate-400 -mt-3">
+                  <p className="text-xs text-fg-subtle -mt-3">
                     Chưa có nhiệm vụ — tạo phân vùng và giao nhiệm vụ trong từng đợt ở trang Khảo sát.
                   </p>
                 )}
@@ -1347,25 +1347,25 @@ export default function DashboardPage() {
           <div className="flex flex-wrap gap-2 mt-6">
             <Link
               href="/houses"
-              className="bg-white border border-slate-200 hover:bg-slate-50 px-3 py-1.5 rounded-lg text-xs font-semibold text-slate-700"
+              className="bg-surface border border-line hover:bg-surface-2 px-3 py-1.5 rounded-lg text-xs font-semibold text-fg"
             >
               Xem danh sách/bản đồ →
             </Link>
             <Link
               href="/houses/cases"
-              className="bg-white border border-slate-200 hover:bg-slate-50 px-3 py-1.5 rounded-lg text-xs font-semibold text-slate-700"
+              className="bg-surface border border-line hover:bg-surface-2 px-3 py-1.5 rounded-lg text-xs font-semibold text-fg"
             >
               Xem hồ sơ →
             </Link>
             <Link
               href="/houses/surveys"
-              className="bg-white border border-slate-200 hover:bg-slate-50 px-3 py-1.5 rounded-lg text-xs font-semibold text-slate-700"
+              className="bg-surface border border-line hover:bg-surface-2 px-3 py-1.5 rounded-lg text-xs font-semibold text-fg"
             >
               Xem khảo sát →
             </Link>
             <Link
               href="/houses/numbering"
-              className="bg-white border border-slate-200 hover:bg-slate-50 px-3 py-1.5 rounded-lg text-xs font-semibold text-slate-700"
+              className="bg-surface border border-line hover:bg-surface-2 px-3 py-1.5 rounded-lg text-xs font-semibold text-fg"
             >
               Xem phương án đánh số →
             </Link>

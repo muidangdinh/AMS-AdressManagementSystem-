@@ -10,6 +10,11 @@ export class CreateAssignmentDto {
   @MinLength(1)
   assigneeId: string;
 
+  /** Giao theo tuyến đường (thuộc đúng phân vùng `zoneId`). Trống = giao cả phân vùng. */
+  @IsOptional()
+  @IsString()
+  routeId?: string;
+
   @IsOptional()
   @IsDateString()
   dueDate?: string;

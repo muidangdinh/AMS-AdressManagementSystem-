@@ -53,7 +53,7 @@ export default function AccountPage() {
     <div className="h-full overflow-auto p-6 space-y-4 max-w-lg">
       <PageHeader title="Tài khoản" subtitle="Thông tin tài khoản đang đăng nhập" />
 
-      <div className="bg-white rounded-xl border border-slate-200 shadow-card p-5 space-y-3 text-sm">
+      <div className="glass p-5 space-y-3 text-sm">
         <Row label="Họ tên" value={user.fullName} />
         <Row label="Tên đăng nhập" value={user.username} />
         <Row label="Vai trò" value={USER_ROLE_LABELS[user.role as UserRole]} />
@@ -63,9 +63,9 @@ export default function AccountPage() {
 
       <form
         onSubmit={handleSubmit}
-        className="bg-white rounded-xl border border-slate-200 shadow-card p-5 space-y-3"
+        className="glass p-5 space-y-3"
       >
-        <h3 className="text-[11px] font-bold text-blue-700 uppercase tracking-wider">
+        <h3 className="text-[11px] font-bold text-accent uppercase tracking-wider">
           Đổi mật khẩu
         </h3>
         <FormField label="Mật khẩu hiện tại" required>
@@ -100,12 +100,12 @@ export default function AccountPage() {
         </FormField>
 
         {error && (
-          <div className="bg-rose-50 border border-rose-200 text-rose-700 rounded-lg p-2.5 text-sm">
+          <div className="bg-danger/10 border border-danger/30 text-danger rounded-lg p-2.5 text-sm">
             {error}
           </div>
         )}
         {success && (
-          <div className="bg-emerald-50 border border-emerald-200 text-emerald-700 rounded-lg p-2.5 text-sm">
+          <div className="bg-ok/10 border border-ok/30 text-ok rounded-lg p-2.5 text-sm">
             Đổi mật khẩu thành công.
           </div>
         )}
@@ -113,7 +113,7 @@ export default function AccountPage() {
         <button
           type="submit"
           disabled={saving}
-          className="bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white px-4 py-2 rounded-xl text-sm font-semibold flex items-center gap-2"
+          className="bg-brand hover:bg-brand/90 disabled:opacity-50 text-white px-4 py-2 rounded-xl text-sm font-semibold flex items-center gap-2"
         >
           {saving && <ButtonSpinner light />}
           Đổi mật khẩu
@@ -126,8 +126,8 @@ export default function AccountPage() {
 function Row({ label, value }: { label: string; value: string }) {
   return (
     <div className="flex items-center justify-between gap-4">
-      <span className="text-slate-500">{label}</span>
-      <span className="font-semibold text-slate-900">{value}</span>
+      <span className="text-fg-muted">{label}</span>
+      <span className="font-semibold text-fg">{value}</span>
     </div>
   );
 }
@@ -167,7 +167,7 @@ function PasswordInput({
         onClick={onToggleVisible}
         tabIndex={-1}
         aria-label={visible ? 'Ẩn mật khẩu' : 'Hiện mật khẩu'}
-        className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+        className="absolute right-2.5 top-1/2 -translate-y-1/2 text-fg-subtle hover:text-fg-muted"
       >
         {visible ? (
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-[18px] h-[18px]">

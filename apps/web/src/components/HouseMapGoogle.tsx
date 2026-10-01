@@ -93,20 +93,20 @@ export default function HouseMapGoogle({
   return (
     <div className="relative h-full w-full">
       {!apiKey && (
-        <div className="h-full w-full flex items-center justify-center text-center text-sm text-slate-400 p-6">
+        <div className="h-full w-full flex items-center justify-center text-center text-sm text-fg-subtle p-6">
           Chưa cấu hình <code className="mx-1 font-mono text-xs">NEXT_PUBLIC_GOOGLE_MAPS_API_KEY</code>{' '}
           — xem hướng dẫn lấy key trong <code className="mx-1 font-mono text-xs">apps/web/.env</code>.
         </div>
       )}
 
       {apiKey && loadError && (
-        <div className="h-full w-full flex items-center justify-center text-center text-sm text-rose-500 p-6">
+        <div className="h-full w-full flex items-center justify-center text-center text-sm text-danger p-6">
           Không tải được Google Maps — kiểm tra API key và kết nối mạng.
         </div>
       )}
 
       {apiKey && !loadError && !isLoaded && (
-        <div className="h-full w-full flex items-center justify-center text-slate-400 text-sm">
+        <div className="h-full w-full flex items-center justify-center text-fg-subtle text-sm">
           Đang tải bản đồ…
         </div>
       )}
@@ -177,17 +177,17 @@ export default function HouseMapGoogle({
         </GoogleMap>
       )}
 
-      <div className="absolute top-3 right-3 z-[500] bg-white rounded-lg shadow-md p-1 border border-slate-200 flex space-x-1 text-xs">
+      <div className="absolute top-3 right-3 z-[500] bg-surface rounded-lg shadow-md p-1 border border-line flex space-x-1 text-xs">
         <button
           onClick={() => toggleLayer('street')}
-          className={`px-2.5 py-1.5 rounded font-semibold transition ${layer === 'street' ? 'bg-blue-600 text-white' : 'text-slate-600 hover:bg-slate-100'
+          className={`px-2.5 py-1.5 rounded font-semibold transition ${layer === 'street' ? 'bg-brand text-white' : 'text-fg-muted hover:bg-surface-2'
             }`}
         >
           Giao thông
         </button>
         <button
           onClick={() => toggleLayer('satellite')}
-          className={`px-2.5 py-1.5 rounded font-semibold transition ${layer === 'satellite' ? 'bg-blue-600 text-white' : 'text-slate-600 hover:bg-slate-100'
+          className={`px-2.5 py-1.5 rounded font-semibold transition ${layer === 'satellite' ? 'bg-brand text-white' : 'text-fg-muted hover:bg-surface-2'
             }`}
         >
           Vệ tinh

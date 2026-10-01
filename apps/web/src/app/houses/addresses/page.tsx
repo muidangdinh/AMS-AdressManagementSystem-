@@ -8,7 +8,7 @@ import type { Alley, District, Hamlet, Street, Ward } from '@tayninh/shared';
 import { useAuth } from '@/lib/auth-context';
 import { ApiError } from '@/lib/api';
 import { alleysApi, districtsApi, hamletsApi, streetsApi, wardsApi } from '@/lib/addresses-api';
-import { FIELD_CLASS, PageHeader, EmptyState, ButtonSpinner } from '@/components/ui';
+import { FIELD_CLASS, PageHeader, EmptyState, ButtonSpinner, SegmentedControl } from '@/components/ui';
 
 type TabKey = 'district' | 'ward' | 'hamlet' | 'street' | 'alley';
 
@@ -238,7 +238,7 @@ export default function AddressesAdminPage() {
   }
 
   if (!user || !canManage) {
-    return <div className="p-6 text-sm text-slate-400">Đang chuyển hướng…</div>;
+    return <div className="p-6 text-sm text-fg-subtle">Đang chuyển hướng…</div>;
   }
 
   const districtName = (id: string | null) => districts.find((d) => d.id === id)?.name ?? '—';
@@ -253,7 +253,7 @@ export default function AddressesAdminPage() {
         actions={
           <Link
             href="/houses"
-            className="text-sm text-blue-600 hover:underline font-semibold whitespace-nowrap"
+            className="text-sm text-accent hover:underline font-semibold whitespace-nowrap"
           >
             ← Về danh sách số nhà
           </Link>
@@ -261,29 +261,17 @@ export default function AddressesAdminPage() {
       />
 
       {loadError && (
-        <div className="bg-rose-50 border border-rose-200 text-rose-700 rounded-xl p-3 text-sm mt-4">
+        <div className="bg-danger/10 border border-danger/30 text-danger rounded-xl p-3 text-sm mt-4">
           {loadError}
         </div>
       )}
 
-      <div className="inline-flex flex-wrap gap-1 bg-slate-100 rounded-xl p-1 mt-4 mb-4">
-        {TABS.map((t) => (
-          <button
-            key={t.key}
-            onClick={() => setTab(t.key)}
-            className={`px-4 py-1.5 text-sm font-semibold rounded-lg transition ${
-              tab === t.key
-                ? 'bg-white text-blue-700 shadow-card'
-                : 'text-slate-500 hover:text-slate-700'
-            }`}
-          >
-            {t.label}
-          </button>
-        ))}
+      <div className="mt-4 mb-4 flex flex-wrap">
+        <SegmentedControl value={tab} onChange={setTab} options={TABS.map((t) => ({ value: t.key, label: t.label }))} />
       </div>
 
       {loading ? (
-        <div className="flex items-center justify-center gap-2 text-slate-400 text-sm py-10">
+        <div className="flex items-center justify-center gap-2 text-fg-subtle text-sm py-10">
           <ButtonSpinner /> Đang tải…
         </div>
       ) : (
@@ -292,10 +280,10 @@ export default function AddressesAdminPage() {
             <>
               <form
                 onSubmit={handleAddDistrict}
-                className="bg-white border border-slate-200 rounded-xl p-4 mb-4 flex gap-3 items-end shadow-card"
+                className="glass p-4 mb-4 flex gap-3 items-end"
               >
                 <div className="flex-1">
-                  <label className="block text-xs font-bold text-slate-600 uppercase tracking-wide mb-1">
+                  <label className="block text-xs font-bold text-fg-muted uppercase tracking-wide mb-1">
                     Tên quận/huyện *
                   </label>
                   <input
@@ -306,7 +294,7 @@ export default function AddressesAdminPage() {
                   />
                 </div>
                 <div className="w-32">
-                  <label className="block text-xs font-bold text-slate-600 uppercase tracking-wide mb-1">
+                  <label className="block text-xs font-bold text-fg-muted uppercase tracking-wide mb-1">
                     Mã (tùy chọn)
                   </label>
                   <input
@@ -317,13 +305,13 @@ export default function AddressesAdminPage() {
                 </div>
                 <button
                   disabled={districtSaving}
-                  className="bg-blue-600 hover:bg-blue-700 disabled:opacity-60 text-white px-4 py-2 rounded-xl text-sm font-semibold shadow-soft transition flex items-center gap-2"
+                  className="bg-brand hover:bg-brand/90 disabled:opacity-60 text-white px-4 py-2 rounded-xl text-sm font-semibold shadow-soft transition flex items-center gap-2"
                 >
                   {districtSaving && <ButtonSpinner light />} + Thêm
                 </button>
               </form>
               {districtError && (
-                <p className="text-rose-600 text-sm mb-3">{districtError}</p>
+                <p className="text-danger text-sm mb-3">{districtError}</p>
               )}
               <CatalogTable
                 headers={['Tên', 'Mã']}
@@ -338,10 +326,10 @@ export default function AddressesAdminPage() {
             <>
               <form
                 onSubmit={handleAddWard}
-                className="bg-white border border-slate-200 rounded-xl p-4 mb-4 flex gap-3 items-end shadow-card flex-wrap"
+                className="glass p-4 mb-4 flex gap-3 items-end flex-wrap"
               >
                 <div className="flex-1 min-w-[180px]">
-                  <label className="block text-xs font-bold text-slate-600 uppercase tracking-wide mb-1">
+                  <label className="block text-xs font-bold text-fg-muted uppercase tracking-wide mb-1">
                     Tên xã/phường *
                   </label>
                   <input
@@ -352,7 +340,7 @@ export default function AddressesAdminPage() {
                   />
                 </div>
                 <div className="w-48">
-                  <label className="block text-xs font-bold text-slate-600 uppercase tracking-wide mb-1">
+                  <label className="block text-xs font-bold text-fg-muted uppercase tracking-wide mb-1">
                     Quận/huyện (tùy chọn)
                   </label>
                   <select
@@ -370,12 +358,12 @@ export default function AddressesAdminPage() {
                 </div>
                 <button
                   disabled={wardSaving}
-                  className="bg-blue-600 hover:bg-blue-700 disabled:opacity-60 text-white px-4 py-2 rounded-xl text-sm font-semibold shadow-soft transition flex items-center gap-2"
+                  className="bg-brand hover:bg-brand/90 disabled:opacity-60 text-white px-4 py-2 rounded-xl text-sm font-semibold shadow-soft transition flex items-center gap-2"
                 >
                   {wardSaving && <ButtonSpinner light />} + Thêm
                 </button>
               </form>
-              {wardError && <p className="text-rose-600 text-sm mb-3">{wardError}</p>}
+              {wardError && <p className="text-danger text-sm mb-3">{wardError}</p>}
               <CatalogTable
                 headers={['Tên', 'Quận/huyện']}
                 rows={wards.map((w) => [w.name, districtName(w.districtId ?? null)])}
@@ -389,10 +377,10 @@ export default function AddressesAdminPage() {
             <>
               <form
                 onSubmit={handleAddHamlet}
-                className="bg-white border border-slate-200 rounded-xl p-4 mb-4 flex gap-3 items-end shadow-card flex-wrap"
+                className="glass p-4 mb-4 flex gap-3 items-end flex-wrap"
               >
                 <div className="flex-1 min-w-[180px]">
-                  <label className="block text-xs font-bold text-slate-600 uppercase tracking-wide mb-1">
+                  <label className="block text-xs font-bold text-fg-muted uppercase tracking-wide mb-1">
                     Tên thôn/ấp/tổ dân phố *
                   </label>
                   <input
@@ -403,7 +391,7 @@ export default function AddressesAdminPage() {
                   />
                 </div>
                 <div className="w-48">
-                  <label className="block text-xs font-bold text-slate-600 uppercase tracking-wide mb-1">
+                  <label className="block text-xs font-bold text-fg-muted uppercase tracking-wide mb-1">
                     Xã/phường *
                   </label>
                   <select
@@ -422,12 +410,12 @@ export default function AddressesAdminPage() {
                 </div>
                 <button
                   disabled={hamletSaving}
-                  className="bg-blue-600 hover:bg-blue-700 disabled:opacity-60 text-white px-4 py-2 rounded-xl text-sm font-semibold shadow-soft transition flex items-center gap-2"
+                  className="bg-brand hover:bg-brand/90 disabled:opacity-60 text-white px-4 py-2 rounded-xl text-sm font-semibold shadow-soft transition flex items-center gap-2"
                 >
                   {hamletSaving && <ButtonSpinner light />} + Thêm
                 </button>
               </form>
-              {hamletError && <p className="text-rose-600 text-sm mb-3">{hamletError}</p>}
+              {hamletError && <p className="text-danger text-sm mb-3">{hamletError}</p>}
               <CatalogTable
                 headers={['Tên', 'Xã/phường']}
                 rows={hamlets.map((h) => [h.name, wardName(h.wardId)])}
@@ -441,10 +429,10 @@ export default function AddressesAdminPage() {
             <>
               <form
                 onSubmit={handleAddStreet}
-                className="bg-white border border-slate-200 rounded-xl p-4 mb-4 flex gap-3 items-end shadow-card flex-wrap"
+                className="glass p-4 mb-4 flex gap-3 items-end flex-wrap"
               >
                 <div className="flex-1 min-w-[180px]">
-                  <label className="block text-xs font-bold text-slate-600 uppercase tracking-wide mb-1">
+                  <label className="block text-xs font-bold text-fg-muted uppercase tracking-wide mb-1">
                     Tên đường/phố *
                   </label>
                   <input
@@ -455,7 +443,7 @@ export default function AddressesAdminPage() {
                   />
                 </div>
                 <div className="w-48">
-                  <label className="block text-xs font-bold text-slate-600 uppercase tracking-wide mb-1">
+                  <label className="block text-xs font-bold text-fg-muted uppercase tracking-wide mb-1">
                     Xã/phường (tùy chọn)
                   </label>
                   <select
@@ -473,12 +461,12 @@ export default function AddressesAdminPage() {
                 </div>
                 <button
                   disabled={streetSaving}
-                  className="bg-blue-600 hover:bg-blue-700 disabled:opacity-60 text-white px-4 py-2 rounded-xl text-sm font-semibold shadow-soft transition flex items-center gap-2"
+                  className="bg-brand hover:bg-brand/90 disabled:opacity-60 text-white px-4 py-2 rounded-xl text-sm font-semibold shadow-soft transition flex items-center gap-2"
                 >
                   {streetSaving && <ButtonSpinner light />} + Thêm
                 </button>
               </form>
-              {streetError && <p className="text-rose-600 text-sm mb-3">{streetError}</p>}
+              {streetError && <p className="text-danger text-sm mb-3">{streetError}</p>}
               <CatalogTable
                 headers={['Tên', 'Xã/phường']}
                 rows={streets.map((s) => [s.name, wardName(s.wardId ?? null)])}
@@ -492,10 +480,10 @@ export default function AddressesAdminPage() {
             <>
               <form
                 onSubmit={handleAddAlley}
-                className="bg-white border border-slate-200 rounded-xl p-4 mb-4 flex gap-3 items-end shadow-card flex-wrap"
+                className="glass p-4 mb-4 flex gap-3 items-end flex-wrap"
               >
                 <div className="flex-1 min-w-[180px]">
-                  <label className="block text-xs font-bold text-slate-600 uppercase tracking-wide mb-1">
+                  <label className="block text-xs font-bold text-fg-muted uppercase tracking-wide mb-1">
                     Tên hẻm/ngõ *
                   </label>
                   <input
@@ -506,7 +494,7 @@ export default function AddressesAdminPage() {
                   />
                 </div>
                 <div className="w-48">
-                  <label className="block text-xs font-bold text-slate-600 uppercase tracking-wide mb-1">
+                  <label className="block text-xs font-bold text-fg-muted uppercase tracking-wide mb-1">
                     Đường/phố *
                   </label>
                   <select
@@ -525,12 +513,12 @@ export default function AddressesAdminPage() {
                 </div>
                 <button
                   disabled={alleySaving}
-                  className="bg-blue-600 hover:bg-blue-700 disabled:opacity-60 text-white px-4 py-2 rounded-xl text-sm font-semibold shadow-soft transition flex items-center gap-2"
+                  className="bg-brand hover:bg-brand/90 disabled:opacity-60 text-white px-4 py-2 rounded-xl text-sm font-semibold shadow-soft transition flex items-center gap-2"
                 >
                   {alleySaving && <ButtonSpinner light />} + Thêm
                 </button>
               </form>
-              {alleyError && <p className="text-rose-600 text-sm mb-3">{alleyError}</p>}
+              {alleyError && <p className="text-danger text-sm mb-3">{alleyError}</p>}
               <CatalogTable
                 headers={['Tên', 'Đường/phố']}
                 rows={alleys.map((a) => [a.name, streetName(a.streetId)])}
@@ -558,12 +546,12 @@ function CatalogTable({
   emptyLabel: string;
 }) {
   return (
-    <div className="bg-white rounded-xl border border-slate-200 shadow-card overflow-hidden">
+    <div className="glass overflow-hidden">
       {rows.length === 0 ? (
         <EmptyState icon="📍" text={emptyLabel} />
       ) : (
         <table className="w-full text-sm">
-          <thead className="bg-slate-50 text-slate-500 text-xs uppercase">
+          <thead className="bg-surface-2 text-fg-muted text-xs uppercase">
             <tr>
               {headers.map((h) => (
                 <th key={h} className="text-left px-4 py-2.5">
@@ -573,9 +561,9 @@ function CatalogTable({
               <th className="w-20" />
             </tr>
           </thead>
-          <tbody className="divide-y divide-slate-100">
+          <tbody className="divide-y divide-line">
             {rows.map((row, i) => (
-              <tr key={i} className="hover:bg-blue-50/50 transition-colors">
+              <tr key={i} className="animate-item-in hover:bg-accent/10 transition-colors">
                 {row.map((cell, j) => (
                   <td key={j} className="px-4 py-2.5">
                     {cell}
@@ -584,7 +572,7 @@ function CatalogTable({
                 <td className="px-4 py-2.5 text-right">
                   <button
                     onClick={onDelete[i]}
-                    className="text-rose-600 hover:underline text-xs font-semibold"
+                    className="text-danger hover:underline text-xs font-semibold"
                   >
                     Xóa
                   </button>

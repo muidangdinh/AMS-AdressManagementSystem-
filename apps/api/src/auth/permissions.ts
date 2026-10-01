@@ -27,6 +27,9 @@ export const PERMISSIONS = {
   ASSIGNMENT_EXECUTE: 'assignment:execute',
   ASSIGNMENT_REVIEW: 'assignment:review',
   CASE_MANAGE: 'case:manage',
+  INSTALL_MANAGE: 'install:manage',
+  INSTALL_EXECUTE: 'install:execute',
+  INSTALL_REVIEW: 'install:review',
   NOTIFICATION_REMIND: 'notification:remind',
   NOTIFICATION_RUN_REMINDERS: 'notification:run-reminders',
 } as const;
@@ -59,6 +62,9 @@ export const PERMISSION_CATALOG: PermissionDef[] = [
   { code: PERMISSIONS.ASSIGNMENT_EXECUTE, name: 'Thực hiện nhiệm vụ (bắt đầu/gửi duyệt/báo vấn đề)', group: 'Khảo sát' },
   { code: PERMISSIONS.ASSIGNMENT_REVIEW, name: 'Nghiệm thu/yêu cầu khảo sát lại', group: 'Khảo sát' },
   { code: PERMISSIONS.CASE_MANAGE, name: 'Tiếp nhận & xử lý hồ sơ hành chính', group: 'Hồ sơ hành chính' },
+  { code: PERMISSIONS.INSTALL_MANAGE, name: 'Tạo đợt/phân vùng, giao nhiệm vụ thi công', group: 'Thi công' },
+  { code: PERMISSIONS.INSTALL_EXECUTE, name: 'Thực hiện nhiệm vụ thi công (bắt đầu/gắn biển/gửi duyệt)', group: 'Thi công' },
+  { code: PERMISSIONS.INSTALL_REVIEW, name: 'Nghiệm thu/yêu cầu thi công lại', group: 'Thi công' },
   { code: PERMISSIONS.NOTIFICATION_REMIND, name: 'Gửi nhắc việc thủ công', group: 'Thông báo' },
   { code: PERMISSIONS.NOTIFICATION_RUN_REMINDERS, name: 'Chạy quét nhắc việc toàn hệ thống', group: 'Thông báo' },
 ];
@@ -99,6 +105,8 @@ export const DEFAULT_ROLES: DefaultRoleDef[] = [
       PERMISSIONS.SURVEY_MANAGE,
       PERMISSIONS.ASSIGNMENT_REVIEW,
       PERMISSIONS.CASE_MANAGE,
+      PERMISSIONS.INSTALL_MANAGE,
+      PERMISSIONS.INSTALL_REVIEW,
       PERMISSIONS.NOTIFICATION_REMIND,
     ],
   },
@@ -113,6 +121,12 @@ export const DEFAULT_ROLES: DefaultRoleDef[] = [
       PERMISSIONS.PLATE_INSTALL,
       PERMISSIONS.ASSIGNMENT_EXECUTE,
     ],
+  },
+  {
+    code: 'installer',
+    name: 'Cán bộ thi công',
+    description: 'Thi công hiện trường: nhận nhiệm vụ, đi gắn biển số nhà, chụp ảnh, gửi duyệt',
+    permissions: [PERMISSIONS.PLATE_INSTALL, PERMISSIONS.INSTALL_EXECUTE],
   },
 ];
 

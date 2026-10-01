@@ -28,6 +28,7 @@ import {
   NumberingSide,
   NUMBERING_SIDE_LABELS,
   PhotoType,
+  distanceToPathM,
   type HouseSummary,
   type SurveyAssignment,
   type Hamlet,
@@ -133,6 +134,9 @@ function pickSinglePhoto(title: string, onPicked: (uri: string) => void) {
     { text: 'Hủy', style: 'cancel' },
   ]);
 }
+
+/** Đứng xa tuyến được giao quá khoảng này (mét) thì nhắc kiểm tra lại vị trí nhà. */
+const ROUTE_WARN_DISTANCE_M = 200;
 
 export default function SurveyScreen() {
   // Phase 11 Đợt 2b — chế độ "sửa lại nhà": vào từ tab Nhiệm Vụ với `resurveyHouseId` (nhà bị yêu cầu khảo sát lại).
@@ -671,10 +675,24 @@ export default function SurveyScreen() {
           <View style={{ flex: 1 }}>
             <Text style={styles.assignmentBannerTitle}>
               Đang khảo sát: {activeAssignment.zone.name}
+              {activeAssignment.route ? ` • Tuyến ${activeAssignment.route.name}` : ''}
             </Text>
             <Text style={styles.assignmentBannerSub}>
               Nhà tạo mới sẽ tự gắn vào nhiệm vụ này để tính tiến độ.
             </Text>
+            {/* Tọa độ nhà vẫn lấy theo GPS — tuyến chỉ để định hướng, đứng xa tuyến thì nhắc nhẹ. */}
+            {(() => {
+              const path = activeAssignment.route?.path;
+              if (!path || path.length < 2 || locationSource === 'default') return null;
+              const d = distanceToPathM(lat, lng, path);
+              if (d <= ROUTE_WARN_DISTANCE_M) return null;
+              return (
+                <Text style={styles.assignmentBannerWarn}>
+                  Bạn đang cách tuyến khoảng {d >= 1000 ? `${(d / 1000).toFixed(1)} km` : `${Math.round(d)} m`} —
+                  kiểm tra lại vị trí nhà.
+                </Text>
+              );
+            })()}
           </View>
           <TouchableOpacity onPress={handleClearActiveAssignment}>
             <Text style={styles.assignmentBannerClear}>Bỏ chọn</Text>
@@ -967,6 +985,17 @@ export default function SurveyScreen() {
         visible={pickerVisible}
         initialLat={lat}
         initialLng={lng}
+        // Nhiệm vụ đang chọn có tuyến → bản đồ mở tại tuyến; "Bỏ chọn" nhiệm vụ thì trở lại như cũ.
+        route={
+          activeAssignment && !resurveyHouseId && activeAssignment.route?.path && activeAssignment.route.path.length >= 2
+            ? {
+                name: activeAssignment.route.name,
+                path: activeAssignment.route.path,
+                snapped: activeAssignment.route.snapped,
+              }
+            : null
+        }
+        hasRealLocation={locationSource !== 'default'}
         onClose={() => setPickerVisible(false)}
         onConfirm={(newLat, newLng) => {
           setLat(newLat);
@@ -1212,6 +1241,7 @@ const styles = StyleSheet.create({
   },
   assignmentBannerTitle: { fontSize: 12, fontWeight: '700', color: '#1d4ed8' },
   assignmentBannerSub: { fontSize: 10, color: '#60a5fa', marginTop: 2 },
+  assignmentBannerWarn: { fontSize: 11, color: '#b45309', fontWeight: '600', marginTop: 4 },
   assignmentBannerClear: { fontSize: 11, fontWeight: '700', color: '#64748b' },
   label: { fontSize: 11, fontWeight: '700', color: '#475569', textTransform: 'uppercase', marginTop: 6 },
   input: {

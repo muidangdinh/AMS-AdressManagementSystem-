@@ -2,7 +2,10 @@ import React, { createContext, useCallback, useContext, useEffect, useState } fr
 import type { ChangePasswordRequest, LoginRequest, LoginResponse, UserSummary } from '@tayninh/shared';
 import { apiFetch, clearToken, getStoredUser, getToken, setStoredUser, setToken } from './api';
 
-type CurrentUser = Pick<UserSummary, 'id' | 'username' | 'fullName' | 'role' | 'unit' | 'position'>;
+/** `permissions` có sẵn trong phản hồi đăng nhập — dùng để ẩn/hiện tab theo quyền (vd Thi Công). */
+type CurrentUser = Pick<UserSummary, 'id' | 'username' | 'fullName' | 'role' | 'unit' | 'position'> & {
+  permissions?: string[];
+};
 
 interface AuthContextValue {
   user: CurrentUser | null;

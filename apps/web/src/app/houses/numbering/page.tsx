@@ -8,13 +8,23 @@ import { useAuth } from '@/lib/auth-context';
 import { ApiError } from '@/lib/api';
 import { numberingSchemesApi } from '@/lib/numbering-api';
 import { streetsApi } from '@/lib/addresses-api';
-import { ButtonSpinner, EmptyState, FIELD_CLASS, FormField, FormSection, PageHeader } from '@/components/ui';
+import { Plus, Send } from 'lucide-react';
+import {
+  Button,
+  ButtonSpinner,
+  EmptyState,
+  FIELD_CLASS,
+  FormField,
+  FormSection,
+  PageHeader,
+  ToggleSwitch,
+} from '@/components/ui';
 
 const STATUS_BADGE: Record<NumberingSchemeStatus, string> = {
-  [NumberingSchemeStatus.DRAFT]: 'bg-slate-100 text-slate-700 border-slate-200',
-  [NumberingSchemeStatus.SUBMITTED]: 'bg-amber-100 text-amber-800 border-amber-200',
-  [NumberingSchemeStatus.APPROVED]: 'bg-emerald-100 text-emerald-800 border-emerald-200',
-  [NumberingSchemeStatus.REJECTED]: 'bg-rose-100 text-rose-800 border-rose-200',
+  [NumberingSchemeStatus.DRAFT]: 'bg-surface-2 text-fg border-line',
+  [NumberingSchemeStatus.SUBMITTED]: 'bg-warn/15 text-warn border-warn/30',
+  [NumberingSchemeStatus.APPROVED]: 'bg-ok/15 text-ok border-ok/30',
+  [NumberingSchemeStatus.REJECTED]: 'bg-danger/15 text-danger border-danger/30',
 };
 
 /** Danh sách phương án đánh số (Phase 7 — V. Đánh số nhà). */
@@ -54,6 +64,22 @@ export default function NumberingSchemesPage() {
   useEffect(() => {
     streetsApi.list().then(setStreets).catch(() => {});
   }, []);
+
+  const [submittingId, setSubmittingId] = useState<string | null>(null);
+
+  async function handleQuickSubmit(scheme: NumberingScheme) {
+    if (!confirm(`Trình duyệt phương án "${scheme.name}"?`)) return;
+    setSubmittingId(scheme.id);
+    setError(null);
+    try {
+      await numberingSchemesApi.submit(scheme.id);
+      await load();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Không trình duyệt được phương án');
+    } finally {
+      setSubmittingId(null);
+    }
+  }
 
   const [createOpen, setCreateOpen] = useState(false);
   const [form, setForm] = useState({
@@ -95,19 +121,17 @@ export default function NumberingSchemesPage() {
         subtitle="Soạn phương án cho 1 tuyến đường, sinh số tự động, kiểm tra và trình duyệt trước khi ghi vào hồ sơ số nhà chính thức."
         actions={
           canEdit && (
-            <button
-              onClick={() => setCreateOpen(true)}
-              className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-xl text-sm font-semibold shadow-soft transition"
-            >
-              + Tạo phương án
-            </button>
+            <Button onClick={() => setCreateOpen(true)}>
+              <Plus className="w-4 h-4" />
+              Tạo phương án mới
+            </Button>
           )
         }
       />
 
-      <div className="bg-white border border-slate-200 rounded-xl p-3 flex gap-3 items-end shadow-card">
+      <div className="glass p-3 flex gap-3 items-end flex-wrap">
         <div className="w-56">
-          <label className="block text-[11px] font-bold text-slate-500 uppercase mb-1">
+          <label className="block text-[11px] font-bold text-fg-muted uppercase mb-1">
             Đường/Phố
           </label>
           <select
@@ -124,7 +148,7 @@ export default function NumberingSchemesPage() {
           </select>
         </div>
         <div className="w-48">
-          <label className="block text-[11px] font-bold text-slate-500 uppercase mb-1">
+          <label className="block text-[11px] font-bold text-fg-muted uppercase mb-1">
             Trạng thái
           </label>
           <select
@@ -143,19 +167,19 @@ export default function NumberingSchemesPage() {
       </div>
 
       {error && (
-        <div className="bg-rose-50 border border-rose-200 text-rose-700 rounded-xl p-3 text-sm">
+        <div className="bg-danger/10 border border-danger/30 text-danger rounded-xl p-3 text-sm">
           {error}
         </div>
       )}
 
-      <div className="bg-white rounded-xl border border-slate-200 shadow-card overflow-hidden">
+      <div className="glass overflow-hidden">
         {loading ? (
-          <EmptyState icon="⏳" text="Đang tải…" />
+          <p className="p-6 text-sm text-fg-subtle">Đang tải…</p>
         ) : schemes.length === 0 ? (
-          <EmptyState icon="📋" text="Chưa có phương án nào" />
+          <EmptyState text="Chưa có phương án nào" />
         ) : (
           <table className="w-full text-sm">
-            <thead className="bg-slate-50 text-slate-500 text-xs uppercase">
+            <thead className="bg-surface-2 text-fg-muted text-xs uppercase">
               <tr>
                 <th className="text-left px-4 py-3">Tên phương án</th>
                 <th className="text-left px-4 py-3">Đường/Phố</th>
@@ -163,16 +187,17 @@ export default function NumberingSchemesPage() {
                 <th className="text-left px-4 py-3">Trạng thái</th>
                 <th className="text-left px-4 py-3">Người tạo</th>
                 <th className="text-left px-4 py-3">Ngày tạo</th>
+                {canEdit && <th className="px-4 py-3" />}
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-100">
+            <tbody className="divide-y divide-line">
               {schemes.map((s) => (
                 <tr
                   key={s.id}
                   onClick={() => router.push(`/houses/numbering/${s.id}`)}
-                  className="cursor-pointer hover:bg-blue-50/50 transition-colors"
+                  className="cursor-pointer hover:bg-surface-2 transition-colors"
                 >
-                  <td className="px-4 py-3 font-bold text-slate-900">{s.name}</td>
+                  <td className="px-4 py-3 font-bold text-fg">{s.name}</td>
                   <td className="px-4 py-3">{s.street.name}</td>
                   <td className="px-4 py-3">{s.ward?.name ?? '—'}</td>
                   <td className="px-4 py-3">
@@ -182,10 +207,29 @@ export default function NumberingSchemesPage() {
                       {NUMBERING_SCHEME_STATUS_LABELS[s.status]}
                     </span>
                   </td>
-                  <td className="px-4 py-3 text-xs text-slate-500">{s.createdBy?.fullName ?? '—'}</td>
-                  <td className="px-4 py-3 text-xs text-slate-500">
+                  <td className="px-4 py-3 text-xs text-fg-muted">{s.createdBy?.fullName ?? '—'}</td>
+                  <td className="px-4 py-3 text-xs text-fg-muted">
                     {new Date(s.createdAt).toLocaleDateString('vi-VN')}
                   </td>
+                  {canEdit && (
+                    <td className="px-4 py-3 text-right">
+                      {s.status === NumberingSchemeStatus.DRAFT && (
+                        // Trình duyệt nhanh ngay từ danh sách — API tự kiểm tra phương án đủ điều kiện.
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleQuickSubmit(s);
+                          }}
+                          disabled={submittingId === s.id}
+                          className="inline-flex items-center gap-1 rounded-lg border border-accent/30 bg-accent/10 px-2.5 py-1 text-xs font-semibold text-accent hover:bg-accent/15 disabled:opacity-50"
+                        >
+                          {submittingId === s.id ? <ButtonSpinner /> : <Send className="w-3.5 h-3.5" />}
+                          Trình duyệt
+                        </button>
+                      )}
+                    </td>
+                  )}
                 </tr>
               ))}
             </tbody>
@@ -194,20 +238,20 @@ export default function NumberingSchemesPage() {
       </div>
 
       {createOpen && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-30 p-4">
-          <div className="bg-white rounded-2xl shadow-soft w-full max-w-lg overflow-hidden">
-            <div className="bg-slate-900 text-white px-5 py-4 flex items-center justify-between">
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-30 p-4">
+          <div className="bg-surface rounded-2xl shadow-soft w-full max-w-lg overflow-hidden">
+            <div className="bg-shell text-fg border-b border-line px-5 py-4 flex items-center justify-between">
               <h3 className="font-bold text-base">Tạo phương án đánh số</h3>
               <button
                 onClick={() => setCreateOpen(false)}
-                className="w-7 h-7 rounded-lg flex items-center justify-center text-slate-400 hover:text-white hover:bg-white/10 transition"
+                className="w-7 h-7 rounded-lg flex items-center justify-center text-fg-subtle hover:text-fg hover:bg-surface-2 transition"
               >
                 ×
               </button>
             </div>
-            <form onSubmit={handleCreate} className="p-5 space-y-4 bg-slate-50">
+            <form onSubmit={handleCreate} className="p-5 space-y-4 bg-surface-2">
               {createError && (
-                <div className="bg-rose-50 border border-rose-200 text-rose-700 rounded-xl p-3 text-sm">
+                <div className="bg-danger/10 border border-danger/30 text-danger rounded-xl p-3 text-sm">
                   {createError}
                 </div>
               )}
@@ -250,16 +294,14 @@ export default function NumberingSchemesPage() {
               </FormSection>
 
               <FormSection title="Quy tắc sinh số">
-                <label className="flex items-center gap-2 text-sm text-slate-700">
-                  <input
-                    id="oddEvenSplit"
-                    type="checkbox"
+                <div className="flex items-center gap-2.5 text-sm text-fg">
+                  <ToggleSwitch
                     checked={form.oddEvenSplit}
-                    onChange={(e) => setForm((f) => ({ ...f, oddEvenSplit: e.target.checked }))}
-                    className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500/40"
+                    onChange={(v) => setForm((f) => ({ ...f, oddEvenSplit: v }))}
+                    label="Tách chẵn/lẻ 2 bên đường"
                   />
-                  Tách chẵn/lẻ 2 bên đường (bỏ chọn = đánh số liên tục cả 2 bên)
-                </label>
+                  Tách chẵn/lẻ 2 bên đường (tắt = đánh số liên tục cả 2 bên)
+                </div>
                 <div className="grid grid-cols-2 gap-3">
                   <FormField label="Số bắt đầu">
                     <input
@@ -284,13 +326,13 @@ export default function NumberingSchemesPage() {
                 <button
                   type="button"
                   onClick={() => setCreateOpen(false)}
-                  className="px-4 py-2 rounded-xl text-sm font-semibold border border-slate-300 bg-white text-slate-600 hover:bg-slate-100 transition"
+                  className="px-4 py-2 rounded-xl text-sm font-semibold border border-line bg-surface text-fg-muted hover:bg-surface-2 transition"
                 >
                   Hủy
                 </button>
                 <button
                   disabled={creating}
-                  className="bg-blue-600 hover:bg-blue-700 disabled:opacity-60 text-white px-4 py-2 rounded-xl text-sm font-semibold shadow-soft transition flex items-center gap-2"
+                  className="bg-brand hover:bg-brand/90 disabled:opacity-60 text-white px-4 py-2 rounded-xl text-sm font-semibold shadow-soft transition flex items-center gap-2"
                 >
                   {creating && <ButtonSpinner light />}
                   {creating ? 'Đang tạo…' : 'Tạo & mở phương án'}

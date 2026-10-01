@@ -4,13 +4,16 @@ import type {
   CampaignStatus,
   CreateAssignmentRequest,
   CreateCampaignRequest,
+  CreateSurveyRouteRequest,
   CreateZoneRequest,
   SurveyAssignment,
   SurveyCampaign,
+  SurveyRoute,
   SurveyZone,
   RequestRevisitRequest,
   UpdateAssignmentRequest,
   UpdateCampaignRequest,
+  UpdateSurveyRouteRequest,
   UpdateZoneRequest,
 } from '@tayninh/shared';
 import { apiFetch } from './api';
@@ -38,6 +41,21 @@ export const zonesApi = {
   remove: (id: string) => apiFetch<void>(`/api/survey-zones/${id}`, { method: 'DELETE' }),
 };
 
+/** Tuyến đường khảo sát (chấm 2 điểm trên bản đồ) — thuộc phân vùng. */
+export const routesApi = {
+  list: (params: { zoneId?: string; campaignId?: string }) => {
+    const qs = new URLSearchParams();
+    if (params.zoneId) qs.set('zoneId', params.zoneId);
+    if (params.campaignId) qs.set('campaignId', params.campaignId);
+    return apiFetch<SurveyRoute[]>(`/api/survey-routes?${qs.toString()}`);
+  },
+  create: (dto: CreateSurveyRouteRequest) =>
+    apiFetch<SurveyRoute>('/api/survey-routes', { method: 'POST', body: JSON.stringify(dto) }),
+  update: (id: string, dto: UpdateSurveyRouteRequest) =>
+    apiFetch<SurveyRoute>(`/api/survey-routes/${id}`, { method: 'PATCH', body: JSON.stringify(dto) }),
+  remove: (id: string) => apiFetch<void>(`/api/survey-routes/${id}`, { method: 'DELETE' }),
+};
+
 export const assignmentsApi = {
   /** Chi tiết kèm dòng thời gian (`events`) — Phase 11 Đợt 2. */
   get: (id: string) => apiFetch<SurveyAssignment>(`/api/survey-assignments/${id}`),
@@ -56,6 +74,12 @@ export const assignmentsApi = {
       body: JSON.stringify(dto),
     }),
   remove: (id: string) => apiFetch<void>(`/api/survey-assignments/${id}`, { method: 'DELETE' }),
+  /** Đổi người thực hiện — chỉ khi nhiệm vụ chưa bắt đầu. */
+  reassign: (id: string, assigneeId: string) =>
+    apiFetch<SurveyAssignment>(`/api/survey-assignments/${id}/reassign`, {
+      method: 'POST',
+      body: JSON.stringify({ assigneeId }),
+    }),
   complete: (id: string) =>
     apiFetch<SurveyAssignment>(`/api/survey-assignments/${id}/complete`, { method: 'POST' }),
   /** Phase 11 Đợt 2b — kèm danh sách nhà cần khảo sát lại (bỏ trống = khảo sát lại chung). */

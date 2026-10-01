@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, Query } from '@nestjs/common';
+import { Body, Controller, Delete, Get, HttpCode, Param, Patch, Post, Query } from '@nestjs/common';
 import { RequirePermissions } from '../auth/decorators/permissions.decorator';
 import { PERMISSIONS } from '../auth/permissions';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
@@ -9,6 +9,7 @@ import { UpdateAssignmentDto } from './dto/update-assignment.dto';
 import { ListAssignmentsQueryDto } from './dto/list-assignments-query.dto';
 import { RequestRevisitDto } from './dto/request-revisit.dto';
 import { ReportIssueDto } from './dto/report-issue.dto';
+import { ReassignAssignmentDto } from './dto/reassign-assignment.dto';
 
 /**
  * Giao nhiệm vụ khảo sát (Phase 9 — VII). Đọc mở cho mọi vai trò (mobile cần
@@ -59,7 +60,19 @@ export class AssignmentsController {
     return this.assignmentsService.update(id, dto);
   }
 
+  /** Đổi người thực hiện (kéo thả cán bộ vào tuyến đã giao) — chỉ khi chưa bắt đầu. */
   @RequirePermissions(PERMISSIONS.SURVEY_MANAGE)
+  @Post(':id/reassign')
+  reassign(
+    @Param('id') id: string,
+    @Body() dto: ReassignAssignmentDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.assignmentsService.reassign(id, dto.assigneeId, user.id);
+  }
+
+  @RequirePermissions(PERMISSIONS.SURVEY_MANAGE)
+  @HttpCode(204)
   @Delete(':id')
   remove(@Param('id') id: string) {
     return this.assignmentsService.remove(id);

@@ -69,13 +69,17 @@ export class HousePlatesController {
     @CurrentUser() user: AuthenticatedUser,
   ) {
     const photoUrl = file ? `/uploads/plates/${file.filename}` : undefined;
-    return this.platesService.install(id, user.id, photoUrl);
+    return this.platesService.install(id, user.id, photoUrl, user.permissions.includes(PERMISSIONS.INSTALL_MANAGE));
   }
 
   @RequirePermissions(PERMISSIONS.PLATE_INSTALL)
   @Post(':id/not-installed')
-  markNotInstalled(@Param('id') id: string, @Body() dto: NotInstalledPlateDto) {
-    return this.platesService.markNotInstalled(id, dto);
+  markNotInstalled(
+    @Param('id') id: string,
+    @Body() dto: NotInstalledPlateDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.platesService.markNotInstalled(id, dto, user.id, user.permissions.includes(PERMISSIONS.INSTALL_MANAGE));
   }
 
   @RequirePermissions(PERMISSIONS.PLATE_REVOKE)

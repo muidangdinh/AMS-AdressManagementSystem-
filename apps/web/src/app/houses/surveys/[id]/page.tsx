@@ -11,6 +11,7 @@ import {
   CAMPAIGN_STATUS_LABELS,
   CampaignStatus,
   EDITOR_ROLES,
+  PERMISSIONS,
   UserRole,
 } from '@tayninh/shared';
 import { useAuth } from '@/lib/auth-context';
@@ -20,29 +21,34 @@ import { NotificationEntity } from '@tayninh/shared';
 import RemindButton from '@/components/RemindButton';
 import AssignmentTimeline from '@/components/AssignmentTimeline';
 import RevisitModal from '@/components/RevisitModal';
+import SurveyRoutesPanel from '@/components/SurveyRoutesPanel';
+import { Home, Layers, Route, UserCheck } from 'lucide-react';
+import { formatLength } from '@/lib/routing';
 import { formatDueDate, isOverdue } from '@/lib/deadline';
 import { wardsApi } from '@/lib/addresses-api';
 import { EmptyState, FIELD_CLASS } from '@/components/ui';
 
 const CAMPAIGN_STATUS_BADGE: Record<CampaignStatus, string> = {
-  [CampaignStatus.DRAFT]: 'bg-slate-100 text-slate-700 border-slate-200',
-  [CampaignStatus.ACTIVE]: 'bg-blue-100 text-blue-800 border-blue-200',
-  [CampaignStatus.COMPLETED]: 'bg-emerald-100 text-emerald-800 border-emerald-200',
+  [CampaignStatus.DRAFT]: 'bg-surface-2 text-fg border-line',
+  [CampaignStatus.ACTIVE]: 'bg-accent/15 text-accent border-accent/30',
+  [CampaignStatus.COMPLETED]: 'bg-ok/15 text-ok border-ok/30',
 };
 
 const ASSIGNMENT_STATUS_BADGE: Record<AssignmentStatus, string> = {
-  [AssignmentStatus.ASSIGNED]: 'bg-slate-100 text-slate-700 border-slate-200',
-  [AssignmentStatus.IN_PROGRESS]: 'bg-blue-100 text-blue-800 border-blue-200',
-  [AssignmentStatus.SUBMITTED]: 'bg-amber-100 text-amber-800 border-amber-200',
-  [AssignmentStatus.COMPLETED]: 'bg-emerald-100 text-emerald-800 border-emerald-200',
-  [AssignmentStatus.NEEDS_REVISIT]: 'bg-rose-100 text-rose-800 border-rose-200',
+  [AssignmentStatus.ASSIGNED]: 'bg-surface-2 text-fg border-line',
+  [AssignmentStatus.IN_PROGRESS]: 'bg-accent/15 text-accent border-accent/30',
+  [AssignmentStatus.SUBMITTED]: 'bg-warn/15 text-warn border-warn/30',
+  [AssignmentStatus.COMPLETED]: 'bg-ok/15 text-ok border-ok/30',
+  [AssignmentStatus.NEEDS_REVISIT]: 'bg-danger/15 text-danger border-danger/30',
 };
 
 export default function SurveyCampaignDetailPage() {
   const params = useParams<{ id: string }>();
   const campaignId = params.id;
-  const { user } = useAuth();
+  const { user, hasPermission } = useAuth();
   const canEdit = !!user && EDITOR_ROLES.includes(user.role as UserRole);
+  // Tuyến đường khảo sát: cùng quyền với API `survey-routes` (ghi cần survey:manage).
+  const canManageRoutes = hasPermission(PERMISSIONS.SURVEY_MANAGE);
 
   const [campaign, setCampaign] = useState<SurveyCampaign | null>(null);
   const [wards, setWards] = useState<Ward[]>([]);
@@ -52,8 +58,9 @@ export default function SurveyCampaignDetailPage() {
   const [error, setError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
 
-  const load = useCallback(async () => {
-    setLoading(true);
+  /** `silent` = tải lại ngầm (không hiện màn "Đang tải…") — giữ nguyên bản đồ tuyến và vị trí zoom. */
+  const load = useCallback(async (silent = false) => {
+    if (!silent) setLoading(true);
     setError(null);
     try {
       setCampaign(await campaignsApi.get(campaignId));
@@ -111,7 +118,7 @@ export default function SurveyCampaignDetailPage() {
   }
 
   async function handleRemoveZone(zoneId: string) {
-    if (!confirm('Xóa phân vùng này? (chỉ xóa được khi chưa giao nhiệm vụ nào)')) return;
+    if (!confirm('Xóa phân vùng này? Các tuyến đường của phân vùng cũng bị xóa. (chỉ xóa được khi chưa giao nhiệm vụ nào)')) return;
     try {
       await zonesApi.remove(zoneId);
       await load();
@@ -178,19 +185,19 @@ export default function SurveyCampaignDetailPage() {
 
   if (loading) {
     return (
-      <div className="p-6 text-sm text-slate-400 flex items-center gap-2">
-        <span className="w-4 h-4 rounded-full border-2 border-slate-300 border-t-blue-600 animate-spin" />
+      <div className="p-6 text-sm text-fg-subtle flex items-center gap-2">
+        <span className="w-4 h-4 rounded-full border-2 border-line border-t-accent animate-spin" />
         Đang tải…
       </div>
     );
   }
   if (error || !campaign) {
-    return <div className="p-6 text-sm text-rose-600">{error ?? 'Không tìm thấy đợt khảo sát'}</div>;
+    return <div className="p-6 text-sm text-danger">{error ?? 'Không tìm thấy đợt khảo sát'}</div>;
   }
 
   return (
     <div className="h-full overflow-auto p-6 space-y-4">
-      <Link href="/houses/surveys" className="text-sm text-blue-600 hover:underline font-semibold">
+      <Link href="/houses/surveys" className="text-sm text-accent hover:underline font-semibold">
         ← Danh sách đợt khảo sát
       </Link>
 
@@ -207,18 +214,18 @@ export default function SurveyCampaignDetailPage() {
       )}
 
       {actionError && (
-        <div className="bg-rose-50 border border-rose-200 text-rose-700 rounded-xl p-3 text-sm">{actionError}</div>
+        <div className="bg-danger/10 border border-danger/30 text-danger rounded-xl p-3 text-sm">{actionError}</div>
       )}
 
-      <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-card">
+      <div className="glass p-5">
         <span
           className={`inline-block mb-2 px-2 py-0.5 rounded text-[11px] font-bold border ${CAMPAIGN_STATUS_BADGE[campaign.status]}`}
         >
           {CAMPAIGN_STATUS_LABELS[campaign.status]}
         </span>
-        <h2 className="text-lg font-bold text-slate-900">{campaign.name}</h2>
-        {campaign.description && <p className="text-sm text-slate-600 mt-1">{campaign.description}</p>}
-        <p className="text-xs text-slate-400 mt-2">
+        <h2 className="text-lg font-bold text-fg">{campaign.name}</h2>
+        {campaign.description && <p className="text-sm text-fg-muted mt-1">{campaign.description}</p>}
+        <p className="text-xs text-fg-subtle mt-2">
           Tạo bởi {campaign.createdBy?.fullName ?? '—'} lúc{' '}
           {new Date(campaign.createdAt).toLocaleString('vi-VN')}
         </p>
@@ -227,7 +234,7 @@ export default function SurveyCampaignDetailPage() {
             {campaign.status === CampaignStatus.DRAFT && (
               <button
                 onClick={() => handleStatusChange(CampaignStatus.ACTIVE)}
-                className="bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold px-3 py-1.5 rounded-lg transition"
+                className="bg-brand hover:bg-brand/90 text-white text-xs font-semibold px-3 py-1.5 rounded-lg transition"
               >
                 Bắt đầu triển khai
               </button>
@@ -235,7 +242,7 @@ export default function SurveyCampaignDetailPage() {
             {campaign.status === CampaignStatus.ACTIVE && (
               <button
                 onClick={() => handleStatusChange(CampaignStatus.COMPLETED)}
-                className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold px-3 py-1.5 rounded-lg transition"
+                className="bg-ok hover:bg-ok/90 text-white text-xs font-semibold px-3 py-1.5 rounded-lg transition"
               >
                 Đánh dấu hoàn tất
               </button>
@@ -247,10 +254,10 @@ export default function SurveyCampaignDetailPage() {
       {canEdit && (
         <form
           onSubmit={handleAddZone}
-          className="bg-white border border-slate-200 rounded-xl p-4 flex gap-3 items-end shadow-card flex-wrap"
+          className="glass p-4 flex gap-3 items-end flex-wrap"
         >
           <div className="flex-1 min-w-[180px]">
-            <label className="block text-[11px] font-bold text-slate-500 uppercase mb-1">
+            <label className="block text-[11px] font-bold text-fg-muted uppercase mb-1">
               + Thêm phân vùng — Tên *
             </label>
             <input
@@ -262,7 +269,7 @@ export default function SurveyCampaignDetailPage() {
             />
           </div>
           <div className="w-48">
-            <label className="block text-[11px] font-bold text-slate-500 uppercase mb-1">Xã/Phường</label>
+            <label className="block text-[11px] font-bold text-fg-muted uppercase mb-1">Xã/Phường</label>
             <select
               value={zoneForm.wardId}
               onChange={(e) => setZoneForm((f) => ({ ...f, wardId: e.target.value }))}
@@ -278,30 +285,68 @@ export default function SurveyCampaignDetailPage() {
           </div>
           <button
             disabled={zoneSaving}
-            className="bg-blue-600 hover:bg-blue-700 disabled:opacity-60 text-white px-4 py-2 rounded-xl text-sm font-semibold shadow-soft transition"
+            className="bg-brand hover:bg-brand/90 disabled:opacity-60 text-white px-4 py-2 rounded-xl text-sm font-semibold shadow-soft transition"
           >
             + Thêm
           </button>
         </form>
       )}
 
+      {/* Thanh thống kê đợt (UI.md): chiều dài tuyến, số nhà đã khảo sát, phân vùng. */}
+      {(() => {
+        const zones = campaign.zones ?? [];
+        const routes = zones.flatMap((z) => z.routes ?? []);
+        const assignments = zones.flatMap((z) => z.assignments ?? []);
+        const lengthM = routes.reduce((sum, r) => sum + (r.lengthM ?? 0), 0);
+        const houses = assignments.reduce((sum, a) => sum + (a._count?.houses ?? 0), 0);
+        const target = assignments.reduce((sum, a) => sum + (a.targetCount ?? 0), 0);
+        const tiles = [
+          { icon: Layers, label: 'Phân vùng', value: String(zones.length) },
+          { icon: Route, label: 'Chiều dài tuyến', value: `${formatLength(lengthM)} • ${routes.length} tuyến` },
+          { icon: UserCheck, label: 'Nhiệm vụ', value: String(assignments.length) },
+          { icon: Home, label: 'Nhà đã khảo sát', value: target ? `${houses} / ${target}` : String(houses) },
+        ];
+        return (
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+            {tiles.map((t) => (
+              <div key={t.label} className="glass px-4 py-3 flex items-center gap-3">
+                <span className="w-9 h-9 rounded-lg bg-accent/10 text-accent grid place-items-center shadow-glow-accent shrink-0">
+                  <t.icon className="w-4 h-4" />
+                </span>
+                <div className="min-w-0">
+                  <p className="text-[11px] uppercase tracking-wider text-fg-subtle">{t.label}</p>
+                  <p className="text-base font-bold text-fg tabular-nums truncate">{t.value}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+        );
+      })()}
+
+      <SurveyRoutesPanel
+        campaign={campaign}
+        canManage={canManageRoutes}
+        surveyors={surveyors}
+        onAssignmentsChanged={() => load(true)}
+      />
+
       <div className="space-y-4">
         {(campaign.zones ?? []).length === 0 && (
-          <div className="bg-white border border-slate-200 rounded-xl shadow-card">
+          <div className="glass">
             <EmptyState icon="🧭" text="Chưa có phân vùng nào trong đợt khảo sát này" />
           </div>
         )}
         {(campaign.zones ?? []).map((zone) => (
-          <div key={zone.id} className="bg-white border border-slate-200 rounded-xl shadow-card overflow-hidden">
-            <div className="px-4 py-3 bg-slate-50 border-b border-slate-100 flex items-center justify-between">
+          <div key={zone.id} className="glass overflow-hidden">
+            <div className="px-4 py-3 bg-surface-2 border-b border-line flex items-center justify-between">
               <div>
-                <h3 className="font-bold text-sm text-slate-900">{zone.name}</h3>
-                <p className="text-xs text-slate-500">{zone.ward?.name ?? 'Chưa gán xã/phường'}</p>
+                <h3 className="font-bold text-sm text-fg">{zone.name}</h3>
+                <p className="text-xs text-fg-muted">{zone.ward?.name ?? 'Chưa gán xã/phường'}</p>
               </div>
               {canEdit && (zone._count?.assignments ?? 0) === 0 && (
                 <button
                   onClick={() => handleRemoveZone(zone.id)}
-                  className="text-rose-600 hover:underline text-xs font-semibold"
+                  className="text-danger hover:underline text-xs font-semibold"
                 >
                   Xóa phân vùng
                 </button>
@@ -310,21 +355,22 @@ export default function SurveyCampaignDetailPage() {
 
             <div className="p-4 space-y-2">
               {(zone.assignments ?? []).length === 0 && (
-                <p className="text-xs text-slate-400 py-2">Chưa giao nhiệm vụ nào trong phân vùng này</p>
+                <p className="text-xs text-fg-subtle py-2">Chưa giao nhiệm vụ nào trong phân vùng này</p>
               )}
               {(zone.assignments ?? []).map((a: SurveyAssignment) => (
                 <div
                   key={a.id}
-                  className="border border-slate-200 rounded-lg p-3 flex items-center justify-between gap-3 hover:border-slate-300 transition-colors"
+                  className="border border-line rounded-lg p-3 flex items-center justify-between gap-3 hover:border-line transition-colors"
                 >
                   <div className="min-w-0">
-                    <p className="text-sm font-semibold text-slate-800">{a.assignee.fullName}</p>
+                    <p className="text-sm font-semibold text-fg">{a.assignee.fullName}</p>
+                    {a.route && <p className="text-[11px] text-accent font-semibold">Tuyến: {a.route.name}</p>}
                     <span
                       className={`inline-block mt-0.5 px-1.5 py-0.5 rounded text-[10px] font-bold border ${ASSIGNMENT_STATUS_BADGE[a.status]}`}
                     >
                       {ASSIGNMENT_STATUS_LABELS[a.status]}
                     </span>
-                    <p className="text-[11px] text-slate-400 mt-0.5">
+                    <p className="text-[11px] text-fg-subtle mt-0.5">
                       {a._count?.houses ?? 0}{a.targetCount ? ` / ${a.targetCount}` : ''} nhà đã khảo sát
                       {a.dueDate ? ` • Hạn ${formatDueDate(a.dueDate)}` : ''}
                       {a.dueDate &&
@@ -332,28 +378,28 @@ export default function SurveyCampaignDetailPage() {
                         (a.status === AssignmentStatus.ASSIGNED ||
                           a.status === AssignmentStatus.IN_PROGRESS ||
                           a.status === AssignmentStatus.NEEDS_REVISIT) && (
-                          <span className="text-rose-600 font-bold"> • QUÁ HẠN</span>
+                          <span className="text-danger font-bold"> • QUÁ HẠN</span>
                         )}
                     </p>
                     {a.targetCount ? (
                       <div className="mt-1 flex items-center gap-2" title="Tiến độ theo chỉ tiêu">
-                        <div className="h-1.5 w-28 rounded-full bg-slate-100 overflow-hidden">
+                        <div className="h-1.5 w-28 rounded-full bg-surface-2 overflow-hidden">
                           <div
-                            className="h-full bg-blue-500"
+                            className="h-full bg-accent"
                             style={{ width: `${Math.min(100, assignmentProgressPercent(a) ?? 0)}%` }}
                           />
                         </div>
-                        <span className="text-[10px] font-semibold text-slate-500">{assignmentProgressPercent(a)}%</span>
+                        <span className="text-[10px] font-semibold text-fg-muted">{assignmentProgressPercent(a)}%</span>
                       </div>
                     ) : null}
-                    {a.note && <p className="text-[11px] text-slate-500 mt-0.5">Ghi chú: {a.note}</p>}
+                    {a.note && <p className="text-[11px] text-fg-muted mt-0.5">Ghi chú: {a.note}</p>}
                     {(a.revisitPending ?? 0) > 0 && (
-                      <p className="text-[11px] text-rose-600 font-semibold mt-0.5">
+                      <p className="text-[11px] text-danger font-semibold mt-0.5">
                         {a.revisitPending} nhà cần khảo sát lại
                       </p>
                     )}
                     {a.reviewNote && (
-                      <p className="text-[11px] text-rose-600 mt-0.5">Lý do khảo sát lại: {a.reviewNote}</p>
+                      <p className="text-[11px] text-danger mt-0.5">Lý do khảo sát lại: {a.reviewNote}</p>
                     )}
                     <AssignmentTimeline assignmentId={a.id} />
                   </div>
@@ -367,7 +413,7 @@ export default function SurveyCampaignDetailPage() {
                       {a.status === AssignmentStatus.ASSIGNED && (
                         <button
                           onClick={() => handleRemoveAssignment(a.id)}
-                          className="text-rose-600 hover:underline text-xs font-semibold"
+                          className="text-danger hover:underline text-xs font-semibold"
                         >
                           Xóa
                         </button>
@@ -376,13 +422,13 @@ export default function SurveyCampaignDetailPage() {
                         <>
                           <button
                             onClick={() => handleComplete(a.id)}
-                            className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold px-2.5 py-1 rounded-lg transition"
+                            className="bg-ok hover:bg-ok/90 text-white text-xs font-semibold px-2.5 py-1 rounded-lg transition"
                           >
                             Duyệt hoàn tất
                           </button>
                           <button
                             onClick={() => setRevisitTarget({ assignment: a, zoneName: zone.name })}
-                            className="border border-rose-300 text-rose-600 hover:bg-rose-50 text-xs font-semibold px-2.5 py-1 rounded-lg transition"
+                            className="border border-danger/30 text-danger hover:bg-danger/10 text-xs font-semibold px-2.5 py-1 rounded-lg transition"
                           >
                             Yêu cầu khảo sát lại
                           </button>
@@ -403,7 +449,7 @@ export default function SurveyCampaignDetailPage() {
                         [zone.id]: { ...getAssignForm(zone.id), assigneeId: e.target.value },
                       }))
                     }
-                    className="border border-slate-300 rounded-lg px-2 py-1.5 text-xs focus:ring-2 focus:ring-blue-500/40 focus:border-blue-500 outline-none transition"
+                    className="border border-line rounded-lg px-2 py-1.5 text-xs focus:ring-2 focus:ring-accent/40 focus:border-accent outline-none transition"
                   >
                     <option value="">-- Chọn cán bộ khảo sát --</option>
                     {surveyors.map((s) => (
@@ -413,7 +459,7 @@ export default function SurveyCampaignDetailPage() {
                     ))}
                   </select>
                   {surveyorsLoaded && surveyors.length === 0 && (
-                    <p className="basis-full text-[11px] text-amber-600">
+                    <p className="basis-full text-[11px] text-warn">
                       Chưa có cán bộ khảo sát nào.{' '}
                       {user?.role === UserRole.ADMIN ? (
                         <Link href="/houses/users" className="font-semibold underline">
@@ -433,7 +479,7 @@ export default function SurveyCampaignDetailPage() {
                         [zone.id]: { ...getAssignForm(zone.id), dueDate: e.target.value },
                       }))
                     }
-                    className="border border-slate-300 rounded-lg px-2 py-1.5 text-xs focus:ring-2 focus:ring-blue-500/40 focus:border-blue-500 outline-none transition"
+                    className="border border-line rounded-lg px-2 py-1.5 text-xs focus:ring-2 focus:ring-accent/40 focus:border-accent outline-none transition"
                   />
                   <input
                     type="number"
@@ -446,7 +492,7 @@ export default function SurveyCampaignDetailPage() {
                       }))
                     }
                     placeholder="Chỉ tiêu (số nhà)"
-                    className="border border-slate-300 rounded-lg px-2 py-1.5 text-xs w-36 focus:ring-2 focus:ring-blue-500/40 focus:border-blue-500 outline-none transition"
+                    className="border border-line rounded-lg px-2 py-1.5 text-xs w-36 focus:ring-2 focus:ring-accent/40 focus:border-accent outline-none transition"
                   />
                   <input
                     value={getAssignForm(zone.id).note}
@@ -457,12 +503,12 @@ export default function SurveyCampaignDetailPage() {
                       }))
                     }
                     placeholder="Ghi chú (tùy chọn)"
-                    className="border border-slate-300 rounded-lg px-2 py-1.5 text-xs flex-1 min-w-[140px] focus:ring-2 focus:ring-blue-500/40 focus:border-blue-500 outline-none transition"
+                    className="border border-line rounded-lg px-2 py-1.5 text-xs flex-1 min-w-[140px] focus:ring-2 focus:ring-accent/40 focus:border-accent outline-none transition"
                   />
                   <button
                     onClick={() => handleAssign(zone.id)}
                     disabled={assigning === zone.id || !getAssignForm(zone.id).assigneeId}
-                    className="bg-slate-800 hover:bg-slate-900 disabled:opacity-60 text-white text-xs font-semibold px-3 py-1.5 rounded-lg transition"
+                    className="bg-brand hover:bg-brand/90 disabled:opacity-60 text-white text-xs font-semibold px-3 py-1.5 rounded-lg transition"
                   >
                     Giao việc
                   </button>

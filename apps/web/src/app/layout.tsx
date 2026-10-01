@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import { Inter } from 'next/font/google';
 import './globals.css';
 import { AuthProvider } from '@/lib/auth-context';
+import { THEME_INIT_SCRIPT } from '@/lib/theme';
 
 const inter = Inter({
   subsets: ['latin', 'vietnamese'],
@@ -20,7 +21,12 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="vi" className={inter.variable}>
+    // data-theme do script bên dưới đặt trước khi vẽ (mặc định tối) — lệch so với HTML server
+    // là cố ý, nên tắt cảnh báo hydration cho riêng thẻ này.
+    <html lang="vi" className={inter.variable} data-theme="dark" suppressHydrationWarning>
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: THEME_INIT_SCRIPT }} />
+      </head>
       <body>
         <AuthProvider>{children}</AuthProvider>
       </body>

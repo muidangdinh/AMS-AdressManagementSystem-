@@ -1,4 +1,5 @@
 import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import { ROUTE_INCLUDE } from './routes.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { throwIfUniqueConflict } from '../addresses/address-conflict.util';
 import { CreateCampaignDto } from './dto/create-campaign.dto';
@@ -28,6 +29,7 @@ export class CampaignsService {
         zones: {
           include: {
             ward: { select: { id: true, name: true } },
+            routes: { include: ROUTE_INCLUDE, orderBy: { createdAt: 'asc' } },
             assignments: {
               include: {
                 assignee: { select: { id: true, fullName: true, username: true } },

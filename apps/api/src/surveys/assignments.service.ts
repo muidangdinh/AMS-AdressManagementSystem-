@@ -25,6 +25,20 @@ const ASSIGNMENT_INCLUDE = {
       campaign: { select: { id: true, name: true, status: true } },
     },
   },
+  // Kèm hình tuyến để mobile vẽ lên bản đồ (tab Bản đồ) và cảnh báo khi đứng xa tuyến.
+  route: {
+    select: {
+      id: true,
+      name: true,
+      path: true,
+      startLat: true,
+      startLng: true,
+      endLat: true,
+      endLng: true,
+      lengthM: true,
+      snapped: true,
+    },
+  },
   assignee: ACTOR_SELECT,
   createdBy: ACTOR_SELECT,
   reviewedBy: ACTOR_SELECT,
@@ -46,6 +60,7 @@ const EVENT = {
   REVISIT_REQUESTED: 'REVISIT_REQUESTED',
   ISSUE_REPORTED: 'ISSUE_REPORTED',
   HELP_REQUESTED: 'HELP_REQUESTED',
+  REASSIGNED: 'REASSIGNED',
 } as const;
 
 interface EventInput {
@@ -77,8 +92,8 @@ export class AssignmentsService {
     return `/houses/surveys/${a.zone.campaign.id}`;
   }
 
-  private label(a: { zone: { name: string } }) {
-    return `Khảo sát ${a.zone.name}`;
+  private label(a: { zone: { name: string }; route?: { name: string } | null }) {
+    return a.route ? `Khảo sát tuyến ${a.route.name} (${a.zone.name})` : `Khảo sát ${a.zone.name}`;
   }
 
   /** Gửi thông báo cho người được giao — lỗi gửi không được làm hỏng thao tác nghiệp vụ đã thành công. */
@@ -246,12 +261,10 @@ export class AssignmentsService {
     return assignment;
   }
 
-  async create(dto: CreateAssignmentDto, creatorId: string) {
-    const zone = await this.prisma.surveyZone.findUnique({ where: { id: dto.zoneId } });
-    if (!zone) throw new NotFoundException('Không tìm thấy phân vùng khảo sát');
-
+  /** Người được giao phải tồn tại, đang hoạt động và có quyền thực hiện khảo sát. */
+  private async assertAssignable(userId: string) {
     const assignee = await this.prisma.user.findUnique({
-      where: { id: dto.assigneeId },
+      where: { id: userId },
       include: {
         roleLinks: { include: { role: { include: { permissions: { include: { permission: true } } } } } },
       },
@@ -266,11 +279,34 @@ export class AssignmentsService {
     if (!assignee.isActive) {
       throw new BadRequestException('Tài khoản cán bộ này đã bị vô hiệu hóa');
     }
+    return assignee;
+  }
+
+  async create(dto: CreateAssignmentDto, creatorId: string) {
+    const zone = await this.prisma.surveyZone.findUnique({ where: { id: dto.zoneId } });
+    if (!zone) throw new NotFoundException('Không tìm thấy phân vùng khảo sát');
+
+    if (dto.routeId) {
+      const route = await this.prisma.surveyRoute.findUnique({
+        where: { id: dto.routeId },
+        include: { _count: { select: { assignments: true } } },
+      });
+      if (!route) throw new NotFoundException('Không tìm thấy tuyến đường khảo sát');
+      if (route.zoneId !== dto.zoneId) {
+        throw new BadRequestException('Tuyến đường không thuộc phân vùng này');
+      }
+      if (route._count.assignments > 0) {
+        throw new ConflictException('Tuyến này đã được giao — dùng chức năng giao lại để đổi người');
+      }
+    }
+
+    await this.assertAssignable(dto.assigneeId);
 
     const created = await this.prisma.$transaction(async (tx) => {
       const row = await tx.surveyAssignment.create({
         data: {
           zoneId: dto.zoneId,
+          routeId: dto.routeId || undefined,
           assigneeId: dto.assigneeId,
           // Prisma đòi ISO-8601 DateTime đầy đủ (hoặc Date thật) cho cột DateTime — DTO
           // chỉ validate chuỗi ngày ("2026-08-28") hợp lệ, phải tự convert ở đây trước khi
@@ -301,6 +337,45 @@ export class AssignmentsService {
       NotificationType.ASSIGNED,
     );
     return created;
+  }
+
+  /** Đổi người thực hiện — chỉ khi nhiệm vụ chưa bắt đầu (ASSIGNED). Báo cho cả người mới lẫn người cũ. */
+  async reassign(id: string, assigneeId: string, actorId: string) {
+    const assignment = await this.prisma.surveyAssignment.findUnique({
+      where: { id },
+      include: { assignee: ACTOR_SELECT },
+    });
+    if (!assignment) throw new NotFoundException('Không tìm thấy nhiệm vụ khảo sát');
+    if (assignment.status !== AssignmentStatus.ASSIGNED) {
+      throw new ConflictException('Chỉ đổi người được khi nhiệm vụ chưa bắt đầu');
+    }
+    if (assignment.assigneeId === assigneeId) {
+      throw new BadRequestException('Nhiệm vụ đang giao cho chính cán bộ này');
+    }
+    const next = await this.assertAssignable(assigneeId);
+
+    const updated = await this.transition(
+      id,
+      { assignee: { connect: { id: assigneeId } } },
+      {
+        action: EVENT.REASSIGNED,
+        actorId,
+        note: `Từ ${assignment.assignee.fullName} sang ${next.fullName}`,
+      },
+    );
+    await this.notifyAssignee(
+      updated,
+      `Bạn được giao nhiệm vụ: ${this.label(updated)}`,
+      actorId,
+      updated.note ?? undefined,
+      NotificationType.ASSIGNED,
+    );
+    await this.notifyAssignee(
+      { ...updated, assigneeId: assignment.assigneeId },
+      `Nhiệm vụ đã chuyển cho người khác: ${this.label(updated)}`,
+      actorId,
+    );
+    return updated;
   }
 
   async update(id: string, dto: UpdateAssignmentDto) {

@@ -36,3 +36,5 @@ apps/api/prisma/*.db
 .idea/
 *.swp
 .gstack/
+*.tar
+*.tar.gz

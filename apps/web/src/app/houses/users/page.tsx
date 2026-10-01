@@ -8,7 +8,7 @@ import { useAuth } from '@/lib/auth-context';
 import { ApiError } from '@/lib/api';
 import { usersApi } from '@/lib/users-api';
 import { rolesApi } from '@/lib/roles-api';
-import { ButtonSpinner, EmptyState, FIELD_CLASS, FormField, PageHeader } from '@/components/ui';
+import { ButtonSpinner, EmptyState, FIELD_CLASS, FormField, PageHeader, StatusBadge, ToggleSwitch, type StatusTone } from '@/components/ui';
 
 interface FormState {
   username: string;
@@ -34,6 +34,13 @@ const EMPTY_FORM: FormState = {
  * Quản lý người dùng — cần quyền user:manage. PHASE 17: gán NHIỀU vai trò động
  * (chọn từ danh sách vai trò do admin quản trị ở /houses/roles).
  */
+/** Màu tag vai trò hệ thống (UI.md). Vai trò tự tạo dùng màu trung tính. */
+const ROLE_TONE: Record<string, StatusTone> = {
+  admin: 'danger',
+  cadastral: 'accent',
+  surveyor: 'ok',
+};
+
 export default function UsersAdminPage() {
   const { user, hasPermission } = useAuth();
   const router = useRouter();
@@ -152,7 +159,7 @@ export default function UsersAdminPage() {
         actions={
           <button
             onClick={openNew}
-            className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-xl text-sm font-semibold shadow-soft transition"
+            className="bg-brand hover:bg-brand/90 text-white px-4 py-2 rounded-xl text-sm font-semibold shadow-soft transition"
           >
             + Thêm người dùng
           </button>
@@ -160,21 +167,21 @@ export default function UsersAdminPage() {
       />
 
       {loadError && (
-        <div className="bg-rose-50 border border-rose-200 text-rose-700 rounded-lg p-3 text-sm">
+        <div className="bg-danger/10 border border-danger/30 text-danger rounded-lg p-3 text-sm">
           {loadError}
         </div>
       )}
 
-      <div className="bg-white rounded-xl border border-slate-200 shadow-card overflow-x-auto">
+      <div className="glass overflow-x-auto">
         {loading ? (
-          <div className="flex items-center justify-center gap-2 py-10 text-sm text-slate-400">
+          <div className="flex items-center justify-center gap-2 py-10 text-sm text-fg-subtle">
             <ButtonSpinner /> Đang tải…
           </div>
         ) : users.length === 0 ? (
           <EmptyState text="Chưa có người dùng nào" />
         ) : (
           <table className="w-full text-sm">
-            <thead className="bg-slate-50 text-[11px] uppercase text-slate-500 text-left">
+            <thead className="bg-surface-2 text-[11px] uppercase text-fg-muted text-left">
               <tr>
                 <th className="px-4 py-2.5">Họ tên</th>
                 <th className="px-4 py-2.5">Tên đăng nhập</th>
@@ -185,20 +192,43 @@ export default function UsersAdminPage() {
                 <th className="px-4 py-2.5" />
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-100">
+            <tbody className="divide-y divide-line">
               {users.map((u) => (
-                <tr key={u.id} className={u.isActive ? '' : 'text-slate-400'}>
-                  <td className="px-4 py-2.5 font-semibold">{u.fullName}</td>
+                <tr key={u.id} className={u.isActive ? '' : 'text-fg-subtle'}>
+                  <td className="px-4 py-2.5">
+                    <div className="flex items-center gap-2.5">
+                      {/* Avatar chữ cái đầu + chấm trạng thái hoạt động. */}
+                      <span className="relative w-8 h-8 rounded-full bg-brand-gradient text-white text-xs font-bold grid place-items-center shrink-0">
+                        {u.fullName.trim()[0]?.toUpperCase() ?? '?'}
+                        <span
+                          className={`absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full ring-2 ring-surface ${
+                            u.isActive ? 'bg-ok shadow-glow-ok' : 'bg-fg-subtle'
+                          }`}
+                        />
+                      </span>
+                      <span className="font-semibold">{u.fullName}</span>
+                    </div>
+                  </td>
                   <td className="px-4 py-2.5">{u.username}</td>
                   <td className="px-4 py-2.5">
-                    {u.roles?.length ? u.roles.map((r) => r.name).join(', ') : '—'}
+                    {u.roles?.length ? (
+                      <div className="flex flex-wrap gap-1">
+                        {u.roles.map((r) => (
+                          <StatusBadge key={r.id} tone={ROLE_TONE[r.code] ?? 'neutral'}>
+                            {r.name}
+                          </StatusBadge>
+                        ))}
+                      </div>
+                    ) : (
+                      '—'
+                    )}
                   </td>
                   <td className="px-4 py-2.5">{u.unit ?? '—'}</td>
                   <td className="px-4 py-2.5">{u.position ?? '—'}</td>
                   <td className="px-4 py-2.5">
                     <span
                       className={`px-2 py-0.5 rounded text-[11px] font-bold ${
-                        u.isActive ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-100 text-slate-500'
+                        u.isActive ? 'bg-ok/15 text-ok' : 'bg-surface-2 text-fg-muted'
                       }`}
                     >
                       {u.isActive ? 'Đang hoạt động' : 'Đã khoá'}
@@ -207,7 +237,7 @@ export default function UsersAdminPage() {
                   <td className="px-4 py-2.5 text-right">
                     <button
                       onClick={() => openEdit(u)}
-                      className="text-xs font-semibold text-blue-600 hover:underline"
+                      className="text-xs font-semibold text-accent hover:underline"
                     >
                       Sửa
                     </button>
@@ -221,15 +251,15 @@ export default function UsersAdminPage() {
 
       {editing !== null && (
         <div
-          className="fixed inset-0 z-[1000] bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4"
+          className="fixed inset-0 z-[1000] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4"
           onClick={() => !saving && setEditing(null)}
         >
           <form
             onSubmit={handleSubmit}
             onClick={(e) => e.stopPropagation()}
-            className="bg-white rounded-2xl shadow-soft w-full max-w-md max-h-[90vh] overflow-auto"
+            className="bg-surface rounded-2xl shadow-soft w-full max-w-md max-h-[90vh] overflow-auto"
           >
-            <div className="px-5 py-4 bg-slate-900 text-white text-sm font-bold rounded-t-2xl">
+            <div className="px-5 py-4 bg-shell text-fg border-b border-line text-sm font-bold rounded-t-2xl">
               {isNew ? 'Thêm người dùng' : `Sửa: ${form.username}`}
             </div>
             <div className="p-5 space-y-3">
@@ -240,7 +270,7 @@ export default function UsersAdminPage() {
                   disabled={!isNew}
                   required
                   minLength={3}
-                  className={`${FIELD_CLASS} disabled:bg-slate-100`}
+                  className={`${FIELD_CLASS} disabled:bg-surface-2`}
                 />
               </FormField>
               <FormField label={isNew ? 'Mật khẩu' : 'Đặt lại mật khẩu'} required={isNew}>
@@ -265,20 +295,20 @@ export default function UsersAdminPage() {
                 />
               </FormField>
               <FormField label="Vai trò" required>
-                <div className="space-y-1.5 rounded-lg border border-slate-200 p-2.5 max-h-44 overflow-auto">
+                <div className="space-y-1.5 rounded-lg border border-line p-2.5 max-h-44 overflow-auto">
                   {roles.length === 0 ? (
-                    <p className="text-xs text-slate-400">Chưa có vai trò nào — tạo ở mục Vai trò & phân quyền.</p>
+                    <p className="text-xs text-fg-subtle">Chưa có vai trò nào — tạo ở mục Vai trò & phân quyền.</p>
                   ) : (
                     roles.map((r) => (
-                      <label key={r.id} className="flex items-center gap-2 text-sm text-slate-700">
-                        <input
-                          type="checkbox"
+                      <label key={r.id} className="flex items-center gap-2.5 text-sm text-fg">
+                        <ToggleSwitch
                           checked={form.roleIds.includes(r.id)}
                           onChange={() => toggleRole(r.id)}
+                          label={r.name}
                         />
                         <span>{r.name}</span>
                         {r.isSystem && (
-                          <span className="text-[10px] text-slate-400 uppercase">hệ thống</span>
+                          <span className="text-[10px] text-fg-subtle uppercase">hệ thống</span>
                         )}
                       </label>
                     ))
@@ -300,18 +330,18 @@ export default function UsersAdminPage() {
                 />
               </FormField>
               {!isNew && (
-                <label className="flex items-center gap-2 text-sm text-slate-700">
-                  <input
-                    type="checkbox"
+                <label className="flex items-center gap-2.5 text-sm text-fg">
+                  <ToggleSwitch
                     checked={form.isActive}
                     disabled={isSelf}
-                    onChange={(e) => setForm({ ...form, isActive: e.target.checked })}
+                    onChange={(v) => setForm({ ...form, isActive: v })}
+                    label="Tài khoản đang hoạt động"
                   />
                   Tài khoản đang hoạt động{isSelf && ' (không thể tự khóa chính mình)'}
                 </label>
               )}
               {formError && (
-                <div className="bg-rose-50 border border-rose-200 text-rose-700 rounded-lg p-2.5 text-sm">
+                <div className="bg-danger/10 border border-danger/30 text-danger rounded-lg p-2.5 text-sm">
                   {formError}
                 </div>
               )}
@@ -321,14 +351,14 @@ export default function UsersAdminPage() {
                 type="button"
                 onClick={() => setEditing(null)}
                 disabled={saving}
-                className="px-4 py-2 rounded-xl text-sm font-semibold text-slate-600 hover:bg-slate-100"
+                className="px-4 py-2 rounded-xl text-sm font-semibold text-fg-muted hover:bg-surface-2"
               >
                 Huỷ
               </button>
               <button
                 type="submit"
                 disabled={saving}
-                className="bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white px-4 py-2 rounded-xl text-sm font-semibold flex items-center gap-2"
+                className="bg-brand hover:bg-brand/90 disabled:opacity-50 text-white px-4 py-2 rounded-xl text-sm font-semibold flex items-center gap-2"
               >
                 {saving && <ButtonSpinner light />}
                 Lưu

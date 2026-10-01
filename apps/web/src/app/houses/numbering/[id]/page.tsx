@@ -14,13 +14,13 @@ import {
 import { useAuth } from '@/lib/auth-context';
 import { ApiError, apiFetch } from '@/lib/api';
 import { numberingSchemesApi } from '@/lib/numbering-api';
-import { ButtonSpinner, EmptyState, FIELD_CLASS, FormField } from '@/components/ui';
+import { ButtonSpinner, EmptyState, FIELD_CLASS, FormField, ToggleSwitch } from '@/components/ui';
 
 const STATUS_BADGE: Record<NumberingSchemeStatus, string> = {
-  [NumberingSchemeStatus.DRAFT]: 'bg-slate-100 text-slate-700 border-slate-200',
-  [NumberingSchemeStatus.SUBMITTED]: 'bg-amber-100 text-amber-800 border-amber-200',
-  [NumberingSchemeStatus.APPROVED]: 'bg-emerald-100 text-emerald-800 border-emerald-200',
-  [NumberingSchemeStatus.REJECTED]: 'bg-rose-100 text-rose-800 border-rose-200',
+  [NumberingSchemeStatus.DRAFT]: 'bg-surface-2 text-fg border-line',
+  [NumberingSchemeStatus.SUBMITTED]: 'bg-warn/15 text-warn border-warn/30',
+  [NumberingSchemeStatus.APPROVED]: 'bg-ok/15 text-ok border-ok/30',
+  [NumberingSchemeStatus.REJECTED]: 'bg-danger/15 text-danger border-danger/30',
 };
 
 export default function NumberingSchemeDetailPage() {
@@ -232,9 +232,9 @@ export default function NumberingSchemeDetailPage() {
     }
   }
 
-  if (loading) return <div className="p-6 text-sm text-slate-400">Đang tải…</div>;
+  if (loading) return <div className="p-6 text-sm text-fg-subtle">Đang tải…</div>;
   if (error || !scheme) {
-    return <div className="p-6 text-sm text-rose-600">{error ?? 'Không tìm thấy phương án'}</div>;
+    return <div className="p-6 text-sm text-danger">{error ?? 'Không tìm thấy phương án'}</div>;
   }
 
   const items = scheme.items ?? [];
@@ -253,18 +253,18 @@ export default function NumberingSchemeDetailPage() {
 
   return (
     <div className="h-full overflow-auto p-6 space-y-4">
-      <Link href="/houses/numbering" className="text-sm text-blue-600 hover:underline font-semibold">
+      <Link href="/houses/numbering" className="text-sm text-accent hover:underline font-semibold">
         ← Danh sách phương án
       </Link>
 
       {actionError && (
-        <div className="bg-rose-50 border border-rose-200 text-rose-700 rounded-xl p-3 text-sm">
+        <div className="bg-danger/10 border border-danger/30 text-danger rounded-xl p-3 text-sm">
           {actionError}
         </div>
       )}
 
       {/* Thông tin phương án */}
-      <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-card">
+      <div className="glass p-5">
         <div className="flex items-start justify-between mb-3">
           <div>
             <span
@@ -272,21 +272,21 @@ export default function NumberingSchemeDetailPage() {
             >
               {NUMBERING_SCHEME_STATUS_LABELS[scheme.status]}
             </span>
-            <h2 className="text-lg font-bold text-slate-900">{scheme.name}</h2>
-            <p className="text-sm text-slate-500">
+            <h2 className="text-lg font-bold text-fg">{scheme.name}</h2>
+            <p className="text-sm text-fg-muted">
               {scheme.street.name}
               {scheme.ward ? ` • ${scheme.ward.name}` : ''}
             </p>
           </div>
           {canEdit && scheme.status === NumberingSchemeStatus.DRAFT && (
-            <button onClick={handleDelete} className="text-rose-600 hover:underline text-xs font-semibold">
+            <button onClick={handleDelete} className="text-danger hover:underline text-xs font-semibold">
               Xóa phương án
             </button>
           )}
         </div>
 
         {scheme.status === NumberingSchemeStatus.REJECTED && scheme.rejectedReason && (
-          <div className="bg-rose-50 border border-rose-200 text-rose-700 rounded-xl p-3 text-sm mb-3">
+          <div className="bg-danger/10 border border-danger/30 text-danger rounded-xl p-3 text-sm mb-3">
             <strong>Lý do từ chối:</strong> {scheme.rejectedReason}
           </div>
         )}
@@ -312,16 +312,14 @@ export default function NumberingSchemeDetailPage() {
                 />
               </FormField>
             </div>
-            <label className="flex items-center gap-2 text-sm text-slate-700">
-              <input
-                id="oddEvenSplitEdit"
-                type="checkbox"
+            <div className="flex items-center gap-2.5 text-sm text-fg">
+              <ToggleSwitch
                 checked={editForm.oddEvenSplit}
-                onChange={(e) => setEditForm((f) => ({ ...f, oddEvenSplit: e.target.checked }))}
-                className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500/40"
+                onChange={(v) => setEditForm((f) => ({ ...f, oddEvenSplit: v }))}
+                label="Tách chẵn/lẻ 2 bên"
               />
               Tách chẵn/lẻ 2 bên
-            </label>
+            </div>
             <div />
             <FormField label="Số bắt đầu">
               <input
@@ -343,7 +341,7 @@ export default function NumberingSchemeDetailPage() {
               <button
                 onClick={handleSaveInfo}
                 disabled={actionLoading}
-                className="bg-slate-800 hover:bg-slate-900 disabled:opacity-60 text-white px-4 py-2 rounded-xl text-sm font-semibold transition flex items-center gap-2"
+                className="bg-brand hover:bg-brand/90 disabled:opacity-60 text-white px-4 py-2 rounded-xl text-sm font-semibold transition flex items-center gap-2"
               >
                 {actionLoading && <ButtonSpinner light />}
                 Lưu thông tin
@@ -351,7 +349,7 @@ export default function NumberingSchemeDetailPage() {
             </div>
           </div>
         ) : (
-          <div className="text-sm text-slate-600 space-y-1">
+          <div className="text-sm text-fg-muted space-y-1">
             {scheme.description && <p>{scheme.description}</p>}
             <p>
               Quy tắc:{' '}
@@ -359,7 +357,7 @@ export default function NumberingSchemeDetailPage() {
                 ? `Tách chẵn/lẻ, bắt đầu ${scheme.startNumber}, bước ${scheme.step}`
                 : `Liên tục, bắt đầu ${scheme.startNumber}, bước ${scheme.step}`}
             </p>
-            <p className="text-xs text-slate-400">
+            <p className="text-xs text-fg-subtle">
               Tạo bởi {scheme.createdBy?.fullName ?? '—'} lúc{' '}
               {new Date(scheme.createdAt).toLocaleString('vi-VN')}
               {scheme.approvedBy &&
@@ -372,12 +370,12 @@ export default function NumberingSchemeDetailPage() {
       {/* Kiểm tra phương án */}
       {validation && (
         <div
-          className={`rounded-xl p-4 border text-sm ${hasIssues ? 'bg-amber-50 border-amber-200' : 'bg-emerald-50 border-emerald-200'}`}
+          className={`rounded-xl p-4 border text-sm ${hasIssues ? 'bg-warn/10 border-warn/30' : 'bg-ok/10 border-ok/30'}`}
         >
           {!hasIssues ? (
-            <p className="text-emerald-700 font-semibold">✓ Không phát hiện lỗi trong phương án.</p>
+            <p className="text-ok font-semibold">✓ Không phát hiện lỗi trong phương án.</p>
           ) : (
-            <div className="space-y-1 text-amber-800">
+            <div className="space-y-1 text-warn">
               {validation.duplicateNumbers.length > 0 && (
                 <p>⚠ Số trùng: {validation.duplicateNumbers.map((d) => d.number).join(', ')}</p>
               )}
@@ -399,14 +397,14 @@ export default function NumberingSchemeDetailPage() {
       )}
 
       {/* Danh sách nhà trong phương án */}
-      <div className="bg-white rounded-xl border border-slate-200 shadow-card overflow-hidden">
-        <div className="px-4 py-3 border-b border-slate-100 flex items-center justify-between">
-          <h3 className="font-bold text-sm text-slate-900">Danh sách nhà ({items.length})</h3>
+      <div className="glass overflow-hidden">
+        <div className="px-4 py-3 border-b border-line flex items-center justify-between">
+          <h3 className="font-bold text-sm text-fg">Danh sách nhà ({items.length})</h3>
           {canEdit && (
             <button
               onClick={handleGenerate}
               disabled={actionLoading || items.length === 0}
-              className="bg-blue-600 hover:bg-blue-700 disabled:opacity-60 text-white px-3 py-1.5 rounded-lg text-xs font-semibold transition flex items-center gap-1.5"
+              className="bg-brand hover:bg-brand/90 disabled:opacity-60 text-white px-3 py-1.5 rounded-lg text-xs font-semibold transition flex items-center gap-1.5"
             >
               {actionLoading && <ButtonSpinner light />}
               Sinh số tự động
@@ -414,10 +412,10 @@ export default function NumberingSchemeDetailPage() {
           )}
         </div>
         {items.length === 0 ? (
-          <EmptyState icon="🏠" text="Chưa có nhà nào trong phương án" />
+          <EmptyState text="Chưa có nhà nào trong phương án" />
         ) : (
         <table className="w-full text-sm">
-          <thead className="bg-slate-50 text-slate-500 text-xs uppercase">
+          <thead className="bg-surface-2 text-fg-muted text-xs uppercase">
             <tr>
               <th className="text-left px-3 py-2">Bên</th>
               <th className="text-left px-3 py-2">Thứ tự</th>
@@ -427,14 +425,14 @@ export default function NumberingSchemeDetailPage() {
               {canEdit && <th className="w-16" />}
             </tr>
           </thead>
-          <tbody className="divide-y divide-slate-100">
+          <tbody className="divide-y divide-line">
             {items.map((item) => {
               const flagged =
                 duplicateNumberItemIds.has(item.id) ||
                 duplicateOrderItemIds.has(item.id) ||
                 wrongStreetItemIds.has(item.id);
               return (
-                <tr key={item.id} className={flagged ? 'bg-rose-50/60' : ''}>
+                <tr key={item.id} className={flagged ? 'bg-danger/10' : ''}>
                   <td className="px-3 py-2">
                     {canEdit ? (
                       <select
@@ -442,7 +440,7 @@ export default function NumberingSchemeDetailPage() {
                         onChange={(e) =>
                           handleItemFieldChange(item, { side: e.target.value as NumberingSide })
                         }
-                        className="border border-slate-300 rounded px-1.5 py-1 text-xs"
+                        className="border border-line rounded px-1.5 py-1 text-xs"
                       >
                         {Object.values(NumberingSide).map((s) => (
                           <option key={s} value={s}>
@@ -462,13 +460,13 @@ export default function NumberingSchemeDetailPage() {
                         onChange={(e) =>
                           handleItemFieldChange(item, { sequenceOrder: Number(e.target.value) })
                         }
-                        className="w-16 border border-slate-300 rounded px-1.5 py-1 text-xs"
+                        className="w-16 border border-line rounded px-1.5 py-1 text-xs"
                       />
                     ) : (
                       item.sequenceOrder
                     )}
                   </td>
-                  <td className="px-3 py-2 text-slate-500">{item.house.houseNumber}</td>
+                  <td className="px-3 py-2 text-fg-muted">{item.house.houseNumber}</td>
                   <td className="px-3 py-2 font-bold">
                     {canEdit ? (
                       <input
@@ -476,7 +474,7 @@ export default function NumberingSchemeDetailPage() {
                         onChange={(e) =>
                           handleItemFieldChange(item, { proposedNumber: e.target.value })
                         }
-                        className="w-20 border border-slate-300 rounded px-1.5 py-1 text-xs font-bold"
+                        className="w-20 border border-line rounded px-1.5 py-1 text-xs font-bold"
                         placeholder="—"
                       />
                     ) : (
@@ -488,7 +486,7 @@ export default function NumberingSchemeDetailPage() {
                     <td className="px-3 py-2 text-right">
                       <button
                         onClick={() => handleRemoveItem(item.id)}
-                        className="text-rose-600 hover:underline text-xs font-semibold"
+                        className="text-danger hover:underline text-xs font-semibold"
                       >
                         Bỏ
                       </button>
@@ -502,8 +500,8 @@ export default function NumberingSchemeDetailPage() {
         )}
 
         {canEdit && (
-          <div className="border-t border-slate-100 p-4 space-y-2 bg-slate-50">
-            <p className="text-xs font-bold text-slate-500 uppercase">
+          <div className="border-t border-line p-4 space-y-2 bg-surface-2">
+            <p className="text-xs font-bold text-fg-muted uppercase">
               + Thêm nhà từ tuyến {scheme.street.name}
             </p>
             <div className="flex gap-2">
@@ -526,24 +524,24 @@ export default function NumberingSchemeDetailPage() {
               )}
               <button
                 onClick={handleSearchHouses}
-                className="px-4 py-2 rounded-lg text-sm font-semibold border border-slate-300 bg-white text-slate-600 hover:bg-slate-100 transition"
+                className="px-4 py-2 rounded-lg text-sm font-semibold border border-line bg-surface text-fg-muted hover:bg-surface-2 transition"
               >
                 Tìm
               </button>
             </div>
-            {addSearching && <p className="text-xs text-slate-400">Đang tìm…</p>}
+            {addSearching && <p className="text-xs text-fg-subtle">Đang tìm…</p>}
             {!addSearching && addResults.length > 0 && (
-              <div className="border border-slate-200 rounded-lg divide-y divide-slate-100 max-h-56 overflow-y-auto">
+              <div className="border border-line rounded-lg divide-y divide-line max-h-56 overflow-y-auto">
                 {addResults.map((h) => (
                   <button
                     key={h.id}
                     onClick={() => handleAddHouse(h.id)}
-                    className="w-full text-left px-3 py-2 text-sm hover:bg-blue-50 flex items-center justify-between"
+                    className="w-full text-left px-3 py-2 text-sm hover:bg-accent/10 flex items-center justify-between"
                   >
                     <span>
                       Số {h.houseNumber} — {h.ownerName}
                     </span>
-                    <span className="text-xs text-blue-600 font-semibold">+ Thêm</span>
+                    <span className="text-xs text-accent font-semibold">+ Thêm</span>
                   </button>
                 ))}
               </div>
@@ -557,7 +555,7 @@ export default function NumberingSchemeDetailPage() {
         <button
           onClick={handleSubmit}
           disabled={actionLoading || items.length === 0}
-          className="bg-blue-600 hover:bg-blue-700 disabled:opacity-60 text-white px-5 py-2.5 rounded-xl text-sm font-semibold shadow-soft transition flex items-center gap-2"
+          className="bg-brand hover:bg-brand/90 disabled:opacity-60 text-white px-5 py-2.5 rounded-xl text-sm font-semibold shadow-soft transition flex items-center gap-2"
         >
           {actionLoading && <ButtonSpinner light />}
           Trình duyệt
@@ -568,24 +566,24 @@ export default function NumberingSchemeDetailPage() {
           <button
             onClick={handleApprove}
             disabled={actionLoading}
-            className="bg-emerald-600 hover:bg-emerald-700 disabled:opacity-60 text-white px-5 py-2.5 rounded-xl text-sm font-semibold shadow-soft transition"
+            className="bg-ok hover:bg-ok/90 disabled:opacity-60 text-white px-5 py-2.5 rounded-xl text-sm font-semibold shadow-soft transition"
           >
             Phê duyệt
           </button>
           <button
             onClick={handleReject}
             disabled={actionLoading}
-            className="bg-rose-600 hover:bg-rose-700 disabled:opacity-60 text-white px-5 py-2.5 rounded-xl text-sm font-semibold shadow-soft transition"
+            className="bg-danger hover:bg-danger/90 disabled:opacity-60 text-white px-5 py-2.5 rounded-xl text-sm font-semibold shadow-soft transition"
           >
             Từ chối
           </button>
         </div>
       )}
       {!isAdmin && scheme.status === NumberingSchemeStatus.SUBMITTED && (
-        <p className="text-sm text-slate-500">Đang chờ ADMIN phê duyệt.</p>
+        <p className="text-sm text-fg-muted">Đang chờ ADMIN phê duyệt.</p>
       )}
       {scheme.status === NumberingSchemeStatus.APPROVED && (
-        <p className="text-sm text-emerald-700 font-semibold">
+        <p className="text-sm text-ok font-semibold">
           ✓ Đã phê duyệt — số nhà đề xuất đã được ghi vào hồ sơ chính thức, phương án không sửa được nữa.
         </p>
       )}

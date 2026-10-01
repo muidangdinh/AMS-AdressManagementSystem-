@@ -35,7 +35,8 @@ export default function PublicLookupPage() {
   }, [houseId]);
 
   return (
-    <div className="min-h-screen bg-app-shell flex items-center justify-center p-4 relative overflow-hidden">
+    // Trang tra cứu công khai luôn nền sáng (data-theme="light" cục bộ).
+    <div data-theme="light" className="min-h-screen bg-app-shell text-fg flex items-center justify-center p-4 relative overflow-hidden">
       <div
         aria-hidden
         className="pointer-events-none absolute -top-24 -right-24 w-96 h-96 rounded-full bg-blue-200/40 blur-3xl"

@@ -8,14 +8,15 @@ import { assignmentsApi } from '@/lib/surveys-api';
 
 /** Màu chấm theo loại sự kiện — vấn đề/hỗ trợ nổi bật hơn các mốc trạng thái. */
 const DOT: Record<AssignmentEventAction, string> = {
-  [AssignmentEventAction.CREATED]: 'bg-slate-400',
-  [AssignmentEventAction.STARTED]: 'bg-blue-500',
-  [AssignmentEventAction.SUBMITTED]: 'bg-amber-500',
-  [AssignmentEventAction.COMPLETED]: 'bg-emerald-500',
-  [AssignmentEventAction.REVISIT_REQUESTED]: 'bg-rose-500',
-  [AssignmentEventAction.ISSUE_REPORTED]: 'bg-rose-500',
-  [AssignmentEventAction.HELP_REQUESTED]: 'bg-amber-500',
-  [AssignmentEventAction.HOUSE_RESURVEYED]: 'bg-emerald-500',
+  [AssignmentEventAction.CREATED]: 'bg-fg-subtle',
+  [AssignmentEventAction.STARTED]: 'bg-accent',
+  [AssignmentEventAction.SUBMITTED]: 'bg-warn',
+  [AssignmentEventAction.COMPLETED]: 'bg-ok',
+  [AssignmentEventAction.REVISIT_REQUESTED]: 'bg-danger',
+  [AssignmentEventAction.ISSUE_REPORTED]: 'bg-danger',
+  [AssignmentEventAction.HELP_REQUESTED]: 'bg-warn',
+  [AssignmentEventAction.HOUSE_RESURVEYED]: 'bg-ok',
+  [AssignmentEventAction.REASSIGNED]: 'bg-info',
 };
 
 /**
@@ -50,21 +51,21 @@ export default function AssignmentTimeline({ assignmentId }: { assignmentId: str
         type="button"
         onClick={toggle}
         aria-expanded={open}
-        className="text-[11px] font-semibold text-blue-600 hover:underline"
+        className="text-[11px] font-semibold text-accent hover:underline"
       >
         {open ? 'Ẩn nhật ký' : 'Nhật ký'}
       </button>
       {open && (
-        <div className="mt-1.5 border-l-2 border-slate-200 pl-3 space-y-2">
-          {loading && <p className="text-[11px] text-slate-400">Đang tải…</p>}
-          {error && <p className="text-[11px] text-rose-600">{error}</p>}
+        <div className="mt-1.5 border-l-2 border-line pl-3 space-y-2">
+          {loading && <p className="text-[11px] text-fg-subtle">Đang tải…</p>}
+          {error && <p className="text-[11px] text-danger">{error}</p>}
           {!loading && !error && events?.length === 0 && (
-            <p className="text-[11px] text-slate-400">Chưa có nhật ký</p>
+            <p className="text-[11px] text-fg-subtle">Chưa có nhật ký</p>
           )}
           {events?.map((e) => (
             <div key={e.id} className="text-[11px]">
-              <p className="flex items-center gap-1.5 font-semibold text-slate-700">
-                <span aria-hidden className={`w-1.5 h-1.5 rounded-full ${DOT[e.action] ?? 'bg-slate-400'}`} />
+              <p className="flex items-center gap-1.5 font-semibold text-fg">
+                <span aria-hidden className={`w-1.5 h-1.5 rounded-full ${DOT[e.action] ?? 'bg-fg-subtle'}`} />
                 {ASSIGNMENT_EVENT_LABELS[e.action] ?? e.action}
               </p>
               {e.note && (
@@ -72,14 +73,14 @@ export default function AssignmentTimeline({ assignmentId }: { assignmentId: str
                   className={
                     e.action === AssignmentEventAction.ISSUE_REPORTED ||
                     e.action === AssignmentEventAction.HELP_REQUESTED
-                      ? 'text-rose-700'
-                      : 'text-slate-500'
+                      ? 'text-danger'
+                      : 'text-fg-muted'
                   }
                 >
                   {e.note}
                 </p>
               )}
-              <p className="text-slate-400">
+              <p className="text-fg-subtle">
                 {e.actor?.fullName ?? 'Hệ thống'} — {new Date(e.createdAt).toLocaleString('vi-VN')}
               </p>
             </div>

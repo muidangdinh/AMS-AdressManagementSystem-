@@ -1,7 +1,7 @@
-import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import { ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { randomUUID } from 'crypto';
 import * as QRCode from 'qrcode';
-import { HouseStatus, HousePlate, PlateIssueReason, PlateStatus, Prisma } from '@prisma/client';
+import { AssignmentStatus, HouseStatus, HousePlate, PlateIssueReason, PlateStatus, Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { IssuePlateDto } from './dto/issue-plate.dto';
 import { RevokePlateDto } from './dto/revoke-plate.dto';
@@ -161,12 +161,54 @@ export class HousePlatesService {
     });
   }
 
+  /**
+   * Biển thuộc nhiệm vụ thi công thì chỉ cán bộ được giao (hoặc người quản lý thi công) mới thao tác
+   * được; biển ngoài nhiệm vụ giữ luồng tự do như trước.
+   */
+  private async assertInstallOwner(plate: HousePlate, userId: string, isManager: boolean) {
+    if (!plate.installAssignmentId || isManager) return;
+    const a = await this.prisma.installAssignment.findUnique({
+      where: { id: plate.installAssignmentId },
+      select: { assigneeId: true },
+    });
+    if (a && a.assigneeId !== userId) {
+      throw new ForbiddenException('Biển này thuộc nhiệm vụ thi công của cán bộ khác');
+    }
+  }
+
+  /**
+   * Sau khi cán bộ xử lý 1 biển của nhiệm vụ (gắn / ghi nhận chưa gắn được): xóa cờ "thi công lại" của
+   * biển và tự chuyển nhiệm vụ sang IN_PROGRESS nếu chưa bắt đầu (hoặc đang ở NEEDS_REVISIT = mở lại).
+   */
+  private async touchInstallAssignment(tx: Prisma.TransactionClient, plate: HousePlate, userId: string) {
+    if (!plate.installAssignmentId) return;
+    await tx.housePlate.update({
+      where: { id: plate.id },
+      data: { revisitReason: null, revisitRequestedAt: null },
+    });
+    const a = await tx.installAssignment.findUnique({ where: { id: plate.installAssignmentId } });
+    if (a && (a.status === AssignmentStatus.ASSIGNED || a.status === AssignmentStatus.NEEDS_REVISIT)) {
+      await tx.installAssignment.update({ where: { id: a.id }, data: { status: AssignmentStatus.IN_PROGRESS } });
+      await tx.installAssignmentEvent.create({
+        data: {
+          assignmentId: a.id,
+          action: 'STARTED',
+          actorId: userId,
+          fromStatus: a.status,
+          toStatus: AssignmentStatus.IN_PROGRESS,
+          note: 'Tự động bắt đầu khi xử lý biển đầu tiên',
+        },
+      });
+    }
+  }
+
   /** Xác nhận đã gắn tại hiện trường (mobile 7.6) — cũng đồng bộ House.status = APPROVED. */
-  async install(id: string, userId: string, photoUrl?: string) {
+  async install(id: string, userId: string, photoUrl?: string, isInstallManager = false) {
     const plate = await this.findOneOrThrow(id);
     if (plate.status !== PlateStatus.ISSUED) {
       throw new ConflictException('Chỉ xác nhận gắn được biển đang ở trạng thái "Đã cấp"');
     }
+    await this.assertInstallOwner(plate, userId, isInstallManager);
 
     return this.prisma.$transaction(async (tx) => {
       const updated = await tx.housePlate.update({
@@ -182,22 +224,28 @@ export class HousePlatesService {
 
       // Lưới an toàn — bình thường nhà đã được duyệt từ lúc cấp biển (`issue`) rồi.
       await this.approveHouseIfNeeded(tx, plate.houseId, userId);
+      await this.touchInstallAssignment(tx, plate, userId);
 
       return updated;
     });
   }
 
   /** Ghi nhận chưa gắn được + lý do (mobile 7.7-7.8) — không đổi status, chỉ ghi chú. */
-  async markNotInstalled(id: string, dto: NotInstalledPlateDto) {
+  async markNotInstalled(id: string, dto: NotInstalledPlateDto, userId: string, isInstallManager = false) {
     const plate = await this.findOneOrThrow(id);
     if (plate.status !== PlateStatus.ISSUED) {
       throw new ConflictException('Chỉ ghi nhận "chưa gắn" cho biển đang ở trạng thái "Đã cấp"');
     }
+    await this.assertInstallOwner(plate, userId, isInstallManager);
 
-    return this.prisma.housePlate.update({
-      where: { id },
-      data: { notInstalledAt: new Date(), notInstalledReason: dto.reason },
-      include: PLATE_INCLUDE,
+    return this.prisma.$transaction(async (tx) => {
+      const updated = await tx.housePlate.update({
+        where: { id },
+        data: { notInstalledAt: new Date(), notInstalledReason: dto.reason },
+        include: PLATE_INCLUDE,
+      });
+      await this.touchInstallAssignment(tx, plate, userId);
+      return updated;
     });
   }
 

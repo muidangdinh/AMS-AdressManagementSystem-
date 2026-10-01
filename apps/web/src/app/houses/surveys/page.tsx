@@ -7,13 +7,38 @@ import { CAMPAIGN_STATUS_LABELS, CampaignStatus, PERMISSIONS } from '@tayninh/sh
 import { useAuth } from '@/lib/auth-context';
 import { ApiError } from '@/lib/api';
 import { campaignsApi } from '@/lib/surveys-api';
-import { ButtonSpinner, EmptyState, FIELD_CLASS, FormField, FormSection, PageHeader } from '@/components/ui';
+import { CalendarDays, Layers, Plus, UserCheck } from 'lucide-react';
+import {
+  Button,
+  ButtonSpinner,
+  EmptyState,
+  FIELD_CLASS,
+  FormField,
+  FormSection,
+  PageHeader,
+  StatusBadge,
+  type StatusTone,
+} from '@/components/ui';
 
-const STATUS_BADGE: Record<CampaignStatus, string> = {
-  [CampaignStatus.DRAFT]: 'bg-slate-100 text-slate-700 border-slate-200',
-  [CampaignStatus.ACTIVE]: 'bg-blue-100 text-blue-800 border-blue-200',
-  [CampaignStatus.COMPLETED]: 'bg-emerald-100 text-emerald-800 border-emerald-200',
+const STATUS_TONE: Record<CampaignStatus, StatusTone> = {
+  [CampaignStatus.DRAFT]: 'neutral',
+  [CampaignStatus.ACTIVE]: 'warn',
+  [CampaignStatus.COMPLETED]: 'ok',
 };
+
+/**
+ * % thời gian đã trôi qua của đợt (ngày bắt đầu → kết thúc). Hoàn tất = 100%, nháp = 0%.
+ * Không đủ ngày bắt đầu/kết thúc thì null (không vẽ thanh tiến độ).
+ */
+function campaignProgress(c: SurveyCampaign): number | null {
+  if (c.status === CampaignStatus.COMPLETED) return 100;
+  if (c.status === CampaignStatus.DRAFT) return 0;
+  if (!c.startDate || !c.endDate) return null;
+  const start = new Date(c.startDate).getTime();
+  const end = new Date(c.endDate).getTime();
+  if (end <= start) return null;
+  return Math.max(0, Math.min(100, Math.round(((Date.now() - start) / (end - start)) * 100)));
+}
 
 /** Danh sách đợt khảo sát (Phase 9 — VII. Quản lý khảo sát thực địa). */
 export default function SurveyCampaignsPage() {
@@ -72,87 +97,106 @@ export default function SurveyCampaignsPage() {
         subtitle="Đợt khảo sát → phân vùng theo xã/phường → giao nhiệm vụ cho cán bộ khảo sát (mobile)."
         actions={
           canEdit && (
-            <button
-              onClick={() => setCreateOpen(true)}
-              className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-xl text-sm font-semibold shadow-soft transition"
-            >
-              + Tạo đợt khảo sát
-            </button>
+            <Button onClick={() => setCreateOpen(true)}>
+              <Plus className="w-4 h-4" />
+              Tạo đợt khảo sát
+            </Button>
           )
         }
       />
 
       {error && (
-        <div className="bg-rose-50 border border-rose-200 text-rose-700 rounded-xl p-3 text-sm">{error}</div>
+        <div className="bg-danger/10 border border-danger/30 text-danger rounded-xl p-3 text-sm">{error}</div>
       )}
 
-      <div className="bg-white rounded-xl border border-slate-200 shadow-card overflow-hidden">
-        <table className="w-full text-sm">
-          <thead className="bg-slate-50 text-slate-500 text-xs uppercase tracking-wide">
-            <tr>
-              <th className="text-left px-4 py-3">Tên đợt</th>
-              <th className="text-left px-4 py-3">Trạng thái</th>
-              <th className="text-left px-4 py-3">Số phân vùng</th>
-              <th className="text-left px-4 py-3">Người tạo</th>
-              <th className="text-left px-4 py-3">Ngày tạo</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-slate-100">
-            {loading && (
-              <tr>
-                <td colSpan={5} className="text-center py-10 text-slate-400">
-                  Đang tải…
-                </td>
-              </tr>
-            )}
-            {!loading && campaigns.length === 0 && (
-              <tr>
-                <td colSpan={5}>
-                  <EmptyState icon="🗺️" text="Chưa có đợt khảo sát nào" />
-                </td>
-              </tr>
-            )}
-            {!loading &&
-              campaigns.map((c) => (
-                <tr
-                  key={c.id}
-                  onClick={() => router.push(`/houses/surveys/${c.id}`)}
-                  className="cursor-pointer hover:bg-blue-50/50 transition-colors"
-                >
-                  <td className="px-4 py-3 font-bold text-slate-900">{c.name}</td>
-                  <td className="px-4 py-3">
-                    <span
-                      className={`px-2 py-0.5 rounded text-[11px] font-bold border ${STATUS_BADGE[c.status]}`}
-                    >
-                      {CAMPAIGN_STATUS_LABELS[c.status]}
+      {loading && <p className="text-sm text-fg-subtle">Đang tải…</p>}
+
+      {!loading && campaigns.length === 0 && (
+        <div className="glass">
+          <EmptyState text="Chưa có đợt khảo sát nào" />
+        </div>
+      )}
+
+      {/* Card đợt khảo sát (UI.md) — trạng thái, phân vùng, người tạo, thanh tiến độ thời gian. */}
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+        {!loading &&
+          campaigns.map((c) => {
+            const progress = campaignProgress(c);
+            return (
+              <button
+                key={c.id}
+                type="button"
+                onClick={() => router.push(`/houses/surveys/${c.id}`)}
+                className="glass group text-left p-4 flex flex-col gap-3 transition-all duration-300 hover:border-accent/50 hover:shadow-glow-accent"
+              >
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <h3 className="font-bold text-fg truncate group-hover:text-accent transition-colors">{c.name}</h3>
+                    {c.description && <p className="text-xs text-fg-muted mt-0.5 line-clamp-2">{c.description}</p>}
+                  </div>
+                  <StatusBadge tone={STATUS_TONE[c.status]}>{CAMPAIGN_STATUS_LABELS[c.status]}</StatusBadge>
+                </div>
+
+                <div className="grid grid-cols-2 gap-2 text-xs">
+                  <div className="flex items-center gap-1.5 text-fg-muted">
+                    <Layers className="w-3.5 h-3.5 text-accent" />
+                    <span>
+                      <b className="text-fg tabular-nums">{c._count?.zones ?? 0}</b> phân vùng
                     </span>
-                  </td>
-                  <td className="px-4 py-3">{c._count?.zones ?? 0}</td>
-                  <td className="px-4 py-3 text-xs text-slate-500">{c.createdBy?.fullName ?? '—'}</td>
-                  <td className="px-4 py-3 text-xs text-slate-500">
-                    {new Date(c.createdAt).toLocaleDateString('vi-VN')}
-                  </td>
-                </tr>
-              ))}
-          </tbody>
-        </table>
+                  </div>
+                  <div className="flex items-center gap-1.5 text-fg-muted min-w-0">
+                    <UserCheck className="w-3.5 h-3.5 text-accent shrink-0" />
+                    <span className="truncate">{c.createdBy?.fullName ?? '—'}</span>
+                  </div>
+                  <div className="col-span-2 flex items-center gap-1.5 text-fg-muted">
+                    <CalendarDays className="w-3.5 h-3.5 text-accent" />
+                    {c.startDate || c.endDate ? (
+                      <span>
+                        {c.startDate ? new Date(c.startDate).toLocaleDateString('vi-VN') : '…'} →{' '}
+                        {c.endDate ? new Date(c.endDate).toLocaleDateString('vi-VN') : '…'}
+                      </span>
+                    ) : (
+                      <span>Tạo ngày {new Date(c.createdAt).toLocaleDateString('vi-VN')}</span>
+                    )}
+                  </div>
+                </div>
+
+                {progress !== null && (
+                  <div>
+                    <div className="flex justify-between text-[11px] text-fg-subtle mb-1">
+                      <span>Tiến độ thời gian</span>
+                      <span className="tabular-nums">{progress}%</span>
+                    </div>
+                    <div className="h-1.5 rounded-full bg-surface-2 overflow-hidden">
+                      <div
+                        className={`h-full rounded-full ${
+                          c.status === CampaignStatus.COMPLETED ? 'bg-ok shadow-glow-ok' : 'bg-brand-gradient shadow-glow-accent'
+                        }`}
+                        style={{ width: `${progress}%` }}
+                      />
+                    </div>
+                  </div>
+                )}
+              </button>
+            );
+          })}
       </div>
 
       {createOpen && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-30 p-4">
-          <div className="bg-white rounded-2xl shadow-soft w-full max-w-lg overflow-hidden">
-            <div className="bg-slate-900 text-white px-5 py-4 flex items-center justify-between">
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-30 p-4">
+          <div className="bg-surface rounded-2xl shadow-soft w-full max-w-lg overflow-hidden">
+            <div className="bg-shell text-fg border-b border-line px-5 py-4 flex items-center justify-between">
               <h3 className="font-bold">Tạo đợt khảo sát</h3>
               <button
                 onClick={() => setCreateOpen(false)}
-                className="w-7 h-7 rounded-lg flex items-center justify-center text-slate-400 hover:text-white hover:bg-white/10 transition"
+                className="w-7 h-7 rounded-lg flex items-center justify-center text-fg-subtle hover:text-fg hover:bg-surface-2 transition"
               >
                 ×
               </button>
             </div>
-            <form onSubmit={handleCreate} className="p-5 space-y-4 bg-slate-50">
+            <form onSubmit={handleCreate} className="p-5 space-y-4 bg-surface-2">
               {createError && (
-                <div className="bg-rose-50 border border-rose-200 text-rose-700 rounded-xl p-3 text-sm">
+                <div className="bg-danger/10 border border-danger/30 text-danger rounded-xl p-3 text-sm">
                   {createError}
                 </div>
               )}
@@ -197,13 +241,13 @@ export default function SurveyCampaignsPage() {
                 <button
                   type="button"
                   onClick={() => setCreateOpen(false)}
-                  className="px-4 py-2 rounded-xl text-sm font-semibold border border-slate-300 text-slate-600 bg-white hover:bg-slate-100 transition"
+                  className="px-4 py-2 rounded-xl text-sm font-semibold border border-line text-fg-muted bg-surface hover:bg-surface-2 transition"
                 >
                   Hủy
                 </button>
                 <button
                   disabled={creating}
-                  className="bg-blue-600 hover:bg-blue-700 disabled:opacity-60 text-white px-4 py-2 rounded-xl text-sm font-semibold shadow-soft transition flex items-center gap-2"
+                  className="bg-brand hover:bg-brand/90 disabled:opacity-60 text-white px-4 py-2 rounded-xl text-sm font-semibold shadow-soft transition flex items-center gap-2"
                 >
                   {creating && <ButtonSpinner light />}
                   {creating ? 'Đang tạo…' : 'Tạo & mở đợt khảo sát'}
