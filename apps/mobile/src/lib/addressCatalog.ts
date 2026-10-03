@@ -1,4 +1,4 @@
-import type { Hamlet, Street, Ward } from '@tayninh/shared';
+import type { Hamlet, Street, UsageStatusItem, Ward } from '@tayninh/shared';
 import { apiFetch } from './api';
 
 /**
@@ -23,4 +23,9 @@ export function fetchStreets(): Promise<Street[]> {
  */
 export function fetchHamlets(wardId?: string): Promise<Hamlet[]> {
   return apiFetch<Hamlet[]>(`/api/hamlets${wardId ? `?wardId=${encodeURIComponent(wardId)}` : ''}`);
+}
+
+/** Danh mục "Hiện trạng nhà" (chỉ các mục đang bật), dùng cho dropdown ở form khảo sát. */
+export function fetchUsageStatuses(): Promise<UsageStatusItem[]> {
+  return apiFetch<UsageStatusItem[]>('/api/usage-statuses');
 }

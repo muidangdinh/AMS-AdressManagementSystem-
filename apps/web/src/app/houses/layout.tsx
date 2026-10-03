@@ -9,6 +9,7 @@ import {
   FileText,
   Globe,
   Hammer,
+  Home,
   LayoutDashboard,
   ListOrdered,
   MapPin,
@@ -33,6 +34,7 @@ const NAV_ICONS: Record<string, LucideIcon> = {
   surveys: Route,
   installs: Hammer,
   numbering: ListOrdered,
+  usage: Home,
   addresses: MapPin,
   users: UserCheck,
   roles: ShieldCheck,
@@ -456,6 +458,13 @@ export default function HousesLayout({ children }: { children: React.ReactNode }
                 </NavItem>
                 {hasPermission(PERMISSIONS.ADDRESS_WRITE) && (
                   <NavItem index={5}>
+                    <NavLink href="/houses/usage-statuses" icon="usage" block touch onNavigate={closeNav}>
+                      Hiện trạng nhà
+                    </NavLink>
+                  </NavItem>
+                )}
+                {hasPermission(PERMISSIONS.ADDRESS_WRITE) && (
+                  <NavItem index={5}>
                     <NavLink href="/houses/addresses" icon="addresses" block touch onNavigate={closeNav}>
                       Quản lý tuyến đường
                     </NavLink>
@@ -508,6 +517,11 @@ export default function HousesLayout({ children }: { children: React.ReactNode }
           <NavLink href="/houses/numbering" icon="numbering" block>
             Đánh số
           </NavLink>
+          {hasPermission(PERMISSIONS.ADDRESS_WRITE) && (
+            <NavLink href="/houses/usage-statuses" icon="usage" block>
+              Hiện trạng nhà
+            </NavLink>
+          )}
           <LocateButton block />
           {hasPermission(PERMISSIONS.ADDRESS_WRITE) && (
             <>

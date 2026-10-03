@@ -3,6 +3,8 @@ import type {
   AssignmentIssueKind,
   AssignmentStatus,
   HouseSummary,
+  NearbyHouseItem,
+  OwnerSearchResult,
   ResurveyHouseRequest,
   SurveyAssignment,
 } from '@tayninh/shared';
@@ -55,6 +57,28 @@ export function fetchAssignmentHouses(id: string, revisitOnly = false): Promise<
 }
 
 /** Chi tiết 1 nhà (điền sẵn form khi sửa lại) — cần có mạng. */
+/** Nhà quanh một toạ độ (PostGIS) — sắp gần → xa. Dùng cho thẻ "Chủ hộ gần bạn" ở form khảo sát. */
+export function fetchNearbyHouses(
+  lat: number,
+  lng: number,
+  radius: number,
+  limit: number,
+  signal?: AbortSignal,
+): Promise<NearbyHouseItem[]> {
+  return apiFetch<NearbyHouseItem[]>(
+    `/api/houses/nearby?lat=${lat}&lng=${lng}&radius=${radius}&limit=${limit}`,
+    { signal },
+  );
+}
+
+/**
+ * Gợi ý chủ hộ theo tên hoặc SĐT (không dấu) cho form khảo sát — GET /api/houses/owners.
+ * Hủy được bằng AbortSignal khi người dùng gõ tiếp.
+ */
+export function searchOwners(q: string, signal?: AbortSignal): Promise<OwnerSearchResult[]> {
+  return apiFetch<OwnerSearchResult[]>(`/api/houses/owners?q=${encodeURIComponent(q)}`, { signal });
+}
+
 export function fetchHouse(id: string): Promise<HouseSummary> {
   return apiFetch<HouseSummary>(`/api/houses/${id}`);
 }

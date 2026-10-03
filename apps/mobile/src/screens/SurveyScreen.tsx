@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -7,6 +7,7 @@ import {
   Modal,
   PermissionsAndroid,
   Platform,
+  RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
@@ -21,8 +22,6 @@ import { launchCamera, launchImageLibrary } from 'react-native-image-picker';
 import {
   BUILDING_TYPE_LABELS,
   BuildingType,
-  HouseUsageStatus,
-  HOUSE_USAGE_STATUS_LABELS,
   PlateNeed,
   PLATE_NEED_LABELS,
   NumberingSide,
@@ -30,14 +29,17 @@ import {
   PhotoType,
   distanceToPathM,
   type HouseSummary,
+  type NearbyHouseItem,
+  type OwnerSearchResult,
   type SurveyAssignment,
   type Hamlet,
   type Street,
+  type UsageStatusItem,
   type Ward,
 } from '@tayninh/shared';
 import { createDraft, syncDraft, uploadHousePhoto } from '../lib/surveyStore';
 import { PHOTO_PICKER_OPTIONS } from '../lib/imageOptions';
-import { fetchHamlets, fetchStreets, fetchWards } from '../lib/addressCatalog';
+import { fetchHamlets, fetchStreets, fetchUsageStatuses, fetchWards } from '../lib/addressCatalog';
 import { getActiveAssignmentId, clearActiveAssignmentId } from '../lib/activeAssignment';
 import { fetchHouse, getAssignment, resurveyHouse as resurveyHouseApi } from '../lib/surveysApi';
 import { ApiError } from '../lib/api';
@@ -45,9 +47,10 @@ import type { MainTabsParamList } from '../navigation/MainTabs';
 import { resolveWorkingWard } from '../lib/workingWard';
 import LocationPickerModal from '../components/LocationPickerModal';
 import WardSelectorBar from '../components/WardSelectorBar';
+import OwnerAutocompleteField from '../components/OwnerAutocompleteField';
+import NearbyOwnersCard from '../components/NearbyOwnersCard';
 
 const BUILDING_TYPES = Object.values(BuildingType);
-const USAGE_STATUSES = Object.values(HouseUsageStatus);
 const PLATE_NEEDS = Object.values(PlateNeed);
 const MAX_PHOTOS = 5;
 
@@ -179,6 +182,7 @@ export default function SurveyScreen() {
   useEffect(() => {
     fetchWards().then(setWards).catch(() => {});
     fetchStreets().then(setStreets).catch(() => {});
+    fetchUsageStatuses().then(setUsageStatuses).catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -213,27 +217,44 @@ export default function SurveyScreen() {
   // thì bỏ qua lặng lẽ, form vẫn hoạt động tự do như trước.
   const [activeAssignment, setActiveAssignment] = useState<SurveyAssignment | null>(null);
 
+  // Tải nhiệm vụ đang chạy; trả về Promise để kéo-để-tải-lại chờ xong mới tắt vòng quay.
+  const loadActiveAssignment = useCallback(async (isCancelled: () => boolean = () => false) => {
+    const id = await getActiveAssignmentId();
+    if (!id) {
+      if (!isCancelled()) setActiveAssignment(null);
+      return;
+    }
+    try {
+      const a = await getAssignment(id);
+      if (!isCancelled()) setActiveAssignment(a);
+    } catch {
+      if (!isCancelled()) setActiveAssignment(null);
+    }
+  }, []);
+
   useFocusEffect(
     useCallback(() => {
       let cancelled = false;
-      getActiveAssignmentId().then((id) => {
-        if (!id) {
-          if (!cancelled) setActiveAssignment(null);
-          return;
-        }
-        getAssignment(id)
-          .then((a) => {
-            if (!cancelled) setActiveAssignment(a);
-          })
-          .catch(() => {
-            if (!cancelled) setActiveAssignment(null);
-          });
-      });
+      loadActiveAssignment(() => cancelled);
       return () => {
         cancelled = true;
       };
-    }, []),
+    }, [loadActiveAssignment]),
   );
+
+  // Kéo xuống để tải lại danh mục (xã, đường, ấp, hiện trạng) và nhiệm vụ/tuyến đang chạy — KHÔNG đụng dữ liệu đang nhập trong form.
+  const [refreshing, setRefreshing] = useState(false);
+  const handleRefresh = useCallback(async () => {
+    setRefreshing(true);
+    await Promise.all([
+      fetchWards().then(setWards).catch(() => {}),
+      fetchStreets().then(setStreets).catch(() => {}),
+      fetchUsageStatuses().then(setUsageStatuses).catch(() => {}),
+      wardId ? fetchHamlets(wardId).then(setHamlets).catch(() => {}) : Promise.resolve(),
+      loadActiveAssignment(),
+    ]);
+    setRefreshing(false);
+  }, [wardId, loadActiveAssignment]);
 
   async function handleClearActiveAssignment() {
     await clearActiveAssignmentId();
@@ -243,7 +264,18 @@ export default function SurveyScreen() {
   const [ownerName, setOwnerName] = useState('');
   const [ownerPhone, setOwnerPhone] = useState('');
   const [ownerIdNumber, setOwnerIdNumber] = useState('');
-  const [usageStatus, setUsageStatus] = useState<HouseUsageStatus | ''>('');
+  // Hiện trạng nhà: danh mục quản lý ở web; tên lưu riêng để vẫn hiển thị khi mục đã bị ẩn / chưa tải được danh mục.
+  const [usageStatusId, setUsageStatusId] = useState('');
+  const [usageStatusName, setUsageStatusName] = useState('');
+  const [usageStatuses, setUsageStatuses] = useState<UsageStatusItem[]>([]);
+  const usageStatusOptions = useMemo(() => {
+    const opts = usageStatuses.map((u) => ({ id: u.id, name: u.name }));
+    // Mục đang chọn (vd nhà cũ) có thể đã bị ẩn — vẫn giữ trong danh sách để hiển thị đúng.
+    if (usageStatusId && !opts.some((o) => o.id === usageStatusId)) {
+      opts.push({ id: usageStatusId, name: usageStatusName || 'Hiện trạng đã chọn' });
+    }
+    return opts;
+  }, [usageStatuses, usageStatusId, usageStatusName]);
   const [plateNeed, setPlateNeed] = useState<PlateNeed | ''>('');
   const [soTo, setSoTo] = useState('');
   const [soThua, setSoThua] = useState('');
@@ -398,7 +430,8 @@ export default function SurveyScreen() {
     setOwnerName('');
     setOwnerPhone('');
     setOwnerIdNumber('');
-    setUsageStatus('');
+    setUsageStatusId('');
+    setUsageStatusName('');
     setPlateNeed('');
     setSoTo('');
     setSoThua('');
@@ -420,6 +453,107 @@ export default function SurveyScreen() {
     }
   }
 
+  /**
+   * Chủ hộ vừa được điền từ gợi ý, kèm giá trị cũ của các ô bị đổi để "Bỏ điền" hoàn lại đúng như trước.
+   */
+  const [ownerFill, setOwnerFill] = useState<{
+    name: string;
+    prev: {
+      ownerName: string;
+      ownerPhone: string;
+      ownerIdNumber: string;
+      street: string;
+      streetId: string;
+      ward: string;
+      wardId: string;
+      hamletId: string;
+      hamletName: string;
+    };
+  } | null>(null);
+
+  /** Điền thông tin chủ hộ (và khu vực nếu chọn) từ gợi ý — hồ sơ vẫn là nhà MỚI: số nhà, GPS, ảnh để trống. */
+  function applyOwnerToForm(o: OwnerSearchResult, withArea: boolean) {
+    // Lưu giá trị cũ để hoàn lại; nếu đang có 1 lần điền trước thì giữ mốc gốc (trước lần điền đầu tiên).
+    setOwnerFill((cur) => ({
+      name: o.ownerName,
+      prev:
+        cur?.prev ?? {
+          ownerName,
+          ownerPhone,
+          ownerIdNumber,
+          street,
+          streetId,
+          ward,
+          wardId,
+          hamletId,
+          hamletName,
+        },
+    }));
+    setOwnerName(o.ownerName);
+    setOwnerPhone(o.ownerPhone ?? '');
+    setOwnerIdNumber(o.ownerIdNumber ?? '');
+    const l = o.latest;
+    if (withArea && l) {
+      setStreet(l.street);
+      setStreetId(l.streetId ?? '');
+      setWard(l.ward);
+      setWardId(l.wardId ?? '');
+      setHamletId(l.hamletId ?? '');
+      setHamletName(l.hamletName ?? '');
+    }
+  }
+
+  /** Chọn 1 nhà trong thẻ "Chủ hộ gần bạn" → dùng lại luồng điền chủ hộ (hỏi ghi đè nếu khu vực/CCCD khác). */
+  function handlePickNearby(h: NearbyHouseItem) {
+    handlePickOwner({
+      ownerName: h.ownerName,
+      ownerPhone: h.ownerPhone,
+      ownerIdNumber: h.ownerIdNumber,
+      houseCount: 1,
+      latest: {
+        street: h.street,
+        streetId: h.streetId,
+        ward: h.ward,
+        wardId: h.wardId,
+        hamletId: h.hamletId,
+        hamletName: h.hamletName,
+      },
+      houses: [{ id: h.id, houseNumber: h.houseNumber, street: h.street, ward: h.ward, status: h.status }],
+    });
+  }
+
+  function handlePickOwner(o: OwnerSearchResult) {
+    const l = o.latest;
+    // Khu vực/CCCD đang có chữ khác với chủ hộ được chọn → hỏi trước khi ghi đè.
+    const conflict =
+      (!!l && ((!!street && street !== l.street) || (!!ward && ward !== l.ward))) ||
+      (!!ownerIdNumber && !!o.ownerIdNumber && ownerIdNumber !== o.ownerIdNumber);
+    if (!conflict) {
+      applyOwnerToForm(o, true);
+      return;
+    }
+    Alert.alert('Ghi đè thông tin đang nhập?', 'Khu vực hoặc CCCD trong form đang khác với chủ hộ này.', [
+      { text: 'Hủy', style: 'cancel' },
+      { text: 'Chỉ điền chủ hộ', onPress: () => applyOwnerToForm(o, false) },
+      { text: 'Điền cả khu vực', onPress: () => applyOwnerToForm(o, true) },
+    ]);
+  }
+
+  function handleUndoOwnerFill() {
+    if (!ownerFill) return;
+    const p = ownerFill.prev;
+    setOwnerName(p.ownerName);
+    setOwnerPhone(p.ownerPhone);
+    setOwnerIdNumber(p.ownerIdNumber);
+    setStreet(p.street);
+    setStreetId(p.streetId);
+    setWard(p.ward);
+    setWardId(p.wardId);
+    setHamletId(p.hamletId);
+    setHamletName(p.hamletName);
+    setOwnerFill(null);
+  }
+
   /** Điền sẵn toàn bộ form từ nhà trên server (chế độ sửa lại). */
   function applyHouseToForm(h: HouseSummary) {
     setHouseNumber(h.houseNumber);
@@ -433,7 +567,8 @@ export default function SurveyScreen() {
     setOwnerName(h.ownerName);
     setOwnerPhone(h.ownerPhone ?? '');
     setOwnerIdNumber(h.ownerIdNumber ?? '');
-    setUsageStatus(h.usageStatus ?? '');
+    setUsageStatusId(h.usageStatusId ?? '');
+    setUsageStatusName(h.usageStatus?.name ?? '');
     setPlateNeed(h.plateNeed ?? '');
     setSoTo(h.soTo ?? '');
     setSoThua(h.soThua ?? '');
@@ -525,7 +660,7 @@ export default function SurveyScreen() {
         ownerName,
         ownerPhone: ownerPhone || undefined,
         ownerIdNumber: ownerIdNumber || undefined,
-        usageStatus: usageStatus || undefined,
+        usageStatusId: usageStatusId || undefined,
         plateNeed: plateNeed || undefined,
         buildingType,
         floors: floors ? Number(floors) : undefined,
@@ -565,7 +700,7 @@ export default function SurveyScreen() {
         ownerName,
         ownerPhone: ownerPhone || undefined,
         ownerIdNumber: ownerIdNumber || undefined,
-        usageStatus: usageStatus || undefined,
+        usageStatusId: usageStatusId || undefined,
         plateNeed: plateNeed || undefined,
         buildingType,
         floors: floors ? Number(floors) : undefined,
@@ -640,7 +775,13 @@ export default function SurveyScreen() {
   }
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+    // keyboardShouldPersistTaps: chạm dòng gợi ý chủ hộ khi bàn phím đang mở vẫn nhận ngay cú chạm đầu.
+    <ScrollView
+      style={styles.container}
+      contentContainerStyle={styles.content}
+      keyboardShouldPersistTaps="handled"
+      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />}
+    >
       <WardSelectorBar />
 
       {(resurveyHouseId || resurveyHouse) && (
@@ -743,13 +884,44 @@ export default function SurveyScreen() {
         </View>
       </View>
 
+      {/* Nhà/chủ hộ quanh vị trí GPS — tránh khảo sát trùng, chạm để tự điền (không hiện khi sửa lại nhà có sẵn). */}
+      {!resurveyHouseId && (
+        <NearbyOwnersCard
+          lat={lat}
+          lng={lng}
+          hasLocation={locationSource !== 'default'}
+          gettingGps={gettingGps}
+          onGetGps={() => handleGetGps()}
+          onPick={handlePickNearby}
+        />
+      )}
+
       <View style={styles.card}>
         <Text style={styles.sectionTitle}>2. Thông Tin Chủ Hộ</Text>
-        <Field label="Họ tên chủ hộ *" value={ownerName} onChangeText={setOwnerName} />
-        <Field
+        {!!ownerFill && (
+          <View style={styles.ownerFillBanner}>
+            <Text style={styles.ownerFillText}>
+              Đã điền từ chủ hộ {ownerFill.name} — kiểm tra lại, nhập số nhà và vị trí nhà mới.
+            </Text>
+            <TouchableOpacity onPress={handleUndoOwnerFill}>
+              <Text style={styles.ownerFillUndo}>Bỏ điền</Text>
+            </TouchableOpacity>
+          </View>
+        )}
+        {/* Gõ tên hoặc SĐT → gợi ý chủ hộ đã có; chạm 1 dòng để tự điền (tạo hồ sơ nhà MỚI, không sửa nhà cũ). */}
+        <OwnerAutocompleteField
+          label="Họ tên chủ hộ *"
+          value={ownerName}
+          onChangeText={setOwnerName}
+          onPick={handlePickOwner}
+          enabled={!resurveyHouseId}
+        />
+        <OwnerAutocompleteField
           label="Số điện thoại"
           value={ownerPhone}
           onChangeText={setOwnerPhone}
+          onPick={handlePickOwner}
+          enabled={!resurveyHouseId}
           keyboardType="phone-pad"
         />
 
@@ -867,7 +1039,10 @@ export default function SurveyScreen() {
               onPress={() => {
                 // Hiện trạng là mục con của loại công trình — đổi sang loại khác thì bỏ chọn
                 // hiện trạng cũ để người khảo sát chọn lại cho đúng loại mới.
-                if (t !== buildingType) setUsageStatus('');
+                if (t !== buildingType) {
+                  setUsageStatusId('');
+                  setUsageStatusName('');
+                }
                 setBuildingType(t);
               }}
               style={[styles.chip, buildingType === t && styles.chipActive]}
@@ -880,20 +1055,18 @@ export default function SurveyScreen() {
         </View>
 
         <View style={styles.subGroup}>
-          <Text style={styles.label}>Hiện trạng số nhà hiện tại</Text>
-          <View style={styles.chipRow}>
-            {USAGE_STATUSES.map((s) => (
-              <TouchableOpacity
-                key={s}
-                onPress={() => setUsageStatus(usageStatus === s ? '' : s)}
-                style={[styles.chip, usageStatus === s && styles.chipActive]}
-              >
-                <Text style={[styles.chipText, usageStatus === s && styles.chipTextActive]}>
-                  {HOUSE_USAGE_STATUS_LABELS[s]}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </View>
+          <AddressPickerField
+            label="Hiện trạng số nhà hiện tại"
+            textValue={usageStatusName}
+            idValue={usageStatusId}
+            allowManual={false}
+            options={usageStatusOptions}
+            onSelect={(opt) => {
+              setUsageStatusId(opt?.id ?? '');
+              setUsageStatusName(opt?.name ?? '');
+            }}
+            onManualText={() => {}}
+          />
         </View>
 
         <View style={styles.row2}>
@@ -994,6 +1167,10 @@ export default function SurveyScreen() {
                 snapped: activeAssignment.route.snapped,
               }
             : null
+        }
+        // Khảo sát lại: đánh dấu 🏠 + nút bay về đúng vị trí nhà đang chọn.
+        houseLocation={
+          resurveyHouse ? { latitude: resurveyHouse.latitude, longitude: resurveyHouse.longitude } : null
         }
         hasRealLocation={locationSource !== 'default'}
         onClose={() => setPickerVisible(false)}
@@ -1258,6 +1435,19 @@ const styles = StyleSheet.create({
   half: { flex: 1 },
   chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 4 },
   /** Khối con thụt lề (vd Hiện trạng dưới Loại công trình) — viền trái thể hiện quan hệ cha–con. */
+  ownerFillBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    backgroundColor: '#ecfdf5',
+    borderWidth: 1,
+    borderColor: '#a7f3d0',
+    borderRadius: 10,
+    padding: 10,
+    marginBottom: 6,
+  },
+  ownerFillText: { flex: 1, fontSize: 11, color: '#047857', fontWeight: '600' },
+  ownerFillUndo: { fontSize: 12, fontWeight: '800', color: '#b91c1c' },
   subGroup: { marginLeft: 8, paddingLeft: 10, borderLeftWidth: 2, borderLeftColor: '#bfdbfe' },
   chip: {
     paddingVertical: 6,

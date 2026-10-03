@@ -4,6 +4,7 @@ import {
   Alert,
   FlatList,
   Modal,
+  ScrollView,
   RefreshControl,
   StyleSheet,
   Text,
@@ -418,6 +419,7 @@ export default function AssignmentsScreen() {
                 <Icon name="close" size={22} color="#64748b" />
               </TouchableOpacity>
             </View>
+            <ScrollView style={{ flexGrow: 0 }} showsVerticalScrollIndicator>
             {historyTarget &&
               timelineEntries.map((entry, i, arr) => (
                 <View key={entry.key} style={styles.timelineRow}>
@@ -434,6 +436,7 @@ export default function AssignmentsScreen() {
                   </View>
                 </View>
               ))}
+            </ScrollView>
           </View>
         </View>
       </Modal>
@@ -626,7 +629,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   timelineLine: { width: 2, flex: 1, backgroundColor: '#e2e8f0', marginVertical: 2, minHeight: 20 },
-  timelineBody: { flex: 1, paddingLeft: 10, paddingBottom: 16 },
+  timelineBody: { flex: 1, minWidth: 0, paddingLeft: 10, paddingBottom: 16 },
   timelineTitle: { fontSize: 13, fontWeight: '700', color: '#0f172a' },
   timelineDetail: { fontSize: 12, color: '#475569', marginTop: 1 },
   timelineAt: { fontSize: 10, color: '#94a3b8', marginTop: 2 },

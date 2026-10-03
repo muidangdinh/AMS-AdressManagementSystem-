@@ -13,9 +13,8 @@ import {
   PERMISSIONS,
   formatFullAddress,
   Hamlet,
+  UsageStatusItem,
   HOUSE_STATUS_LABELS,
-  HOUSE_USAGE_STATUS_LABELS,
-  HouseUsageStatus,
   PLATE_NEED_LABELS,
   PlateNeed,
   NUMBERING_SIDE_LABELS,
@@ -41,7 +40,7 @@ import {
 } from '@tayninh/shared';
 import { useAuth } from '@/lib/auth-context';
 import { ApiError, apiFetch, getApiUrl, getToken } from '@/lib/api';
-import { districtsApi, hamletsApi, streetsApi, wardsApi } from '@/lib/addresses-api';
+import { districtsApi, hamletsApi, streetsApi, usageStatusesApi, wardsApi } from '@/lib/addresses-api';
 import { platesApi } from '@/lib/plates-api';
 import { useWorkingWard } from '@/lib/working-ward';
 import { fetchAppConfig } from '@/lib/app-config';
@@ -227,7 +226,7 @@ interface FormState {
   longitude: string;
   soTo: string;
   soThua: string;
-  usageStatus: HouseUsageStatus | '';
+  usageStatusId: string;
   plateNeed: PlateNeed | '';
   side: NumberingSide;
   reviewStage: HouseReviewStage;
@@ -254,7 +253,7 @@ const emptyForm: FormState = {
   longitude: '',
   soTo: '',
   soThua: '',
-  usageStatus: '',
+  usageStatusId: '',
   plateNeed: '',
   side: NumberingSide.NONE,
   reviewStage: HouseReviewStage.PROPOSED,
@@ -391,12 +390,14 @@ export default function HousesPage() {
   const [streets, setStreets] = useState<Street[]>([]);
   // TN-09 — danh mục Ấp/Thôn (góp ý khách hàng 11/09/2026), lọc theo xã ở nơi dùng (giống streets/wardId).
   const [hamlets, setHamlets] = useState<Hamlet[]>([]);
+  const [usageStatuses, setUsageStatuses] = useState<UsageStatusItem[]>([]);
 
   useEffect(() => {
     districtsApi.list().then(setDistricts).catch(() => {});
     wardsApi.list().then(setWards).catch(() => {});
     streetsApi.list().then(setStreets).catch(() => {});
     hamletsApi.list().then(setHamlets).catch(() => {});
+    usageStatusesApi.list().then(setUsageStatuses).catch(() => {});
   }, []);
 
   // Thống kê dashboard (Phase 5)
@@ -807,7 +808,7 @@ export default function HousesPage() {
       longitude: house.longitude.toString(),
       soTo: house.soTo ?? '',
       soThua: house.soThua ?? '',
-      usageStatus: house.usageStatus ?? '',
+      usageStatusId: house.usageStatusId ?? '',
       plateNeed: house.plateNeed ?? '',
       side: house.side ?? NumberingSide.NONE,
       reviewStage: house.reviewStage ?? HouseReviewStage.PROPOSED,
@@ -846,7 +847,7 @@ export default function HousesPage() {
       longitude: Number(form.longitude),
       soTo: form.soTo || undefined,
       soThua: form.soThua || undefined,
-      usageStatus: form.usageStatus || undefined,
+      usageStatusId: form.usageStatusId || undefined,
       plateNeed: form.plateNeed || undefined,
       side: form.side !== NumberingSide.NONE ? form.side : undefined,
       note: form.note || undefined,
@@ -1471,7 +1472,7 @@ export default function HousesPage() {
                       <div>
                         <p className="text-xs text-fg-subtle">Hiện trạng nhà</p>
                         <p className="font-semibold text-xs">
-                          {detail.usageStatus ? HOUSE_USAGE_STATUS_LABELS[detail.usageStatus] : '—'}
+                          {detail.usageStatus?.name ?? '—'}
                         </p>
                       </div>
                       <div>
@@ -1856,18 +1857,20 @@ export default function HousesPage() {
                   <FormField label="Hiện trạng nhà">
                     <select
                       id="house-form-usageStatus"
-                      value={form.usageStatus}
+                      value={form.usageStatusId}
                       onChange={(e) =>
-                        setForm((f) => ({ ...f, usageStatus: e.target.value as HouseUsageStatus | '' }))
+                        setForm((f) => ({ ...f, usageStatusId: e.target.value }))
                       }
                       className={FIELD_CLASS}
                     >
                       <option value="">— Chưa xác định —</option>
-                      {Object.values(HouseUsageStatus).map((s) => (
-                        <option key={s} value={s}>
-                          {HOUSE_USAGE_STATUS_LABELS[s]}
-                        </option>
-                      ))}
+                      {usageStatuses
+                        .filter((u) => u.isActive || u.id === form.usageStatusId)
+                        .map((u) => (
+                          <option key={u.id} value={u.id}>
+                            {u.name}
+                          </option>
+                        ))}
                     </select>
                   </FormField>
                 </div>

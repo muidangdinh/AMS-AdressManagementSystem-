@@ -216,13 +216,19 @@ enum PhotoType {
   PLATE // Ảnh biển số nhà (khảo sát tại thời điểm tạo/sửa House — khác installPhotoUrl ở HousePlate Phase 8)
 }
 
-/// Tình trạng sử dụng nhà tại thời điểm khảo sát (BRD mục II, Could-have) —
-/// độc lập với BuildingType (loại công trình xây dựng, không phải đang dùng để làm gì).
-enum HouseUsageStatus {
-  RESIDENTIAL // Nhà ở
-  VACANT // Bỏ trống
-  UNDER_CONSTRUCTION // Đang xây dựng
-  BUSINESS // Kinh doanh / cho thuê
+/// Danh mục "Hiện trạng nhà" (quản lý ở web /houses/addresses, tab Hiện trạng) — thay enum cứng cũ.
+/// Độc lập với BuildingType (loại công trình xây dựng, không phải đang dùng để làm gì).
+model HouseUsageStatus {
+  id        String   @id @default(uuid())
+  name      String   @unique
+  sortOrder Int      @default(0)
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  houses House[]
+
+  @@map("house_usage_status")
 }
 
 /// Ý định của chủ hộ về việc gắn biển số nhà, ghi nhận LÚC KHẢO SÁT — khác
@@ -292,7 +298,8 @@ model House {
   soThua String?
 
   /// Hiện trạng nhà lúc khảo sát (Could-have, để trống cho dữ liệu cũ).
-  usageStatus HouseUsageStatus?
+  usageStatusId String?
+  usageStatus   HouseUsageStatus? @relation(fields: [usageStatusId], references: [id], onDelete: Restrict)
   /// Nhu cầu gắn biển của chủ hộ lúc khảo sát (để trống cho dữ liệu cũ).
   plateNeed   PlateNeed?
   /// Phía đường (chẵn/lẻ) ghi nhận lúc khảo sát — tái dùng enum NumberingSide

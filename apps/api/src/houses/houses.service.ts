@@ -15,7 +15,6 @@ import {
   BuildingType,
   House,
   HouseStatus,
-  HouseUsageStatus,
   PlateNeed,
   NumberingSide,
   HouseReviewStage,
@@ -60,13 +59,6 @@ const HOUSE_STATUS_LABELS_VI: Record<HouseStatus, string> = {
   NEEDS_ADJUST: 'Cần hiệu chỉnh',
 };
 
-const HOUSE_USAGE_STATUS_LABELS_VI: Record<HouseUsageStatus, string> = {
-  RESIDENTIAL: 'Nhà ở',
-  VACANT: 'Bỏ trống',
-  UNDER_CONSTRUCTION: 'Đang xây dựng',
-  BUSINESS: 'Kinh doanh / cho thuê',
-};
-
 const PLATE_NEED_LABELS_VI: Record<PlateNeed, string> = {
   NEEDED: 'Có nhu cầu',
   NOT_NEEDED: 'Không có nhu cầu',
@@ -92,7 +84,10 @@ interface NearbyRow {
   id: string;
   houseNumber: string;
   street: string;
+  streetId: string | null;
   ward: string;
+  wardId: string | null;
+  hamletId: string | null;
   district: string | null;
   ownerName: string;
   ownerPhone: string | null;
@@ -122,6 +117,7 @@ const ADDRESS_CATALOG_INCLUDE = {
   hamlet: { select: { id: true, name: true } },
   streetRef: { select: { id: true, name: true } },
   alley: { select: { id: true, name: true } },
+  usageStatus: { select: { id: true, name: true } },
 } satisfies Prisma.HouseInclude;
 
 /** Các field cho phép so sánh để ghi lịch sử khi update. */
@@ -146,7 +142,7 @@ const TRACKED_FIELDS: (keyof UpdateHouseDto)[] = [
   'longitude',
   'soTo',
   'soThua',
-  'usageStatus',
+  'usageStatusId',
   'plateNeed',
   'side',
   'reviewStage',
@@ -308,6 +304,7 @@ export class HousesService {
       where,
       orderBy: [{ street: 'asc' }, { houseNumber: 'asc' }],
       take: MAX_EXPORT_ROWS,
+      include: { usageStatus: { select: { name: true } } },
     });
 
     if (houses.length === MAX_EXPORT_ROWS) {
@@ -369,7 +366,7 @@ export class HousesService {
         longitude: h.longitude,
         soTo: h.soTo ?? '',
         soThua: h.soThua ?? '',
-        usageStatus: h.usageStatus ? HOUSE_USAGE_STATUS_LABELS_VI[h.usageStatus] : '',
+        usageStatus: h.usageStatus?.name ?? '',
         plateNeed: h.plateNeed ? PLATE_NEED_LABELS_VI[h.plateNeed] : '',
         side: NUMBERING_SIDE_LABELS_VI[h.side] ?? h.side,
         reviewStage: HOUSE_REVIEW_STAGE_LABELS_VI[h.reviewStage] ?? h.reviewStage,
@@ -391,7 +388,7 @@ export class HousesService {
 
     const rows = await this.prisma.$queryRaw<NearbyRow[]>`
       SELECT
-        id, "houseNumber", street, ward, district, "ownerName", "ownerPhone", "ownerIdNumber",
+        id, "houseNumber", street, "streetId", ward, "wardId", "hamletId", district, "ownerName", "ownerPhone", "ownerIdNumber",
         "buildingType", floors, area, status, "qrCode", latitude, longitude,
         "soTo", "soThua", "createdById", "createdAt", "updatedAt",
         ST_Distance(
@@ -408,7 +405,102 @@ export class HousesService {
       LIMIT ${limit}
     `;
 
-    return rows.map((r) => ({ ...r, distance: Math.round(r.distance) }));
+    // Tên ấp (để mobile điền sẵn khu vực khi chọn chủ hộ gần đây) — 1 truy vấn cho cả danh sách.
+    const hamletIds = [...new Set(rows.map((r) => r.hamletId).filter((id): id is string => !!id))];
+    const hamlets = hamletIds.length
+      ? await this.prisma.hamlet.findMany({ where: { id: { in: hamletIds } }, select: { id: true, name: true } })
+      : [];
+    const hamletName = new Map(hamlets.map((h) => [h.id, h.name]));
+
+    return rows.map((r) => ({
+      ...r,
+      hamletName: r.hamletId ? (hamletName.get(r.hamletId) ?? null) : null,
+      distance: Math.round(r.distance),
+    }));
+  }
+
+  /**
+   * Gợi ý chủ hộ cho form khảo sát (mobile): tìm theo TÊN (không dấu, không phân biệt hoa/thường) hoặc
+   * SĐT (so khớp theo chữ số — gõ có/không dấu cách, dấu chấm đều được), gom theo (tên, SĐT, CCCD) kèm
+   * số nhà và vài nhà gần nhất để cán bộ nhận ra đúng người. Cần extension `unaccent` (migration
+   * 20261002120000_unaccent). `q` ngắn hơn 2 ký tự trả về rỗng.
+   */
+  async searchOwners(q: string | undefined) {
+    const term = (q ?? '').trim();
+    if (term.length < 2) return [];
+    // Escape ký tự đặc biệt của LIKE để người dùng gõ % hoặc _ không thành ký tự đại diện.
+    const like = `%${term.replace(/[\\%_]/g, (c) => `\\${c}`)}%`;
+    const digits = term.replace(/\D/g, '');
+    const phoneCond =
+      digits.length >= 3
+        ? Prisma.sql`OR regexp_replace(coalesce("ownerPhone", ''), '\\D', '', 'g') LIKE ${`%${digits}%`}`
+        : Prisma.empty;
+
+    const groups = await this.prisma.$queryRaw<
+      {
+        ownerName: string;
+        ownerPhone: string | null;
+        ownerIdNumber: string | null;
+        houseCount: number;
+        houseIds: string[];
+      }[]
+    >(Prisma.sql`
+      SELECT "ownerName", "ownerPhone", "ownerIdNumber",
+             count(*)::int AS "houseCount",
+             (array_agg(id ORDER BY "updatedAt" DESC))[1:5] AS "houseIds"
+      FROM house
+      WHERE unaccent(lower("ownerName")) LIKE unaccent(lower(${like}))
+      ${phoneCond}
+      GROUP BY "ownerName", "ownerPhone", "ownerIdNumber"
+      ORDER BY max("updatedAt") DESC
+      LIMIT 20
+    `);
+    if (groups.length === 0) return [];
+
+    const houses = await this.prisma.house.findMany({
+      where: { id: { in: groups.flatMap((g) => g.houseIds) } },
+      select: {
+        id: true,
+        houseNumber: true,
+        street: true,
+        streetId: true,
+        ward: true,
+        wardId: true,
+        hamletId: true,
+        hamlet: { select: { name: true } },
+        status: true,
+      },
+    });
+    const byId = new Map(houses.map((h) => [h.id, h]));
+
+    return groups.map((g) => {
+      const list = g.houseIds.map((id) => byId.get(id)).filter((h): h is NonNullable<typeof h> => !!h);
+      const latest = list[0];
+      return {
+        ownerName: g.ownerName,
+        ownerPhone: g.ownerPhone,
+        ownerIdNumber: g.ownerIdNumber,
+        houseCount: g.houseCount,
+        // Khu vực của nhà gần nhất — dùng điền sẵn xã/ấp/đường cho hồ sơ mới.
+        latest: latest
+          ? {
+              street: latest.street,
+              streetId: latest.streetId,
+              ward: latest.ward,
+              wardId: latest.wardId,
+              hamletId: latest.hamletId,
+              hamletName: latest.hamlet?.name ?? null,
+            }
+          : null,
+        houses: list.map((h) => ({
+          id: h.id,
+          houseNumber: h.houseNumber,
+          street: h.street,
+          ward: h.ward,
+          status: h.status,
+        })),
+      };
+    });
   }
 
   async findOneOrThrow(id: string): Promise<House> {
@@ -513,7 +605,7 @@ export class HousesService {
           longitude: dto.longitude,
           soTo: dto.soTo,
           soThua: dto.soThua,
-          usageStatus: dto.usageStatus,
+          usageStatusId: dto.usageStatusId,
           plateNeed: dto.plateNeed,
           side: dto.side ?? undefined,
           note: dto.note,
@@ -574,7 +666,7 @@ export class HousesService {
       longitude: dto.longitude,
       soTo: dto.soTo,
       soThua: dto.soThua,
-      usageStatus: dto.usageStatus,
+      usageStatusId: dto.usageStatusId,
       plateNeed: dto.plateNeed,
       side: dto.side,
       reviewStage: dto.reviewStage,

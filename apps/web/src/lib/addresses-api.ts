@@ -8,6 +8,8 @@ import type {
   District,
   Hamlet,
   Street,
+  UsageStatusItem,
+  CreateUsageStatusRequest,
   UpdateAlleyRequest,
   UpdateDistrictRequest,
   UpdateHamletRequest,
@@ -69,4 +71,14 @@ export const alleysApi = {
   update: (id: string, dto: UpdateAlleyRequest) =>
     apiFetch<Alley>(`/api/alleys/${id}`, { method: 'PATCH', body: JSON.stringify(dto) }),
   remove: (id: string) => apiFetch<void>(`/api/alleys/${id}`, { method: 'DELETE' }),
+};
+
+/** Danh mục "Hiện trạng nhà". `all=true` lấy cả mục đã ẩn (trang quản lý). */
+export const usageStatusesApi = {
+  list: (all = false) => apiFetch<UsageStatusItem[]>(`/api/usage-statuses${all ? '?all=1' : ''}`),
+  create: (dto: CreateUsageStatusRequest) =>
+    apiFetch<UsageStatusItem>('/api/usage-statuses', { method: 'POST', body: JSON.stringify(dto) }),
+  update: (id: string, dto: Partial<CreateUsageStatusRequest>) =>
+    apiFetch<UsageStatusItem>(`/api/usage-statuses/${id}`, { method: 'PATCH', body: JSON.stringify(dto) }),
+  remove: (id: string) => apiFetch<void>(`/api/usage-statuses/${id}`, { method: 'DELETE' }),
 };

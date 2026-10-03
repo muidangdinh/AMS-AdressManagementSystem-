@@ -33,6 +33,7 @@ export default function LocationPickerModal({
   initialLat,
   initialLng,
   route,
+  houseLocation,
   onClose,
   onConfirm,
 }: {
@@ -40,6 +41,11 @@ export default function LocationPickerModal({
   initialLat: number;
   initialLng: number;
   route?: PickerRoute | null;
+  /**
+   * Vị trí của nhà đang được chọn để khảo sát lại — vẽ dấu 🏠 trên bản đồ và có nút bay về đó mỗi khi
+   * người dùng kéo bản đồ đi xa. Bỏ trống khi khảo sát nhà mới.
+   */
+  houseLocation?: { latitude: number; longitude: number } | null;
   /** Giữ để tương thích nơi gọi — ghim giờ do người dùng tự thả bằng nút "Ghim". */
   hasRealLocation?: boolean;
   onClose: () => void;
@@ -78,6 +84,12 @@ export default function LocationPickerModal({
     setMyLocation(null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [visible]);
+
+  /** Bay về vị trí nhà đang chọn (không dời ghim — người dùng tự chạm hoặc bấm "Ghim"). */
+  function flyToHouse() {
+    if (!houseLocation) return;
+    mapRef.current?.animateToRegion({ ...houseLocation, latitudeDelta: 0.002, longitudeDelta: 0.002 }, 700);
+  }
 
   function handleLocateMe() {
     setLocating(true);
@@ -173,6 +185,14 @@ export default function LocationPickerModal({
               </>
             )}
 
+            {houseLocation && (
+              <Marker coordinate={houseLocation} anchor={{ x: 0.5, y: 0.5 }} tracksViewChanges={false} zIndex={22}>
+                <View collapsable={false} style={styles.homeMarker}>
+                  <Text style={styles.homeMarkerText}>🏠</Text>
+                </View>
+              </Marker>
+            )}
+
             {myLocation && (
               <Marker coordinate={myLocation} anchor={{ x: 0.5, y: 0.5 }} zIndex={25}>
                 <View collapsable={false} style={styles.myLocationDot} />
@@ -195,6 +215,11 @@ export default function LocationPickerModal({
           </TouchableOpacity>
 
           <View style={styles.fabColumn}>
+            {!!houseLocation && (
+              <TouchableOpacity style={styles.fab} onPress={flyToHouse} accessibilityLabel="Bay về vị trí nhà đang chọn">
+                <Text style={styles.fabText}>🏠</Text>
+              </TouchableOpacity>
+            )}
             {hasRoute && (
               <TouchableOpacity style={styles.fab} onPress={fitRoute} accessibilityLabel="Bay tới tuyến">
                 <Text style={styles.fabText}>🛣️</Text>
@@ -247,6 +272,17 @@ const styles = StyleSheet.create({
   title: { fontSize: 16, fontWeight: '700', color: '#0f172a' },
   hint: { fontSize: 12, color: '#64748b', marginTop: 4 },
   mapWrap: { flex: 1 },
+  homeMarker: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    backgroundColor: '#1d4ed8',
+    borderWidth: 2,
+    borderColor: '#fff',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  homeMarkerText: { fontSize: 15 },
   fabColumn: { position: 'absolute', right: 14, bottom: 16, gap: 10 },
   fab: {
     width: 46,

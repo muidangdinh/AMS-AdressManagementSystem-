@@ -9,6 +9,8 @@ import { StreetsController } from './streets.controller';
 import { StreetsService } from './streets.service';
 import { AlleysController } from './alleys.controller';
 import { AlleysService } from './alleys.service';
+import { UsageStatusesController } from './usage-statuses.controller';
+import { UsageStatusesService } from './usage-statuses.service';
 
 /**
  * Danh mục địa chỉ chuẩn hoá (Phase 6 — IV. Quản lý dữ liệu địa chỉ):
@@ -24,7 +26,8 @@ import { AlleysService } from './alleys.service';
     HamletsController,
     StreetsController,
     AlleysController,
+    UsageStatusesController,
   ],
-  providers: [DistrictsService, WardsService, HamletsService, StreetsService, AlleysService],
+  providers: [DistrictsService, WardsService, HamletsService, StreetsService, AlleysService, UsageStatusesService],
 })
 export class AddressesModule {}

@@ -56,20 +56,15 @@ export const PHOTO_TYPE_LABELS: Record<PhotoType, string> = {
   [PhotoType.PLATE]: 'Ảnh biển số nhà',
 };
 
-/** Tình trạng sử dụng nhà lúc khảo sát — khớp enum HouseUsageStatus trong Prisma schema. */
-export enum HouseUsageStatus {
-  RESIDENTIAL = 'RESIDENTIAL', // Nhà ở
-  VACANT = 'VACANT', // Bỏ trống
-  UNDER_CONSTRUCTION = 'UNDER_CONSTRUCTION', // Đang xây dựng
-  BUSINESS = 'BUSINESS', // Kinh doanh / cho thuê
+/** Danh mục "Hiện trạng nhà" (quản lý CRUD ở web, bảng house_usage_status). */
+export interface UsageStatusItem {
+  id: string;
+  name: string;
+  sortOrder: number;
+  isActive: boolean;
 }
 
-export const HOUSE_USAGE_STATUS_LABELS: Record<HouseUsageStatus, string> = {
-  [HouseUsageStatus.RESIDENTIAL]: 'Nhà ở',
-  [HouseUsageStatus.VACANT]: 'Bỏ trống',
-  [HouseUsageStatus.UNDER_CONSTRUCTION]: 'Đang xây dựng',
-  [HouseUsageStatus.BUSINESS]: 'Kinh doanh / cho thuê',
-};
+export type CreateUsageStatusRequest = { name: string; sortOrder?: number; isActive?: boolean };
 
 /** Nhu cầu gắn biển của chủ hộ lúc khảo sát — khớp enum PlateNeed trong Prisma schema. */
 export enum PlateNeed {
@@ -358,7 +353,9 @@ export interface HouseSummary {
   longitude: number;
   soTo?: string | null;
   soThua?: string | null;
-  usageStatus?: HouseUsageStatus | null;
+  usageStatusId?: string | null;
+  /** Có khi API include danh mục (list/detail). */
+  usageStatus?: { id: string; name: string } | null;
   plateNeed?: PlateNeed | null;
   side: NumberingSide;
   reviewStage: HouseReviewStage;
@@ -403,6 +400,46 @@ export function formatFullAddress(
 }
 
 /** Body gửi lên POST /api/houses. */
+/** Một nhà gần vị trí đang đứng (GET /api/houses/nearby) — danh sách "chủ hộ gần bạn" ở form khảo sát mobile. */
+export interface NearbyHouseItem {
+  id: string;
+  houseNumber: string;
+  street: string;
+  streetId: string | null;
+  ward: string;
+  wardId: string | null;
+  hamletId: string | null;
+  hamletName: string | null;
+  ownerName: string;
+  ownerPhone: string | null;
+  ownerIdNumber: string | null;
+  status: HouseStatus;
+  latitude: number;
+  longitude: number;
+  /** Khoảng cách tới điểm tìm (mét, đã làm tròn). */
+  distance: number;
+}
+
+/** Một chủ hộ trong gợi ý khi nhập form khảo sát (GET /api/houses/owners) — gom theo tên + SĐT + CCCD. */
+export interface OwnerSearchResult {
+  ownerName: string;
+  ownerPhone: string | null;
+  ownerIdNumber: string | null;
+  /** Tổng số nhà của chủ hộ này. */
+  houseCount: number;
+  /** Khu vực của nhà gần nhất — dùng điền sẵn xã/ấp/đường cho hồ sơ mới. */
+  latest: {
+    street: string;
+    streetId: string | null;
+    ward: string;
+    wardId: string | null;
+    hamletId: string | null;
+    hamletName: string | null;
+  } | null;
+  /** Tối đa 5 nhà gần nhất. */
+  houses: { id: string; houseNumber: string; street: string; ward: string; status: HouseStatus }[];
+}
+
 export interface CreateHouseRequest {
   houseNumber: string;
   street: string;
@@ -427,7 +464,7 @@ export interface CreateHouseRequest {
   longitude: number;
   soTo?: string;
   soThua?: string;
-  usageStatus?: HouseUsageStatus;
+  usageStatusId?: string;
   plateNeed?: PlateNeed;
   side?: NumberingSide;
   note?: string;

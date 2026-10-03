@@ -7,11 +7,12 @@ import {
   IsNumber,
   IsOptional,
   IsString,
+  IsUUID,
   Matches,
   Min,
   MinLength,
 } from 'class-validator';
-import { BuildingType, HouseStatus, HouseUsageStatus, PlateNeed, NumberingSide } from '@prisma/client';
+import { BuildingType, HouseStatus, PlateNeed, NumberingSide } from '@prisma/client';
 
 export class CreateHouseDto {
   @IsString()
@@ -108,8 +109,8 @@ export class CreateHouseDto {
 
   /** Hiện trạng nhà lúc khảo sát (Could-have, để trống nếu không xác định). */
   @IsOptional()
-  @IsEnum(HouseUsageStatus)
-  usageStatus?: HouseUsageStatus;
+  @IsUUID()
+  usageStatusId?: string;
 
   /** Nhu cầu gắn biển của chủ hộ lúc khảo sát. */
   @IsOptional()

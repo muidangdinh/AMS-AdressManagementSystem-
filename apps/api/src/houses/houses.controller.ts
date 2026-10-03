@@ -55,6 +55,12 @@ export class HousesController {
     return this.housesService.findNearby(query);
   }
 
+  /** Gợi ý chủ hộ theo tên/SĐT (form khảo sát mobile) — cũng phải đặt trước ':id'. */
+  @Get('owners')
+  searchOwners(@Query('q') q?: string) {
+    return this.housesService.searchOwners(q);
+  }
+
   /** Thống kê dashboard (Phase 5 — IX) — cũng phải đặt trước ':id'. */
   @Get('stats')
   getStats() {

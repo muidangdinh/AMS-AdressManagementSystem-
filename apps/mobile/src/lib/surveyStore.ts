@@ -2,7 +2,6 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   PhotoType,
   type BuildingType,
-  type HouseUsageStatus,
   type PlateNeed,
   type NumberingSide,
   type HouseSummary,
@@ -37,7 +36,7 @@ export interface SurveyDraft {
   soTo?: string;
   soThua?: string;
   /** Hiện trạng nhà lúc khảo sát (Could-have). */
-  usageStatus?: HouseUsageStatus;
+  usageStatusId?: string;
   /** Nhu cầu gắn biển của chủ hộ lúc khảo sát. */
   plateNeed?: PlateNeed;
   /** Phía đường (chẵn/lẻ) ghi nhận lúc khảo sát. */
@@ -148,7 +147,7 @@ export async function syncDraft(draft: SurveyDraft): Promise<SurveyDraft> {
         area: draft.area,
         soTo: draft.soTo,
         soThua: draft.soThua,
-        usageStatus: draft.usageStatus,
+        usageStatusId: draft.usageStatusId,
         plateNeed: draft.plateNeed,
         side: draft.side,
         note: draft.note,
