@@ -14,5 +14,7 @@ import { InstallAssignmentsService } from './install-assignments.service';
 @Module({
   controllers: [InstallCampaignsController, InstallZonesController, InstallAssignmentsController],
   providers: [InstallCampaignsService, InstallZonesService, InstallAssignmentsService],
+  // house-plates gọi attachNewPlate khi cấp biển mới.
+  exports: [InstallAssignmentsService],
 })
 export class InstallsModule {}

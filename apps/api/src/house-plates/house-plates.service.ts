@@ -3,6 +3,7 @@ import { randomUUID } from 'crypto';
 import * as QRCode from 'qrcode';
 import { AssignmentStatus, HouseStatus, HousePlate, PlateIssueReason, PlateStatus, Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { InstallAssignmentsService } from '../installs/install-assignments.service';
 import { IssuePlateDto } from './dto/issue-plate.dto';
 import { RevokePlateDto } from './dto/revoke-plate.dto';
 import { NotInstalledPlateDto } from './dto/not-installed-plate.dto';
@@ -33,7 +34,10 @@ const ACTIVE_STATUSES: PlateStatus[] = [PlateStatus.ISSUED, PlateStatus.INSTALLE
  */
 @Injectable()
 export class HousePlatesService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly installAssignments: InstallAssignmentsService,
+  ) {}
 
   findAll(query: ListPlatesQueryDto) {
     const where: Prisma.HousePlateWhereInput = {
@@ -131,7 +135,7 @@ export class HousePlatesService {
 
     const plateCode = `TN-P-${randomUUID().split('-')[0].toUpperCase()}`;
 
-    return this.prisma.$transaction(async (tx) => {
+    const created = await this.prisma.$transaction(async (tx) => {
       if (activePlate && reason !== PlateIssueReason.NEW) {
         await tx.housePlate.update({
           where: { id: activePlate.id },
@@ -159,6 +163,10 @@ export class HousePlatesService {
 
       return created;
     });
+
+    // Biển mới cấp tự vào nhiệm vụ thi công đang mở có phạm vi chứa nhà (lỗi không ảnh hưởng việc cấp biển).
+    await this.installAssignments.attachNewPlate(created.id, userId).catch(() => undefined);
+    return created;
   }
 
   /**

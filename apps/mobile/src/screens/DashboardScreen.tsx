@@ -501,8 +501,21 @@ export default function DashboardScreen() {
 
   /** Bấm vào 1 dòng trong modal xem nhanh — đóng modal rồi bay tới vị trí đó ở tab Bản Đồ. */
   function focusOnMap(location: { id: string; lat: number; lng: number }) {
+    if (!Number.isFinite(location.lat) || !Number.isFinite(location.lng)) {
+      Alert.alert('Không có vị trí', 'Hồ sơ này chưa có toạ độ hợp lệ để hiện trên bản đồ.');
+      return;
+    }
     closeModal();
-    navigation.navigate('Map', { focusId: location.id, lat: location.lat, lng: location.lng });
+    // Trễ 1 nhịp để Modal kịp đóng (Android: điều hướng cùng lúc Modal đang đóng dễ làm màn hình đích
+    // không vẽ); `nonce` để bấm lại đúng nhà đó vẫn được xử lý như lần mới.
+    setTimeout(() => {
+      navigation.navigate('Map', {
+        focusId: location.id,
+        lat: location.lat,
+        lng: location.lng,
+        nonce: Date.now(),
+      });
+    }, 250);
   }
 
   async function openModal(

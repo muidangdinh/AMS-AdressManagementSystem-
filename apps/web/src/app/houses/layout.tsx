@@ -285,7 +285,7 @@ export default function HousesLayout({ children }: { children: React.ReactNode }
       <header className="print:hidden bg-shell/80 backdrop-blur-md border-b border-line text-fg h-16 px-4 sm:px-6 flex items-center justify-between gap-4 shrink-0 z-20 sticky top-0">
         <Link
           href="/houses/dashboard"
-          aria-label="Tây Ninh GIS — Hệ thống Đánh số & Gắn biển số nhà"
+          aria-label="Tây Ninh — Hệ thống Đánh số & Gắn biển số nhà"
           className="shrink-0 transition-opacity hover:opacity-80"
         >
           {/* Logo trắng nền trong suốt nên ăn theo màu thanh nav. Dưới sm chỉ lấy biểu tượng ngôi nhà
@@ -294,7 +294,7 @@ export default function HousesLayout({ children }: { children: React.ReactNode }
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
               src="/logo.png"
-              alt="Tây Ninh GIS"
+              alt="Tây Ninh"
               width={1600}
               height={397}
               className="absolute top-0 -left-[3px] sm:left-0 h-14 w-auto max-w-none invert dark:invert-0"

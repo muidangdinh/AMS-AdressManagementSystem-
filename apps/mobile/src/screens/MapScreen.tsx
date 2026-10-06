@@ -113,6 +113,10 @@ export default function MapScreen() {
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const route = useRoute<RouteProp<MainTabsParamList, 'Map'>>();
   const consumedFocusRef = useRef<string | null>(null);
+  // Map sẵn sàng (onMapReady) — lệnh animateToRegion trước đó bị nuốt khi tab mount lười lần đầu.
+  const [mapReady, setMapReady] = useState(false);
+  // Nhà đang được chọn từ Dashboard — luôn vẽ ghim nổi bật dù không nằm trong danh sách đã lọc.
+  const [focusTarget, setFocusTarget] = useState<{ id: string; lat: number; lng: number } | null>(null);
 
   const [search, setSearch] = useState('');
   const [status, setStatus] = useState<HouseStatus | ''>('');
@@ -375,13 +379,15 @@ export default function MapScreen() {
   // khi màn hình re-render hoặc lấy lại focus mà params không đổi).
   useEffect(() => {
     const params = route.params;
-    if (!params) return;
-    const key = `${params.focusId}:${params.lat}:${params.lng}`;
+    if (!params || !mapReady) return;
+    const key = `${params.focusId}:${params.lat}:${params.lng}:${params.nonce ?? ''}`;
     if (consumedFocusRef.current === key) return;
     consumedFocusRef.current = key;
-    flyTo(params.lat, params.lng);
+    setFocusTarget({ id: params.focusId, lat: params.lat, lng: params.lng });
+    const timer = setTimeout(() => flyTo(params.lat, params.lng), 250);
     openDetail(params.focusId);
-  }, [route.params]);
+    return () => clearTimeout(timer);
+  }, [route.params, mapReady]);
 
   return (
     <View style={styles.container}>
@@ -389,6 +395,7 @@ export default function MapScreen() {
         ref={mapRef}
         style={StyleSheet.absoluteFill}
         initialRegion={TAYNINH_REGION}
+        onMapReady={() => setMapReady(true)}
         onPress={(e) => {
           setNearby(null);
           const { latitude, longitude } = e.nativeEvent.coordinate;
@@ -418,6 +425,16 @@ export default function MapScreen() {
             </View>
           </Marker>
         ))}
+
+        {focusTarget && !houses.some((h) => h.id === focusTarget.id) && (
+          <Marker
+            coordinate={{ latitude: focusTarget.lat, longitude: focusTarget.lng }}
+            onPress={() => openDetail(focusTarget.id)}
+            zIndex={998}
+          >
+            <View collapsable={false} style={styles.focusMarker} />
+          </Marker>
+        )}
 
         {myLocation && (
           <Marker coordinate={myLocation} anchor={{ x: 0.5, y: 0.5 }} zIndex={999}>
@@ -772,6 +789,14 @@ const styles = StyleSheet.create({
     elevation: 3,
   },
   markerText: { color: '#fff', fontWeight: '700', fontSize: 10 },
+  focusMarker: {
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    backgroundColor: '#dc2626',
+    borderWidth: 4,
+    borderColor: '#fff',
+  },
   myLocationDot: {
     width: 16,
     height: 16,

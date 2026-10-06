@@ -19,6 +19,7 @@ import {
   markNotificationRead,
 } from '../lib/notificationsApi';
 import { useUnread } from '../lib/UnreadContext';
+import { useAuth } from '../lib/AuthContext';
 
 const TYPE_ICON: Record<NotificationType, { name: string; color: string }> = {
   [NotificationType.ASSIGNED]: { name: 'account-arrow-right-outline', color: '#2563eb' },
@@ -42,6 +43,7 @@ function timeAgo(iso: string): string {
 export default function NotificationsScreen() {
   const navigation = useNavigation<NavigationProp<ParamListBase>>();
   const { count, setCount, refresh } = useUnread();
+  const { availableModes } = useAuth();
   const [items, setItems] = useState<AppNotification[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -77,12 +79,13 @@ export default function NotificationsScreen() {
       markNotificationRead(n.id).catch(() => refresh());
     }
     // Chỉ nhiệm vụ khảo sát có màn hình trên mobile; hồ sơ hành chính/công việc xem ở web.
+    // Tab đích chỉ tồn tại khi tài khoản có quyền tương ứng (đủ 2 quyền thì có cả hai).
     if (n.entityType === NotificationEntity.INSTALL_ASSIGNMENT) {
-      navigation.navigate('Main', { screen: 'Install' });
+      if (availableModes.includes('install')) navigation.navigate('Main', { screen: 'Install' });
       return;
     }
     if (n.entityType === NotificationEntity.SURVEY_ASSIGNMENT) {
-      navigation.navigate('Main', { screen: 'Assignments' });
+      if (availableModes.includes('survey')) navigation.navigate('Main', { screen: 'Assignments' });
     }
   }
 

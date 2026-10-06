@@ -896,6 +896,11 @@ export default function InstallCampaignDetailPage() {
                           )}
                           {a.targetCount ? ` • Chỉ tiêu ${a.targetCount} biển` : ''}
                         </p>
+                        {st && st.total === 0 && open && a.status !== AssignmentStatus.SUBMITTED && (
+                          <p className="text-[11px] text-warn font-semibold mt-1">
+                            ⚠ Nhiệm vụ chưa có biển nào trong phạm vi — biển cấp mới sẽ tự được thêm vào; hoặc bấm “Bổ sung biển” để gom ngay.
+                          </p>
+                        )}
                         {a.note && <p className="text-[11px] text-fg-muted mt-0.5">Ghi chú: {a.note}</p>}
                         {a.reviewNote && a.status === AssignmentStatus.NEEDS_REVISIT && (
                           <p className="text-[11px] text-danger mt-0.5">Lý do thi công lại: {a.reviewNote}</p>

@@ -128,11 +128,25 @@ export default function HouseMapLeaflet({
   useEffect(() => {
     const justCreated = justCreatedRef.current;
     justCreatedRef.current = false;
+    let settleTimer: ReturnType<typeof setTimeout> | undefined;
     if (!flyToRequest || !mapRef.current) return;
     if (justCreated) {
-      mapRef.current.setView([flyToRequest.lat, flyToRequest.lng], 18, { animate: false });
+      // Map vừa mount (vd tới từ Dashboard): khung có thể chưa có kích thước ổn định nên phải
+      // invalidateSize trước khi đặt view, và đặt lại 1 lần nữa sau khi layout xong — nếu không
+      // Leaflet tính vùng tile theo kích thước sai → nền xám, không tải tile.
+      const map = mapRef.current;
+      const { lat, lng } = flyToRequest;
+      // Zoom tới nhà bị chặn theo lớp đang bật (đường phố hết dữ liệu sau zoom 17 → ô xám).
+      const zoom = Math.min(18, map.getMaxZoom());
+      map.invalidateSize();
+      map.setView([lat, lng], zoom, { animate: false });
+      settleTimer = setTimeout(() => {
+        if (mapRef.current !== map) return;
+        map.invalidateSize();
+        map.setView([lat, lng], zoom, { animate: false });
+      }, 150);
     } else {
-      mapRef.current.flyTo([flyToRequest.lat, flyToRequest.lng], 18, {
+      mapRef.current.flyTo([flyToRequest.lat, flyToRequest.lng], Math.min(18, mapRef.current.getMaxZoom()), {
         animate: true,
         duration: 1,
       });
@@ -153,6 +167,9 @@ export default function HouseMapLeaflet({
       marker.bindTooltip('Vị trí của bạn', { direction: 'top' });
       myLocationMarkerRef.current = marker;
     }
+    return () => {
+      if (settleTimer) clearTimeout(settleTimer);
+    };
   }, [flyToRequest]);
 
   function setLayer(type: 'street' | 'satellite') {
@@ -164,6 +181,8 @@ export default function HouseMapLeaflet({
     } else {
       map.removeLayer(satelliteLayerRef.current);
       map.addLayer(streetLayerRef.current);
+      // Lớp đường phố chỉ có dữ liệu tới zoom 17 — đang zoom sâu hơn (từ vệ tinh) thì lùi lại để khỏi xám.
+      if (map.getZoom() > map.getMaxZoom()) map.setZoom(map.getMaxZoom());
     }
     setLayerState(type);
   }

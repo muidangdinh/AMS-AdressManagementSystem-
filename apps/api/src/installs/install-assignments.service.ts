@@ -5,7 +5,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { AssignmentStatus, NotificationEntity, NotificationType, PlateStatus, Prisma } from '@prisma/client';
+import { AssignmentStatus, CampaignStatus, NotificationEntity, NotificationType, PlateStatus, Prisma } from '@prisma/client';
 import { NotificationsService } from '../notifications/notifications.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { PERMISSIONS } from '../auth/permissions';
@@ -328,6 +328,69 @@ export class InstallAssignmentsService {
       NotificationType.ASSIGNED,
     );
     return this.findOne(created.id);
+  }
+
+  /**
+   * Biển vừa được cấp: tự đưa vào nhiệm vụ thi công đang mở có phạm vi chứa nhà (cùng xã của phân vùng,
+   * và nếu có tuyến thì nhà cách tuyến ≤ ROUTE_RADIUS_M). Nhiều nhiệm vụ khớp → chọn nhiệm vụ có tuyến gần
+   * nhất (nhiệm vụ chỉ theo xã xếp sau nhiệm vụ có tuyến). Nhiệm vụ đã gửi duyệt/hoàn tất không bị đụng tới.
+   * Lỗi ở đây không được làm hỏng việc cấp biển nên nơi gọi tự bắt.
+   */
+  async attachNewPlate(plateId: string, actorId: string): Promise<void> {
+    const plate = await this.prisma.housePlate.findUnique({
+      where: { id: plateId },
+      include: { house: { select: { wardId: true, latitude: true, longitude: true } } },
+    });
+    if (!plate || plate.status !== PlateStatus.ISSUED || plate.installAssignmentId) return;
+
+    const open = await this.prisma.installAssignment.findMany({
+      where: {
+        status: { in: [AssignmentStatus.ASSIGNED, AssignmentStatus.IN_PROGRESS, AssignmentStatus.NEEDS_REVISIT] },
+        zone: { campaign: { status: { not: CampaignStatus.COMPLETED } } },
+      },
+      include: ASSIGNMENT_BASE_INCLUDE,
+    });
+
+    let best: (typeof open)[number] | null = null;
+    let bestScore = Infinity;
+    for (const a of open) {
+      if (!a.zone.wardId && !a.route) continue; // không có tiêu chí phạm vi
+      if (a.zone.wardId && a.zone.wardId !== plate.house.wardId) continue;
+      let score = 1e9; // chỉ theo xã
+      if (a.route && Array.isArray(a.route.path)) {
+        const d = distanceToPathM(plate.house.latitude, plate.house.longitude, a.route.path as [number, number][]);
+        if (d > ROUTE_RADIUS_M) continue;
+        score = d;
+      }
+      if (score < bestScore) {
+        best = a;
+        bestScore = score;
+      }
+    }
+    if (!best) return;
+
+    await this.prisma.$transaction(async (tx) => {
+      // updateMany có điều kiện để 2 lần cấp song song không gán chồng.
+      const res = await tx.housePlate.updateMany({
+        where: { id: plateId, installAssignmentId: null },
+        data: { installAssignmentId: best!.id },
+      });
+      if (res.count === 0) return;
+      await tx.installAssignmentEvent.create({
+        data: {
+          assignmentId: best!.id,
+          action: INSTALL_EVENT.PLATES_REFRESHED,
+          actorId,
+          note: 'Tự động bổ sung 1 biển mới cấp',
+        },
+      });
+    });
+    await this.notifyAssignee(
+      best,
+      `Có biển mới trong nhiệm vụ: ${this.label(best)}`,
+      actorId,
+      'Một biển mới cấp nằm trong phạm vi nhiệm vụ đã được thêm vào danh sách của bạn.',
+    );
   }
 
   /** Bổ sung biển mới cấp trong phạm vi vào nhiệm vụ đang mở. */

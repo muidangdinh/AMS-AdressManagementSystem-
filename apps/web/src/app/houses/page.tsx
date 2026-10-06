@@ -297,9 +297,13 @@ function FocusFromQuery({ onFocus }: { onFocus: (id: string, lat: number, lng: n
 
   useEffect(() => {
     const focusId = searchParams.get('focusId');
-    const lat = Number(searchParams.get('lat'));
-    const lng = Number(searchParams.get('lng'));
-    if (focusId && Number.isFinite(lat) && Number.isFinite(lng)) {
+    const latRaw = searchParams.get('lat');
+    const lngRaw = searchParams.get('lng');
+    // Phải kiểm tra null/rỗng trước: Number(null) === 0 sẽ lọt qua isFinite và bay tới (0,0).
+    if (!focusId || !latRaw || !lngRaw) return;
+    const lat = Number(latRaw);
+    const lng = Number(lngRaw);
+    if (Number.isFinite(lat) && Number.isFinite(lng)) {
       onFocus(focusId, lat, lng);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -323,6 +327,9 @@ function LocateFromQuery({ onLocate }: { onLocate: (lat: number, lng: number, no
   const t = searchParams.get('t');
 
   useEffect(() => {
+    // Không có tham số (vd tới từ Dashboard với ?focusId=…) thì bỏ qua — Number(null) === 0
+    // sẽ lọt qua isFinite và bay tới (0,0) giữa biển, vẽ chấm xanh "Vị trí của bạn" ở đó.
+    if (!myLat || !myLng || !t) return;
     const lat = Number(myLat);
     const lng = Number(myLng);
     const nonce = Number(t);
@@ -669,10 +676,13 @@ export default function HousesPage() {
     setFlyToRequest({ lat, lng, nonce: Date.now() });
   }
 
-  /** Đến từ Dashboard "Tra cứu nhanh" — ép sang chế độ bản đồ rồi bay tới vị trí. */
-  function focusFromDashboard(id: string, lat: number, lng: number) {
+  /**
+   * Đến từ Dashboard "Tra cứu nhanh" — ép sang chế độ bản đồ rồi bay tới vị trí. Không tự mở drawer
+   * chi tiết: lớp phủ tối của drawer che mất bản đồ vừa tới (người dùng bấm marker để xem chi tiết).
+   */
+  function focusFromDashboard(_id: string, lat: number, lng: number) {
     setViewMode('map');
-    selectAndFlyTo(id, lat, lng);
+    setFlyToRequest({ lat, lng, nonce: Date.now() });
   }
 
   /** Đến từ nút "Bản đồ số nhà" trên thanh nav — ép sang chế độ bản đồ, bay tới vị trí GPS hiện tại, vẽ marker. */

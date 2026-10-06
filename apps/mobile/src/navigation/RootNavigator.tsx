@@ -6,13 +6,14 @@ import LoginScreen from '../screens/LoginScreen';
 import MainTabs from './MainTabs';
 import NotificationsScreen from '../screens/NotificationsScreen';
 import AccountScreen from '../screens/AccountScreen';
+import NoAccessScreen from '../screens/NoAccessScreen';
 import { useAuth } from '../lib/AuthContext';
 import { useAutoSync } from '../lib/useAutoSync';
 
 const Stack = createNativeStackNavigator();
 
 export default function RootNavigator() {
-  const { user, isLoading } = useAuth();
+  const { user, isLoading, mode } = useAuth();
   useAutoSync(!!user);
 
   if (isLoading) {
@@ -26,7 +27,9 @@ export default function RootNavigator() {
   return (
     <NavigationContainer>
       <Stack.Navigator screenOptions={{ headerShown: false }}>
-        {user ? (
+        {user && mode === null ? (
+          <Stack.Screen name="NoAccess" component={NoAccessScreen} />
+        ) : user ? (
           <>
             <Stack.Screen name="Main" component={MainTabs} />
             <Stack.Screen

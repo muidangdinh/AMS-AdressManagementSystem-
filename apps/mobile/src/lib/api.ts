@@ -5,8 +5,8 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 // dùng thẳng localhost). Xem README.md phần "Cấu hình API_URL".
 // TẠM THỜI cho test qua USB (adb reverse tcp:3001 tcp:3001) — đổi lại
 // 'https://rv.librasoft.vn' khi build bản thật/không còn cắm dây debug.
-// export const API_URL = 'http://localhost:4002';
-export const API_URL = 'https://rv.librasoft.vn';
+export const API_URL = 'http://localhost:4002';
+// export const API_URL = 'https://rv.librasoft.vn';
 // export const API_URL = ' http://10.0.2.2:3001';
 
 

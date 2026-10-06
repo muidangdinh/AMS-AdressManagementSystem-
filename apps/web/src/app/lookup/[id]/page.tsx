@@ -53,7 +53,7 @@ export default function PublicLookupPage() {
               <path d="M12 3l9 8h-3v9h-5v-6H11v6H6v-9H3l9-8z" fill="currentColor" />
             </svg>
           </div>
-          <h1 className="text-base font-bold text-slate-900">Tây Ninh GIS</h1>
+          <h1 className="text-base font-bold text-slate-900">Tây Ninh</h1>
           <p className="text-xs text-slate-500 mt-0.5">Tra cứu số nhà công khai</p>
         </div>
 

@@ -42,7 +42,7 @@ export default function LoginPage() {
           <div className="w-12 h-12 mx-auto rounded-2xl bg-brand-gradient flex items-center justify-center shadow-glow-accent mb-4">
             <Globe className="w-6 h-6 text-white" strokeWidth={1.8} />
           </div>
-          <h1 className="text-lg font-bold text-fg">Tây Ninh GIS</h1>
+          <h1 className="text-lg font-bold text-fg">Tây Ninh</h1>
           <p className="text-xs text-fg-muted mt-1">Hệ thống Đánh số &amp; Gắn biển số nhà</p>
         </div>
 

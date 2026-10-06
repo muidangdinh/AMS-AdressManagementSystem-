@@ -11,7 +11,9 @@ export function createStreetLayer(): L.TileLayer {
   // hơn — Leaflet tự phóng to tile cuối cùng còn dữ liệu thay vì hiện tile lỗi.
   return L.tileLayer(
     'https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}',
-    { maxZoom: 19, maxNativeZoom: 15, attribution: 'Tiles &copy; Esri' },
+    // Đã kiểm tra tại Tây Ninh: tile zoom ≤ 17 có dữ liệu, zoom 18 là ô xám phẳng "Map data not yet
+    // available" → chặn cứng ở 17 (zoom sâu hơn dùng lớp Vệ tinh, có dữ liệu tới 18).
+    { maxZoom: 17, maxNativeZoom: 17, attribution: 'Tiles &copy; Esri' },
   );
 }
 
