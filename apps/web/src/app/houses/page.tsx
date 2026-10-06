@@ -1646,6 +1646,28 @@ export default function HousesPage() {
                                   )}
                                 </div>
                               </div>
+                              {activePlate.installPhotoUrl && (
+                                <a
+                                  href={`${apiUrl}${activePlate.installPhotoUrl}`}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="block"
+                                  title="Ảnh gắn biển — bấm để xem lớn"
+                                >
+                                  <p className="text-[10px] text-fg-subtle mb-1">
+                                    Ảnh gắn biển
+                                    {activePlate.installedAt
+                                      ? ` • ${new Date(activePlate.installedAt).toLocaleString('vi-VN')}`
+                                      : ''}
+                                  </p>
+                                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                                  <img
+                                    src={`${apiUrl}${activePlate.installPhotoUrl}`}
+                                    alt="Ảnh gắn biển số nhà"
+                                    className="w-full max-h-48 object-cover rounded-lg border border-line"
+                                  />
+                                </a>
+                              )}
                               {!!user && activePlate.status === PlateStatus.ISSUED && (
                                 <button
                                   onClick={() => handleInstallPlate(activePlate.id)}

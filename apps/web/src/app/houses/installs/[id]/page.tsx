@@ -23,7 +23,7 @@ import {
   PlateStatus,
 } from '@tayninh/shared';
 import { useAuth } from '@/lib/auth-context';
-import { ApiError } from '@/lib/api';
+import { ApiError, getApiUrl } from '@/lib/api';
 import { installAssignmentsApi, installCampaignsApi, installZonesApi } from '@/lib/installs-api';
 import { campaignsApi as surveyCampaignsApi } from '@/lib/surveys-api';
 import { wardsApi } from '@/lib/addresses-api';
@@ -970,6 +970,41 @@ export default function InstallCampaignDetailPage() {
                         <div className="h-full rounded-full bg-brand-gradient" style={{ width: `${pct}%` }} />
                       </div>
                     </div>
+
+                    {(() => {
+                      const shots = (platesByAssignment[a.id] ?? []).filter((p) => !!p.installPhotoUrl);
+                      if (shots.length === 0) return null;
+                      return (
+                        <details className="text-[11px]">
+                          <summary className="font-semibold text-fg-muted hover:text-accent cursor-pointer select-none">
+                            Ảnh đã gắn ({shots.length})
+                          </summary>
+                          <div className="mt-2 grid grid-cols-3 sm:grid-cols-4 gap-2">
+                            {shots.map((p) => (
+                              <a
+                                key={p.id}
+                                href={`${getApiUrl()}${p.installPhotoUrl}`}
+                                target="_blank"
+                                rel="noreferrer"
+                                title={`Số ${p.house.houseNumber} ${p.house.street}`}
+                                className="block rounded-lg overflow-hidden border border-line hover:border-accent/50"
+                              >
+                                {/* eslint-disable-next-line @next/next/no-img-element */}
+                                <img
+                                  src={`${getApiUrl()}${p.installPhotoUrl}`}
+                                  alt={`Ảnh gắn biển số ${p.house.houseNumber} ${p.house.street}`}
+                                  className="w-full h-20 object-cover"
+                                  loading="lazy"
+                                />
+                                <span className="block px-1.5 py-1 truncate text-[10px] text-fg-muted">
+                                  Số {p.house.houseNumber} {p.house.street}
+                                </span>
+                              </a>
+                            ))}
+                          </div>
+                        </details>
+                      );
+                    })()}
 
                     <button
                       onClick={() => toggleTimeline(a.id)}
