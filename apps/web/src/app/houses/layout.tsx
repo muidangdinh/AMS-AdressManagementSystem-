@@ -267,6 +267,39 @@ export default function HousesLayout({ children }: { children: React.ReactNode }
     };
   }, [navOpen]);
 
+  // Mỗi phân hệ (mục menu) chỉ hiện khi tài khoản có ÍT NHẤT MỘT quyền thuộc phân hệ đó; tắt hết quyền của
+  // phân hệ thì ẩn, mở lại quyền thì hiện lại. "Tổng quan" không có nhóm quyền riêng nên luôn hiện.
+  const canSeeHouses = [
+    PERMISSIONS.HOUSE_CREATE,
+    PERMISSIONS.HOUSE_UPDATE,
+    PERMISSIONS.HOUSE_RESURVEY,
+    PERMISSIONS.HOUSE_PHOTO_ADD,
+    PERMISSIONS.HOUSE_PHOTO_DELETE,
+    PERMISSIONS.PLATE_ISSUE,
+    PERMISSIONS.PLATE_INSTALL,
+    PERMISSIONS.PLATE_REVOKE,
+  ].some((c) => hasPermission(c));
+  const canSeeCases = hasPermission(PERMISSIONS.CASE_MANAGE);
+  const canSeeSurveys = [PERMISSIONS.SURVEY_MANAGE, PERMISSIONS.ASSIGNMENT_EXECUTE, PERMISSIONS.ASSIGNMENT_REVIEW].some((c) =>
+    hasPermission(c),
+  );
+  const canSeeInstalls = [PERMISSIONS.INSTALL_MANAGE, PERMISSIONS.INSTALL_EXECUTE, PERMISSIONS.INSTALL_REVIEW].some((c) =>
+    hasPermission(c),
+  );
+  const canSeeNumbering = hasPermission(PERMISSIONS.SCHEME_MANAGE) || hasPermission(PERMISSIONS.SCHEME_APPROVE);
+
+  // Chặn gõ thẳng địa chỉ trang của phân hệ không có quyền → đưa về Tổng quan (chỉ ở giao diện web).
+  useEffect(() => {
+    if (isLoading || !user) return;
+    const blocked =
+      (pathname === '/houses' && !canSeeHouses) ||
+      (pathname.startsWith('/houses/cases') && !canSeeCases) ||
+      (pathname.startsWith('/houses/surveys') && !canSeeSurveys) ||
+      (pathname.startsWith('/houses/installs') && !canSeeInstalls) ||
+      (pathname.startsWith('/houses/numbering') && !canSeeNumbering);
+    if (blocked) router.replace('/houses/dashboard');
+  }, [isLoading, user, pathname, canSeeHouses, canSeeCases, canSeeSurveys, canSeeInstalls, canSeeNumbering, router]);
+
   if (isLoading || !user) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-canvas text-fg-muted text-sm gap-2">
@@ -277,30 +310,37 @@ export default function HousesLayout({ children }: { children: React.ReactNode }
   }
 
   const initial = user.fullName?.trim()?.[0]?.toUpperCase() ?? '?';
-  // Menu Thi công: người quản lý (giao việc) hoặc nghiệm thu mới dùng trang web này; cán bộ thi công làm trên mobile.
-  const canSeeInstalls = hasPermission(PERMISSIONS.INSTALL_MANAGE) || hasPermission(PERMISSIONS.INSTALL_REVIEW);
 
   return (
     <div className="relative h-screen flex flex-col bg-app-shell overflow-hidden print:h-auto print:overflow-visible print:bg-white">
       <header className="print:hidden bg-shell/80 backdrop-blur-md border-b border-line text-fg h-16 px-4 sm:px-6 flex items-center justify-between gap-4 shrink-0 z-20 sticky top-0">
-        <Link
-          href="/houses/dashboard"
-          aria-label="Tây Ninh — Hệ thống Đánh số & Gắn biển số nhà"
-          className="shrink-0 transition-opacity hover:opacity-80"
-        >
-          {/* Logo trắng nền trong suốt nên ăn theo màu thanh nav. Dưới sm chỉ lấy biểu tượng ngôi nhà
-              (khung hẹp cắt bớt phần chữ bên phải); từ sm trở lên hiện cả logo — cùng 1 ảnh, chỉ đổi bề rộng khung. */}
-          <div className="relative h-14 w-12 sm:w-[226px] overflow-hidden">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src="/logo.png"
-              alt="Tây Ninh"
-              width={1600}
-              height={397}
-              className="absolute top-0 -left-[3px] sm:left-0 h-14 w-auto max-w-none invert dark:invert-0"
-            />
+        <div className="flex items-center gap-4 min-w-0">
+          <Link
+            href="/houses/dashboard"
+            aria-label="Tây Ninh — Hệ thống Đánh số & Gắn biển số nhà"
+            className="shrink-0 transition-opacity hover:opacity-80"
+          >
+            {/* Logo trắng nền trong suốt nên ăn theo màu thanh nav. Dưới sm chỉ lấy biểu tượng ngôi nhà
+                (khung hẹp cắt bớt phần chữ bên phải); từ sm trở lên hiện cả logo — cùng 1 ảnh, chỉ đổi bề rộng khung. */}
+            <div className="relative h-14 w-12 sm:w-[129px] overflow-hidden">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src="/logo.png"
+                alt="Tây Ninh"
+                width={914}
+                height={397}
+                className="absolute top-0 -left-[3px] sm:left-0 h-14 w-auto max-w-none invert dark:invert-0"
+              />
+            </div>
+          </Link>
+          {/* Dòng phụ + khẩu hiệu — chữ HTML (trước đây nằm trong ảnh logo); ẩn ở màn hình hẹp cho đỡ chật header. */}
+          <div className="hidden md:block min-w-0 border-l border-line pl-4 leading-tight">
+            <p className="text-[11px] font-bold uppercase tracking-wide text-fg-muted truncate">
+              Hệ thống đánh số &amp; gắn biển số nhà
+            </p>
+            <p className="text-xs italic text-fg-subtle mt-0.5 truncate">“Mỗi ngôi nhà một địa chỉ”</p>
           </div>
-        </Link>
+        </div>
 
         <div className="flex items-center gap-2.5 shrink-0">
           {/* <WardSelector /> */}
@@ -429,21 +469,27 @@ export default function HousesLayout({ children }: { children: React.ReactNode }
                     Tổng quan
                   </NavLink>
                 </NavItem>
-                <NavItem index={1}>
-                  <NavLink href="/houses?view=table" icon="houses" block touch onNavigate={closeNav}>
-                    Hồ sơ nhà
-                  </NavLink>
-                </NavItem>
-                <NavItem index={2}>
-                  <NavLink href="/houses/cases" icon="cases" block touch onNavigate={closeNav}>
-                    Hồ sơ
-                  </NavLink>
-                </NavItem>
-                <NavItem index={3}>
-                  <NavLink href="/houses/surveys" icon="surveys" block touch onNavigate={closeNav}>
-                    Khảo sát
-                  </NavLink>
-                </NavItem>
+                {canSeeHouses && (
+                  <NavItem index={1}>
+                    <NavLink href="/houses?view=table" icon="houses" block touch onNavigate={closeNav}>
+                      Hồ sơ nhà
+                    </NavLink>
+                  </NavItem>
+                )}
+                {canSeeCases && (
+                  <NavItem index={2}>
+                    <NavLink href="/houses/cases" icon="cases" block touch onNavigate={closeNav}>
+                      Hồ sơ
+                    </NavLink>
+                  </NavItem>
+                )}
+                {canSeeSurveys && (
+                  <NavItem index={3}>
+                    <NavLink href="/houses/surveys" icon="surveys" block touch onNavigate={closeNav}>
+                      Khảo sát
+                    </NavLink>
+                  </NavItem>
+                )}
                 {canSeeInstalls && (
                   <NavItem index={4}>
                     <NavLink href="/houses/installs" icon="installs" block touch onNavigate={closeNav}>
@@ -451,11 +497,13 @@ export default function HousesLayout({ children }: { children: React.ReactNode }
                     </NavLink>
                   </NavItem>
                 )}
-                <NavItem index={4}>
-                  <NavLink href="/houses/numbering" icon="numbering" block touch onNavigate={closeNav}>
-                    Đánh số
-                  </NavLink>
-                </NavItem>
+                {canSeeNumbering && (
+                  <NavItem index={4}>
+                    <NavLink href="/houses/numbering" icon="numbering" block touch onNavigate={closeNav}>
+                      Đánh số
+                    </NavLink>
+                  </NavItem>
+                )}
                 {hasPermission(PERMISSIONS.ADDRESS_WRITE) && (
                   <NavItem index={5}>
                     <NavLink href="/houses/usage-statuses" icon="usage" block touch onNavigate={closeNav}>
@@ -484,9 +532,11 @@ export default function HousesLayout({ children }: { children: React.ReactNode }
                     </NavLink>
                   </NavItem>
                 )}
-                <NavItem index={8}>
-                  <LocateButton block touch onNavigate={closeNav} />
-                </NavItem>
+                {canSeeHouses && (
+                  <NavItem index={8}>
+                    <LocateButton block touch onNavigate={closeNav} />
+                  </NavItem>
+                )}
               </div>
             </nav>
           </div>
@@ -500,29 +550,37 @@ export default function HousesLayout({ children }: { children: React.ReactNode }
           <NavLink href="/houses/dashboard" icon="dashboard" block>
             Tổng quan
           </NavLink>
-          <NavLink href="/houses?view=table" icon="houses" block>
-            Hồ sơ nhà
-          </NavLink>
-          <NavLink href="/houses/cases" icon="cases" block>
-            Hồ sơ
-          </NavLink>
-          <NavLink href="/houses/surveys" icon="surveys" block>
-            Khảo sát
-          </NavLink>
+          {canSeeHouses && (
+            <NavLink href="/houses?view=table" icon="houses" block>
+              Hồ sơ nhà
+            </NavLink>
+          )}
+          {canSeeCases && (
+            <NavLink href="/houses/cases" icon="cases" block>
+              Hồ sơ
+            </NavLink>
+          )}
+          {canSeeSurveys && (
+            <NavLink href="/houses/surveys" icon="surveys" block>
+              Khảo sát
+            </NavLink>
+          )}
           {canSeeInstalls && (
             <NavLink href="/houses/installs" icon="installs" block>
               Thi công
             </NavLink>
           )}
-          <NavLink href="/houses/numbering" icon="numbering" block>
-            Đánh số
-          </NavLink>
+          {canSeeNumbering && (
+            <NavLink href="/houses/numbering" icon="numbering" block>
+              Đánh số
+            </NavLink>
+          )}
           {hasPermission(PERMISSIONS.ADDRESS_WRITE) && (
             <NavLink href="/houses/usage-statuses" icon="usage" block>
               Hiện trạng nhà
             </NavLink>
           )}
-          <LocateButton block />
+          {canSeeHouses && <LocateButton block />}
           {hasPermission(PERMISSIONS.ADDRESS_WRITE) && (
             <>
               <NavGroup label="Danh mục" />

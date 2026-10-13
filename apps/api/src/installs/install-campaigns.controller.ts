@@ -14,13 +14,13 @@ export class InstallCampaignsController {
   constructor(private readonly service: InstallCampaignsService) {}
 
   @Get()
-  findAll(@Query() query: ListInstallCampaignsQueryDto) {
-    return this.service.findAll(query);
+  findAll(@Query() query: ListInstallCampaignsQueryDto, @CurrentUser() user: AuthenticatedUser) {
+    return this.service.findAll(query, user);
   }
 
   @Get(':id')
-  findOne(@Param('id') id: string) {
-    return this.service.findOne(id);
+  findOne(@Param('id') id: string, @CurrentUser() user: AuthenticatedUser) {
+    return this.service.findOne(id, user);
   }
 
   @RequirePermissions(PERMISSIONS.INSTALL_MANAGE)

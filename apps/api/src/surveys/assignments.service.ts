@@ -15,6 +15,8 @@ import { UpdateAssignmentDto } from './dto/update-assignment.dto';
 import { ListAssignmentsQueryDto } from './dto/list-assignments-query.dto';
 import { RequestRevisitDto } from './dto/request-revisit.dto';
 import { ReportIssueDto } from './dto/report-issue.dto';
+import { isSurveyRestricted } from './survey-scope';
+import type { AuthenticatedUser } from '../auth/types/authenticated-user';
 
 const ACTOR_SELECT = { select: { id: true, fullName: true, username: true } };
 
@@ -203,11 +205,13 @@ export class AssignmentsService {
     });
   }
 
-  async findAll(query: ListAssignmentsQueryDto, currentUserId: string) {
+  async findAll(query: ListAssignmentsQueryDto, currentUserId: string, user?: AuthenticatedUser) {
+    // Cán bộ khảo sát chỉ xem nhiệm vụ của chính mình, bất kể tham số `assigneeId` gửi lên.
+    const onlyMine = query.mine === 'true' || isSurveyRestricted(user);
     const where: Prisma.SurveyAssignmentWhereInput = {
       zoneId: query.zoneId,
       status: query.status,
-      assigneeId: query.mine === 'true' ? currentUserId : query.assigneeId,
+      assigneeId: onlyMine ? currentUserId : query.assigneeId,
       ...(query.campaignId && { zone: { campaignId: query.campaignId } }),
     };
     const rows = await this.prisma.surveyAssignment.findMany({
@@ -218,12 +222,14 @@ export class AssignmentsService {
     return this.withRevisitPending(rows);
   }
 
-  async findOne(id: string) {
+  async findOne(id: string, user?: AuthenticatedUser) {
     const assignment = await this.prisma.surveyAssignment.findUnique({
       where: { id },
       include: ASSIGNMENT_DETAIL_INCLUDE,
     });
-    if (!assignment) throw new NotFoundException('Không tìm thấy nhiệm vụ khảo sát');
+    if (!assignment || (isSurveyRestricted(user) && assignment.assigneeId !== user!.id)) {
+      throw new NotFoundException('Không tìm thấy nhiệm vụ khảo sát');
+    }
     const [withPending] = await this.withRevisitPending([assignment]);
     return withPending;
   }

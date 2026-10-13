@@ -1,6 +1,8 @@
 import { Body, Controller, Delete, Get, Param, Patch, Post, Query } from '@nestjs/common';
 import { RequirePermissions } from '../auth/decorators/permissions.decorator';
 import { PERMISSIONS } from '../auth/permissions';
+import { CurrentUser } from '../auth/decorators/current-user.decorator';
+import { AuthenticatedUser } from '../auth/types/authenticated-user';
 import { ZonesService } from './zones.service';
 import { CreateZoneDto } from './dto/create-zone.dto';
 import { UpdateZoneDto } from './dto/update-zone.dto';
@@ -12,13 +14,13 @@ export class ZonesController {
   constructor(private readonly zonesService: ZonesService) {}
 
   @Get()
-  findAll(@Query() query: ListZonesQueryDto) {
-    return this.zonesService.findAll(query);
+  findAll(@Query() query: ListZonesQueryDto, @CurrentUser() user: AuthenticatedUser) {
+    return this.zonesService.findAll(query, user);
   }
 
   @Get(':id')
-  findOne(@Param('id') id: string) {
-    return this.zonesService.findOne(id);
+  findOne(@Param('id') id: string, @CurrentUser() user: AuthenticatedUser) {
+    return this.zonesService.findOne(id, user);
   }
 
   @RequirePermissions(PERMISSIONS.SURVEY_MANAGE)

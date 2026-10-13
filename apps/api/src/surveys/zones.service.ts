@@ -4,6 +4,8 @@ import { PrismaService } from '../prisma/prisma.service';
 import { CreateZoneDto } from './dto/create-zone.dto';
 import { UpdateZoneDto } from './dto/update-zone.dto';
 import { ListZonesQueryDto } from './dto/list-zones-query.dto';
+import { isSurveyRestricted } from './survey-scope';
+import type { AuthenticatedUser } from '../auth/types/authenticated-user';
 
 const ZONE_INCLUDE = {
   ward: { select: { id: true, name: true } },
@@ -15,20 +17,28 @@ const ZONE_INCLUDE = {
 export class ZonesService {
   constructor(private readonly prisma: PrismaService) {}
 
-  findAll(query: ListZonesQueryDto) {
+  findAll(query: ListZonesQueryDto, user?: AuthenticatedUser) {
     return this.prisma.surveyZone.findMany({
-      where: { campaignId: query.campaignId, wardId: query.wardId },
+      where: {
+        campaignId: query.campaignId,
+        wardId: query.wardId,
+        ...(isSurveyRestricted(user) && { assignments: { some: { assigneeId: user!.id } } }),
+      },
       include: ZONE_INCLUDE,
       orderBy: { createdAt: 'desc' },
     });
   }
 
-  async findOne(id: string) {
+  async findOne(id: string, user?: AuthenticatedUser) {
     const zone = await this.prisma.surveyZone.findUnique({
       where: { id },
       include: ZONE_INCLUDE,
     });
     if (!zone) throw new NotFoundException('Không tìm thấy phân vùng khảo sát');
+    if (isSurveyRestricted(user)) {
+      const mine = await this.prisma.surveyAssignment.count({ where: { zoneId: id, assigneeId: user!.id } });
+      if (mine === 0) throw new NotFoundException('Không tìm thấy phân vùng khảo sát');
+    }
     return zone;
   }
 

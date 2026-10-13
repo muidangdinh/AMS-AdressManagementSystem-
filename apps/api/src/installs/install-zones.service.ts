@@ -2,6 +2,8 @@ import { ConflictException, Injectable, NotFoundException } from '@nestjs/common
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateInstallZoneDto } from './dto/create-zone.dto';
 import { UpdateInstallZoneDto } from './dto/update-zone.dto';
+import { isInstallRestricted } from './install-scope';
+import type { AuthenticatedUser } from '../auth/types/authenticated-user';
 
 const ZONE_INCLUDE = {
   ward: { select: { id: true, name: true } },
@@ -13,9 +15,12 @@ const ZONE_INCLUDE = {
 export class InstallZonesService {
   constructor(private readonly prisma: PrismaService) {}
 
-  findAll(campaignId?: string) {
+  findAll(campaignId?: string, user?: AuthenticatedUser) {
     return this.prisma.installZone.findMany({
-      where: { campaignId },
+      where: {
+        campaignId,
+        ...(isInstallRestricted(user) && { assignments: { some: { assigneeId: user!.id } } }),
+      },
       include: ZONE_INCLUDE,
       orderBy: { createdAt: 'desc' },
     });

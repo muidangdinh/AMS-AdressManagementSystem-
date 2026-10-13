@@ -5,14 +5,22 @@ import { throwIfUniqueConflict } from '../addresses/address-conflict.util';
 import { CreateCampaignDto } from './dto/create-campaign.dto';
 import { UpdateCampaignDto } from './dto/update-campaign.dto';
 import { ListCampaignsQueryDto } from './dto/list-campaigns-query.dto';
+import { isSurveyRestricted } from './survey-scope';
+import type { AuthenticatedUser } from '../auth/types/authenticated-user';
 
 @Injectable()
 export class CampaignsService {
   constructor(private readonly prisma: PrismaService) {}
 
-  findAll(query: ListCampaignsQueryDto) {
+  findAll(query: ListCampaignsQueryDto, user?: AuthenticatedUser) {
     return this.prisma.surveyCampaign.findMany({
-      where: { status: query.status },
+      where: {
+        status: query.status,
+        // Cán bộ khảo sát chỉ thấy đợt có nhiệm vụ giao cho mình.
+        ...(isSurveyRestricted(user) && {
+          zones: { some: { assignments: { some: { assigneeId: user!.id } } } },
+        }),
+      },
       include: {
         createdBy: { select: { id: true, fullName: true, username: true } },
         _count: { select: { zones: true } },
@@ -21,7 +29,8 @@ export class CampaignsService {
     });
   }
 
-  async findOne(id: string) {
+  async findOne(id: string, user?: AuthenticatedUser) {
+    const restricted = isSurveyRestricted(user);
     const campaign = await this.prisma.surveyCampaign.findUnique({
       where: { id },
       include: {
@@ -29,8 +38,13 @@ export class CampaignsService {
         zones: {
           include: {
             ward: { select: { id: true, name: true } },
-            routes: { include: ROUTE_INCLUDE, orderBy: { createdAt: 'asc' } },
+            routes: {
+              where: restricted ? { assignments: { some: { assigneeId: user!.id } } } : undefined,
+              include: ROUTE_INCLUDE,
+              orderBy: { createdAt: 'asc' },
+            },
             assignments: {
+              where: restricted ? { assigneeId: user!.id } : undefined,
               include: {
                 assignee: { select: { id: true, fullName: true, username: true } },
                 _count: { select: { houses: true } },
@@ -43,6 +57,11 @@ export class CampaignsService {
       },
     });
     if (!campaign) throw new NotFoundException('Không tìm thấy đợt khảo sát');
+    // Không có nhiệm vụ nào của mình trong đợt → coi như không tồn tại (không lộ đợt của người khác).
+    if (restricted && !campaign.zones.some((z) => z.assignments.length > 0)) {
+      throw new NotFoundException('Không tìm thấy đợt khảo sát');
+    }
+    if (restricted) campaign.zones = campaign.zones.filter((z) => z.assignments.length > 0);
     // Phase 11 Đợt 2b — gắn `revisitPending` (số nhà còn cờ khảo sát lại) cho từng nhiệm vụ lồng bằng ĐÚNG 1 truy vấn nhóm.
     const assignmentIds = campaign.zones.flatMap((z) => z.assignments.map((a) => a.id));
     const groups = assignmentIds.length

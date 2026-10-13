@@ -14,8 +14,8 @@ export class RoutesController {
   constructor(private readonly routesService: RoutesService) {}
 
   @Get()
-  findAll(@Query() query: ListRoutesQueryDto) {
-    return this.routesService.findAll(query);
+  findAll(@Query() query: ListRoutesQueryDto, @CurrentUser() user: AuthenticatedUser) {
+    return this.routesService.findAll(query, user);
   }
 
   @RequirePermissions(PERMISSIONS.SURVEY_MANAGE)

@@ -14,13 +14,13 @@ export class CampaignsController {
   constructor(private readonly campaignsService: CampaignsService) {}
 
   @Get()
-  findAll(@Query() query: ListCampaignsQueryDto) {
-    return this.campaignsService.findAll(query);
+  findAll(@Query() query: ListCampaignsQueryDto, @CurrentUser() user: AuthenticatedUser) {
+    return this.campaignsService.findAll(query, user);
   }
 
   @Get(':id')
-  findOne(@Param('id') id: string) {
-    return this.campaignsService.findOne(id);
+  findOne(@Param('id') id: string, @CurrentUser() user: AuthenticatedUser) {
+    return this.campaignsService.findOne(id, user);
   }
 
   @RequirePermissions(PERMISSIONS.SURVEY_MANAGE)

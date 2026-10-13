@@ -1,6 +1,8 @@
 import { Body, Controller, Delete, Get, HttpCode, Param, Patch, Post, Query } from '@nestjs/common';
 import { RequirePermissions } from '../auth/decorators/permissions.decorator';
 import { PERMISSIONS } from '../auth/permissions';
+import { CurrentUser } from '../auth/decorators/current-user.decorator';
+import { AuthenticatedUser } from '../auth/types/authenticated-user';
 import { InstallZonesService } from './install-zones.service';
 import { CreateInstallZoneDto } from './dto/create-zone.dto';
 import { UpdateInstallZoneDto } from './dto/update-zone.dto';
@@ -10,8 +12,8 @@ export class InstallZonesController {
   constructor(private readonly service: InstallZonesService) {}
 
   @Get()
-  findAll(@Query('campaignId') campaignId?: string) {
-    return this.service.findAll(campaignId);
+  findAll(@CurrentUser() user: AuthenticatedUser, @Query('campaignId') campaignId?: string) {
+    return this.service.findAll(campaignId, user);
   }
 
   @RequirePermissions(PERMISSIONS.INSTALL_MANAGE)

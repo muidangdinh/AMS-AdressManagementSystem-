@@ -21,7 +21,7 @@ export class InstallAssignmentsController {
 
   @Get()
   findAll(@Query() query: ListInstallAssignmentsQueryDto, @CurrentUser() user: AuthenticatedUser) {
-    return this.service.findAll(query, user.id);
+    return this.service.findAll(query, user.id, user);
   }
 
   /** Danh sách cán bộ thi công để chọn khi giao việc (đặt trước `:id` để không bị bắt nhầm). */
@@ -32,13 +32,13 @@ export class InstallAssignmentsController {
   }
 
   @Get(':id')
-  findOne(@Param('id') id: string) {
-    return this.service.findOne(id);
+  findOne(@Param('id') id: string, @CurrentUser() user: AuthenticatedUser) {
+    return this.service.findOne(id, user);
   }
 
   @Get(':id/plates')
-  listPlates(@Param('id') id: string) {
-    return this.service.listPlates(id);
+  listPlates(@Param('id') id: string, @CurrentUser() user: AuthenticatedUser) {
+    return this.service.listPlates(id, user);
   }
 
   @RequirePermissions(PERMISSIONS.INSTALL_MANAGE)

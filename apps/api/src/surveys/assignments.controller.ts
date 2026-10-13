@@ -23,7 +23,7 @@ export class AssignmentsController {
 
   @Get()
   findAll(@Query() query: ListAssignmentsQueryDto, @CurrentUser() user: AuthenticatedUser) {
-    return this.assignmentsService.findAll(query, user.id);
+    return this.assignmentsService.findAll(query, user.id, user);
   }
 
   /** Đặt trước ':id' — không thì Nest khớp "surveyors" vào tham số :id. */
@@ -34,8 +34,8 @@ export class AssignmentsController {
   }
 
   @Get(':id')
-  findOne(@Param('id') id: string) {
-    return this.assignmentsService.findOne(id);
+  findOne(@Param('id') id: string, @CurrentUser() user: AuthenticatedUser) {
+    return this.assignmentsService.findOne(id, user);
   }
 
   /** Phase 11 Đợt 2b — nhà của nhiệm vụ; `?revisit=true` = chỉ nhà còn cờ khảo sát lại. SURVEYOR chỉ xem nhiệm vụ của mình. */

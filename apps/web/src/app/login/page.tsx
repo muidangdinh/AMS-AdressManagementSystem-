@@ -44,6 +44,7 @@ export default function LoginPage() {
           </div>
           <h1 className="text-lg font-bold text-fg">Tây Ninh</h1>
           <p className="text-xs text-fg-muted mt-1">Hệ thống Đánh số &amp; Gắn biển số nhà</p>
+          <p className="text-xs italic text-fg-subtle mt-1">“Mỗi ngôi nhà một địa chỉ”</p>
         </div>
 
         <form onSubmit={handleSubmit} className="px-7 pb-8 space-y-4">

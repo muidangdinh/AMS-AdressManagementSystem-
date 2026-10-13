@@ -16,6 +16,8 @@ import { ListInstallAssignmentsQueryDto } from './dto/list-assignments-query.dto
 import { RequestInstallRevisitDto } from './dto/request-revisit.dto';
 import { distanceToPathM } from './geo.util';
 import { plateStatsFor, statsOrEmpty } from './install-stats';
+import { isInstallRestricted } from './install-scope';
+import type { AuthenticatedUser } from '../auth/types/authenticated-user';
 
 const ACTOR_SELECT = { select: { id: true, fullName: true, username: true } };
 
@@ -214,12 +216,14 @@ export class InstallAssignmentsService {
     return user;
   }
 
-  async findAll(query: ListInstallAssignmentsQueryDto, currentUserId: string) {
+  async findAll(query: ListInstallAssignmentsQueryDto, currentUserId: string, user?: AuthenticatedUser) {
+    // Cán bộ thi công chỉ xem nhiệm vụ của chính mình, bất kể tham số `assigneeId` gửi lên.
+    const onlyMine = query.mine === 'true' || isInstallRestricted(user);
     const rows = await this.prisma.installAssignment.findMany({
       where: {
         zoneId: query.zoneId,
         status: query.status,
-        assigneeId: query.mine === 'true' ? currentUserId : query.assigneeId,
+        assigneeId: onlyMine ? currentUserId : query.assigneeId,
         ...(query.campaignId && { zone: { campaignId: query.campaignId } }),
       },
       include: ASSIGNMENT_BASE_INCLUDE,
@@ -230,19 +234,24 @@ export class InstallAssignmentsService {
   }
 
   /** Chi tiết kèm dòng thời gian và thống kê biển. */
-  async findOne(id: string) {
+  async findOne(id: string, user?: AuthenticatedUser) {
     const a = await this.prisma.installAssignment.findUnique({
       where: { id },
       include: ASSIGNMENT_DETAIL_INCLUDE,
     });
-    if (!a) throw new NotFoundException('Không tìm thấy nhiệm vụ thi công');
+    if (!a || (isInstallRestricted(user) && a.assigneeId !== user!.id)) {
+      throw new NotFoundException('Không tìm thấy nhiệm vụ thi công');
+    }
     const stats = await plateStatsFor(this.prisma, [id]);
     return { ...a, stats: statsOrEmpty(stats, id) };
   }
 
   /** Danh sách biển của nhiệm vụ (kèm thông tin nhà) — mobile/web vẽ lên bản đồ và danh sách. */
-  async listPlates(id: string) {
-    await this.findOneOrThrow(id);
+  async listPlates(id: string, user?: AuthenticatedUser) {
+    const owner = await this.findOneOrThrow(id);
+    if (isInstallRestricted(user) && owner.assigneeId !== user!.id) {
+      throw new NotFoundException('Không tìm thấy nhiệm vụ thi công');
+    }
     return this.prisma.housePlate.findMany({
       where: { installAssignmentId: id, status: { not: PlateStatus.REVOKED } },
       include: PLATE_LIST_INCLUDE,

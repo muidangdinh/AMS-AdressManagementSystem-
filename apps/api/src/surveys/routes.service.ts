@@ -4,6 +4,8 @@ import { PrismaService } from '../prisma/prisma.service';
 import { CreateRouteDto } from './dto/create-route.dto';
 import { UpdateRouteDto } from './dto/update-route.dto';
 import { ListRoutesQueryDto } from './dto/list-routes-query.dto';
+import { isSurveyRestricted } from './survey-scope';
+import type { AuthenticatedUser } from '../auth/types/authenticated-user';
 
 export const ROUTE_INCLUDE = {
   street: { select: { id: true, name: true } },
@@ -29,11 +31,13 @@ function isValidPath(path: unknown): path is [number, number][] {
 export class RoutesService {
   constructor(private readonly prisma: PrismaService) {}
 
-  findAll(query: ListRoutesQueryDto) {
+  findAll(query: ListRoutesQueryDto, user?: AuthenticatedUser) {
     return this.prisma.surveyRoute.findMany({
       where: {
         zoneId: query.zoneId,
         zone: query.campaignId ? { campaignId: query.campaignId } : undefined,
+        // Cán bộ khảo sát chỉ thấy tuyến được giao cho mình.
+        ...(isSurveyRestricted(user) && { assignments: { some: { assigneeId: user!.id } } }),
       },
       include: ROUTE_INCLUDE,
       orderBy: { createdAt: 'asc' },

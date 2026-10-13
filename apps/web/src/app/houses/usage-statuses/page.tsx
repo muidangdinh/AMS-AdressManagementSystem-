@@ -89,6 +89,7 @@ export default function UsageStatusesPage() {
 
   return (
     <div className="h-full overflow-auto p-6 bg-app-shell">
+      <div className="max-w-3xl mx-auto w-full">
       <PageHeader
         title="Hiện trạng nhà"
         subtitle="Danh mục hiện trạng sử dụng nhà (Nhà ở, Bỏ trống, Đang xây dựng…). Dùng để chọn trong dropdown ở form khảo sát và hồ sơ số nhà."
@@ -100,7 +101,7 @@ export default function UsageStatusesPage() {
         </div>
       )}
 
-      <div className="max-w-3xl mt-4">
+      <div className="mt-4">
         <form onSubmit={handleAdd} className="glass p-4 mb-4 flex gap-3 items-end flex-wrap">
           <div className="flex-1 min-w-[180px]">
             <label className="block text-xs font-bold text-fg-muted uppercase tracking-wide mb-1">
@@ -176,6 +177,7 @@ export default function UsageStatusesPage() {
             </table>
           )}
         </div>
+      </div>
       </div>
     </div>
   );

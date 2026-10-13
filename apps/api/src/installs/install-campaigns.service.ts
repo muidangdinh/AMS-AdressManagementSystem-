@@ -5,6 +5,8 @@ import { UpdateInstallCampaignDto } from './dto/update-campaign.dto';
 import { ListInstallCampaignsQueryDto } from './dto/list-campaigns-query.dto';
 import { ASSIGNMENT_BASE_INCLUDE } from './install-assignments.service';
 import { plateStatsFor, statsOrEmpty } from './install-stats';
+import { isInstallRestricted } from './install-scope';
+import type { AuthenticatedUser } from '../auth/types/authenticated-user';
 
 const USER_SELECT = { select: { id: true, fullName: true, username: true } };
 
@@ -13,16 +15,23 @@ const USER_SELECT = { select: { id: true, fullName: true, username: true } };
 export class InstallCampaignsService {
   constructor(private readonly prisma: PrismaService) {}
 
-  findAll(query: ListInstallCampaignsQueryDto) {
+  findAll(query: ListInstallCampaignsQueryDto, user?: AuthenticatedUser) {
     return this.prisma.installCampaign.findMany({
-      where: { status: query.status },
+      where: {
+        status: query.status,
+        // Cán bộ thi công chỉ thấy đợt có nhiệm vụ giao cho mình.
+        ...(isInstallRestricted(user) && {
+          zones: { some: { assignments: { some: { assigneeId: user!.id } } } },
+        }),
+      },
       include: { createdBy: USER_SELECT, _count: { select: { zones: true } } },
       orderBy: { createdAt: 'desc' },
     });
   }
 
   /** Chi tiết đợt: phân vùng → nhiệm vụ (kèm thống kê biển). */
-  async findOne(id: string) {
+  async findOne(id: string, user?: AuthenticatedUser) {
+    const restricted = isInstallRestricted(user);
     const campaign = await this.prisma.installCampaign.findUnique({
       where: { id },
       include: {
@@ -30,13 +39,22 @@ export class InstallCampaignsService {
         zones: {
           include: {
             ward: { select: { id: true, name: true } },
-            assignments: { include: ASSIGNMENT_BASE_INCLUDE, orderBy: { createdAt: 'desc' } },
+            assignments: {
+              where: restricted ? { assigneeId: user!.id } : undefined,
+              include: ASSIGNMENT_BASE_INCLUDE,
+              orderBy: { createdAt: 'desc' },
+            },
           },
           orderBy: { createdAt: 'asc' },
         },
       },
     });
     if (!campaign) throw new NotFoundException('Không tìm thấy đợt thi công');
+    // Không có nhiệm vụ nào của mình trong đợt → coi như không tồn tại (không lộ đợt của người khác).
+    if (restricted && !campaign.zones.some((z) => z.assignments.length > 0)) {
+      throw new NotFoundException('Không tìm thấy đợt thi công');
+    }
+    if (restricted) campaign.zones = campaign.zones.filter((z) => z.assignments.length > 0);
 
     const ids = campaign.zones.flatMap((z) => z.assignments.map((a) => a.id));
     const stats = await plateStatsFor(this.prisma, ids);

@@ -247,6 +247,7 @@ export default function AddressesAdminPage() {
 
   return (
     <div className="h-full overflow-auto p-6 bg-app-shell">
+      <div className="max-w-3xl mx-auto w-full">
       <PageHeader
         title="Danh mục địa chỉ"
         subtitle="Quận/huyện → Xã/phường → Thôn/ấp/Tổ dân phố, và Đường/phố → Hẻm/ngõ. Dùng để chọn trong dropdown khi tạo/sửa hồ sơ số nhà."
@@ -275,7 +276,7 @@ export default function AddressesAdminPage() {
           <ButtonSpinner /> Đang tải…
         </div>
       ) : (
-        <div className="max-w-3xl">
+        <div>
           {tab === 'district' && (
             <>
               <form
@@ -529,6 +530,7 @@ export default function AddressesAdminPage() {
           )}
         </div>
       )}
+      </div>
     </div>
   );
 }
