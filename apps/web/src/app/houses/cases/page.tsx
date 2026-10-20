@@ -159,7 +159,7 @@ export default function CasesPage() {
         <div className="bg-danger/10 border border-danger/30 text-danger rounded-xl p-3 text-sm">{error}</div>
       )}
 
-      <div className="glass overflow-hidden">
+      <div className="glass overflow-x-auto">
         <table className="w-full text-sm">
           <thead className="bg-surface-2 text-fg-muted text-xs uppercase">
             <tr>
@@ -206,7 +206,7 @@ export default function CasesPage() {
                   <td className="px-4 py-3 text-xs">{CASE_REQUEST_TYPE_LABELS[c.requestType]}</td>
                   <td className="px-4 py-3">
                     <span
-                      className={`px-2 py-0.5 rounded text-[11px] font-bold border ${STATUS_BADGE[c.status]}`}
+                      className={`inline-block px-2 py-0.5 rounded text-[11px] font-bold border ${STATUS_BADGE[c.status]}`}
                     >
                       {CASE_STATUS_LABELS[c.status]}
                     </span>

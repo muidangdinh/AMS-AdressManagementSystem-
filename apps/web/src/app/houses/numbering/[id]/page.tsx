@@ -397,7 +397,7 @@ export default function NumberingSchemeDetailPage() {
       )}
 
       {/* Danh sách nhà trong phương án */}
-      <div className="glass overflow-hidden">
+      <div className="glass overflow-x-auto">
         <div className="px-4 py-3 border-b border-line flex items-center justify-between">
           <h3 className="font-bold text-sm text-fg">Danh sách nhà ({items.length})</h3>
           {canEdit && (

@@ -974,7 +974,7 @@ export default function HousesPage() {
 
       {/* Thanh thống kê dashboard (Phase 5 — IX) — ở chế độ Bản đồ có thể thu gọn cùng thanh bộ lọc. */}
       {stats && !topBarCollapsed && (
-        <div className="px-6 pt-3 flex flex-wrap gap-2 shrink-0">
+        <div className="px-3 sm:px-6 pt-3 flex flex-wrap gap-2 shrink-0">
           <KpiPill tone="accent" label="Tổng số nhà" value={stats.total} />
           <KpiPill tone="ok" label="Đã cấp biển/QR" value={stats.approved} />
           <KpiPill tone="warn" label="Chờ duyệt" value={stats.pending} />
@@ -1107,13 +1107,13 @@ export default function HousesPage() {
 
       {viewMode === 'table' ? (
       /* Bảng danh sách */
-      <div className="flex-1 overflow-auto px-3 sm:px-6 py-4">
+      <div className="flex-1 min-h-0 px-3 sm:px-6 py-4 flex flex-col">
         {listError && (
-          <div className="bg-danger/10 border border-danger/30 text-danger rounded-lg p-3 text-sm mb-4">
+          <div className="bg-danger/10 border border-danger/30 text-danger rounded-lg p-3 text-sm mb-4 shrink-0">
             {listError}
           </div>
         )}
-        <div className="glass overflow-hidden">
+        <div className="glass overflow-auto flex-1 min-h-0">
           <table className="w-full text-sm">
             <thead className="bg-surface-2/60 text-fg-subtle text-[11px] uppercase tracking-wider">
               <tr>
@@ -1177,12 +1177,12 @@ export default function HousesPage() {
                     </td>
                     <td className="px-4 py-3">
                       <span
-                        className={`inline-flex px-2 py-0.5 rounded-full text-[11px] font-bold border ${STATUS_BADGE[house.status]}`}
+                        className={`inline-block px-2 py-0.5 rounded text-[11px] font-bold border ${STATUS_BADGE[house.status]}`}
                       >
                         {HOUSE_STATUS_LABELS[house.status]}
                       </span>
                       <span
-                        className={`block mt-1 px-2 py-0.5 rounded-full text-[10px] font-bold border w-fit ${REVIEW_STAGE_BADGE[house.reviewStage]}`}
+                        className={`block mt-1 px-2 py-0.5 rounded text-[10px] font-bold border w-fit ${REVIEW_STAGE_BADGE[house.reviewStage]}`}
                       >
                         {HOUSE_REVIEW_STAGE_LABELS[house.reviewStage]}
                       </span>
@@ -1197,7 +1197,7 @@ export default function HousesPage() {
         </div>
 
         {data && data.total > 0 && (
-          <div className="flex items-center justify-between mt-4 text-sm text-fg-muted">
+          <div className="flex items-center justify-between mt-4 text-sm text-fg-muted shrink-0">
             <span>
               Tổng {data.total} hồ sơ — Trang {data.page}/{totalPages}
             </span>

@@ -753,15 +753,34 @@ export default function InstallCampaignDetailPage() {
           </form>
         )}
 
-        <div className={`h-[460px] relative mt-3 border-t border-line ${draggingInstaller ? 'ring-2 ring-inset ring-accent' : ''}`}>
-          {routes.length === 0 && (
-            <p className="absolute z-[600] top-3 left-3 right-3 text-xs bg-surface/90 border border-line rounded-lg px-3 py-2 text-fg-muted">
-              Chọn đợt khảo sát có tuyến đường để giao theo tuyến. Biển cần gắn vẫn hiện trên bản đồ.
-            </p>
-          )}
-          {/* Danh sách tuyến của đợt khảo sát đã chọn: bấm tuyến → bản đồ bay tới tuyến đó; giao việc ngay tại đây. */}
+        <div className="relative mt-3 border-t border-line">
+          <div className={`h-[460px] relative ${draggingInstaller ? 'ring-2 ring-inset ring-accent' : ''}`}>
+            {routes.length === 0 && (
+              <p className="absolute z-[600] top-3 left-3 right-3 text-xs bg-surface/90 border border-line rounded-lg px-3 py-2 text-fg-muted">
+                Chọn đợt khảo sát có tuyến đường để giao theo tuyến. Biển cần gắn vẫn hiện trên bản đồ.
+              </p>
+            )}
+            <RoutePickerMap
+              routes={routes}
+              routeColors={routeColors}
+              mutedRouteIds={mutedRouteIds}
+              onDropAssignee={canManage ? assignRoute : undefined}
+              drawing={false}
+              draft={EMPTY_DRAFT}
+              onDraftChange={NOOP}
+              selectedRouteId={selectedRouteId}
+              onSelectRoute={(id) => {
+                setSelectedRouteId(id);
+                setFocusNonce(Date.now());
+              }}
+              focusNonce={focusNonce}
+              dots={dots}
+            />
+          </div>
+          {/* Danh sách tuyến của đợt khảo sát đã chọn: bấm tuyến → bản đồ bay tới tuyến đó; giao việc ngay tại đây.
+              Màn hình hẹp đứng dưới bản đồ (giống SurveyRoutesPanel); từ lg trở lên overlay bên phải. */}
           {routeGroups.length > 0 && (
-            <div className="absolute z-[600] top-14 right-3 bottom-3 w-72 sm:w-80 max-w-[85%] glass !bg-surface/85 overflow-auto">
+            <div className="border-t border-line max-h-[360px] overflow-auto lg:absolute lg:z-[600] lg:top-14 lg:right-3 lg:bottom-3 lg:w-80 lg:max-h-none lg:border-t-0 lg:glass lg:!bg-surface/80">
               {routeGroups.map((g) => (
                 <div key={g.id}>
                   <p className="sticky top-0 z-[1] bg-surface/90 backdrop-blur px-4 pt-3 pb-1 text-[11px] font-bold uppercase text-fg-muted">
@@ -826,22 +845,6 @@ export default function InstallCampaignDetailPage() {
               ))}
             </div>
           )}
-          <RoutePickerMap
-            routes={routes}
-            routeColors={routeColors}
-            mutedRouteIds={mutedRouteIds}
-            onDropAssignee={canManage ? assignRoute : undefined}
-            drawing={false}
-            draft={EMPTY_DRAFT}
-            onDraftChange={NOOP}
-            selectedRouteId={selectedRouteId}
-            onSelectRoute={(id) => {
-              setSelectedRouteId(id);
-              setFocusNonce(Date.now());
-            }}
-            focusNonce={focusNonce}
-            dots={dots}
-          />
         </div>
       </div>
 

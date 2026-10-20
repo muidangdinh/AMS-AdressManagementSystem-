@@ -50,7 +50,7 @@ export default function AccountPage() {
   if (!user) return null;
 
   return (
-    <div className="h-full overflow-auto p-6 space-y-4 max-w-lg">
+    <div className="h-full overflow-auto p-6 space-y-4 max-w-lg mx-auto">
       <PageHeader title="Tài khoản" subtitle="Thông tin tài khoản đang đăng nhập" />
 
       <div className="glass p-5 space-y-3 text-sm">

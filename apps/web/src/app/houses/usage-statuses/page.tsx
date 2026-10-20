@@ -134,7 +134,7 @@ export default function UsageStatusesPage() {
         </form>
         {formError && <p className="text-danger text-sm mb-3">{formError}</p>}
 
-        <div className="glass overflow-hidden">
+        <div className="glass overflow-x-auto">
           {loading ? (
             <div className="flex items-center justify-center gap-2 text-fg-subtle text-sm py-10">
               <ButtonSpinner /> Đang tải…

@@ -172,7 +172,7 @@ export default function NumberingSchemesPage() {
         </div>
       )}
 
-      <div className="glass overflow-hidden">
+      <div className="glass overflow-x-auto">
         {loading ? (
           <p className="p-6 text-sm text-fg-subtle">Đang tải…</p>
         ) : schemes.length === 0 ? (

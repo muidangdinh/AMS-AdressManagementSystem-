@@ -268,7 +268,9 @@ export default function AddressesAdminPage() {
       )}
 
       <div className="mt-4 mb-4 flex flex-wrap">
-        <SegmentedControl value={tab} onChange={setTab} options={TABS.map((t) => ({ value: t.key, label: t.label }))} />
+        <div className="max-w-full overflow-x-auto">
+          <SegmentedControl value={tab} onChange={setTab} options={TABS.map((t) => ({ value: t.key, label: t.label }))} />
+        </div>
       </div>
 
       {loading ? (
@@ -281,9 +283,9 @@ export default function AddressesAdminPage() {
             <>
               <form
                 onSubmit={handleAddDistrict}
-                className="glass p-4 mb-4 flex gap-3 items-end"
+                className="glass p-4 mb-4 flex gap-3 items-end flex-wrap"
               >
-                <div className="flex-1">
+                <div className="flex-1 min-w-[180px]">
                   <label className="block text-xs font-bold text-fg-muted uppercase tracking-wide mb-1">
                     Tên quận/huyện *
                   </label>
@@ -548,7 +550,7 @@ function CatalogTable({
   emptyLabel: string;
 }) {
   return (
-    <div className="glass overflow-hidden">
+    <div className="glass overflow-x-auto">
       {rows.length === 0 ? (
         <EmptyState icon="📍" text={emptyLabel} />
       ) : (

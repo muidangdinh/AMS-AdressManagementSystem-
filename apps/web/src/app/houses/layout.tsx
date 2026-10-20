@@ -440,7 +440,7 @@ export default function HousesLayout({ children }: { children: React.ReactNode }
           <div
             aria-hidden
             onClick={closeNav}
-            className={`print:hidden md:hidden absolute left-0 right-0 bottom-0 top-16 z-20 bg-canvas/60 backdrop-blur-[2px] transition-opacity ${
+            className={`print:hidden md:hidden absolute left-0 right-0 bottom-0 top-16 z-[1200] bg-canvas/60 backdrop-blur-[2px] transition-opacity ${
               navShown ? 'opacity-100 duration-300' : 'opacity-0 duration-200 pointer-events-none'
             }`}
           />
@@ -452,7 +452,7 @@ export default function HousesLayout({ children }: { children: React.ReactNode }
               thấy "thả".) Đóng ngắn hơn (300ms) và ease-in cho gọn. */}
           <div
             id="mobile-nav"
-            className={`print:hidden md:hidden absolute left-0 right-0 top-16 z-30 grid transition-[grid-template-rows,box-shadow] ${
+            className={`print:hidden md:hidden absolute left-0 right-0 top-16 z-[1210] grid transition-[grid-template-rows,box-shadow] ${
               navShown
                 ? 'grid-rows-[1fr] shadow-2xl duration-[450ms] ease-[cubic-bezier(0.4,0,0.2,1)]'
                 : 'grid-rows-[0fr] pointer-events-none duration-[300ms] ease-in'
