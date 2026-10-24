@@ -1,7 +1,10 @@
-import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { CaseStatus, NotificationEntity, NotificationType, Prisma } from '@prisma/client';
+import * as fs from 'fs';
+import * as path from 'path';
 import { PERMISSIONS } from '../auth/permissions';
 import { usersWithPermission } from '../auth/user-access';
+import { getCaseFilesDir } from '../config/upload.config';
 import { NotificationsService } from '../notifications/notifications.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateCaseDto } from './dto/create-case.dto';
@@ -44,6 +47,16 @@ const ORDERED_STATUSES: CaseStatus[] = [
 ];
 
 /**
+ * Multer (busboy) trả tên tệp dạng latin1 — giải mã lại để giữ tiếng Việt.
+ * Nếu chuỗi vốn đã là UTF-8 đúng thì giữ nguyên; luôn bỏ dấu phân cách đường dẫn.
+ */
+function decodeOriginalName(original: string): string {
+  const decoded = Buffer.from(original, 'latin1').toString('utf8');
+  const name = (decoded.includes('\uFFFD') ? original : decoded).replace(/[\\/]/g, '_').trim();
+  return name || 'tep-dinh-kem';
+}
+
+/**
  * Hồ sơ – quy trình (Phase 10 — IX). Lớp theo dõi hành chính mỏng bọc ngoài
  * House/NumberingScheme/SurveyAssignment/HousePlate đã có — chỉ liên kết
  * (houseId) + nhãn trạng thái + dòng thời gian (CaseEvent), không viết lại
@@ -51,6 +64,8 @@ const ORDERED_STATUSES: CaseStatus[] = [
  */
 @Injectable()
 export class CasesService {
+  private readonly logger = new Logger(CasesService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly notifications: NotificationsService,
@@ -93,6 +108,10 @@ export class CasesService {
         ...CASE_INCLUDE,
         events: {
           include: { actor: { select: { id: true, fullName: true, username: true } } },
+          orderBy: { createdAt: 'desc' },
+        },
+        attachments: {
+          include: { uploadedBy: { select: { id: true, fullName: true, username: true } } },
           orderBy: { createdAt: 'desc' },
         },
       },
@@ -292,5 +311,60 @@ export class CasesService {
       data: { caseId: id, action: 'NOTE', note: dto.note, actorId },
     });
     return this.findOne(id);
+  }
+
+  async addAttachment(caseId: string, file: Express.Multer.File, userId: string) {
+    await this.findOneOrThrow(caseId);
+    const fileName = decodeOriginalName(file.originalname);
+
+    return this.prisma.$transaction(async (tx) => {
+      const attachment = await tx.houseCaseAttachment.create({
+        data: {
+          caseId,
+          fileName,
+          storedName: file.filename,
+          mimeType: file.mimetype,
+          size: file.size,
+          uploadedById: userId,
+        },
+      });
+      await this.logEvent(tx, caseId, 'FILE_ADDED', userId, { note: `Đính kèm tệp: ${fileName}` });
+      return attachment;
+    });
+  }
+
+  async removeAttachment(caseId: string, attachmentId: string, userId: string) {
+    const attachment = await this.prisma.houseCaseAttachment.findUnique({ where: { id: attachmentId } });
+    if (!attachment || attachment.caseId !== caseId) {
+      throw new NotFoundException('Không tìm thấy tệp đính kèm');
+    }
+
+    await this.prisma.$transaction([
+      this.prisma.houseCaseAttachment.delete({ where: { id: attachmentId } }),
+      this.prisma.caseEvent.create({
+        data: { caseId, action: 'FILE_DELETED', note: `Xoá tệp: ${attachment.fileName}`, actorId: userId },
+      }),
+    ]);
+
+    const absolutePath = path.join(getCaseFilesDir(), attachment.storedName);
+    fs.unlink(absolutePath, (err) => {
+      if (err && err.code !== 'ENOENT') {
+        this.logger.warn(`Không xóa được tệp đính kèm trên host: ${absolutePath} (${err.message})`);
+      }
+    });
+
+    return attachment;
+  }
+
+  async getAttachmentFile(caseId: string, attachmentId: string) {
+    const attachment = await this.prisma.houseCaseAttachment.findUnique({ where: { id: attachmentId } });
+    if (!attachment || attachment.caseId !== caseId) {
+      throw new NotFoundException('Không tìm thấy tệp đính kèm');
+    }
+    const absolutePath = path.join(getCaseFilesDir(), attachment.storedName);
+    if (!fs.existsSync(absolutePath)) {
+      throw new NotFoundException('Tệp không còn trên máy chủ');
+    }
+    return { absolutePath, fileName: attachment.fileName, mimeType: attachment.mimeType };
   }
 }

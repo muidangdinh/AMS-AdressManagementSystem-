@@ -145,6 +145,7 @@ model User {
   casesCreated  HouseCase[]  @relation("CaseCreatedBy")
   casesAssigned HouseCase[]  @relation("CaseAssignedTo")
   caseEvents    CaseEvent[]  @relation("CaseEventActor")
+  caseAttachments HouseCaseAttachment[] @relation("CaseAttachmentUploadedBy")
   roleLinks             UserRoleLink[] @relation("UserRoleLinkUser")
   notificationsReceived Notification[] @relation("NotificationRecipient")
   notificationsSent     Notification[] @relation("NotificationActor")
@@ -941,7 +942,8 @@ model HouseCase {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  events CaseEvent[]
+  events      CaseEvent[]
+  attachments HouseCaseAttachment[]
 
   @@index([status])
   @@index([houseId])
@@ -966,6 +968,29 @@ model CaseEvent {
 
   @@index([caseId])
   @@map("house_case_event")
+}
+
+/// Tệp đính kèm hồ sơ hành chính (giấy tờ của công dân: đơn, CCCD, bản vẽ...).
+/// Lưu ngoài vùng tĩnh `/uploads` — chỉ tải được qua endpoint có JWT.
+model HouseCaseAttachment {
+  id     String    @id @default(uuid())
+  caseId String
+  case   HouseCase @relation(fields: [caseId], references: [id], onDelete: Cascade)
+
+  /// Tên gốc để hiển thị/tải về (giữ tiếng Việt), chỉ dùng hiển thị.
+  fileName String
+  /// Tên thật trên đĩa: uuid + phần mở rộng, không bao giờ dựng từ input người dùng.
+  storedName String @unique
+  mimeType   String
+  size       Int
+
+  uploadedById String?
+  uploadedBy   User?   @relation("CaseAttachmentUploadedBy", fields: [uploadedById], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+
+  @@index([caseId])
+  @@map("house_case_attachment")
 }
 
 // ============================================================

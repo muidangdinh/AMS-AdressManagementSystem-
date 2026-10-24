@@ -1,9 +1,9 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
-import type { HouseCase, HouseSummary, PaginatedResult } from '@tayninh/shared';
+import type { CaseAttachment, HouseCase, HouseSummary, PaginatedResult } from '@tayninh/shared';
 import {
   CASE_REQUEST_TYPE_LABELS,
   CASE_STATUS_LABELS,
@@ -15,6 +15,7 @@ import { useAuth } from '@/lib/auth-context';
 import { ApiError, apiFetch } from '@/lib/api';
 import { casesApi } from '@/lib/cases-api';
 import { ButtonSpinner, EmptyState, FIELD_CLASS } from '@/components/ui';
+import AttachmentViewerModal from '@/components/AttachmentViewerModal';
 import RemindButton from '@/components/RemindButton';
 import { formatDueDate, isOverdue } from '@/lib/deadline';
 
@@ -39,6 +40,12 @@ const NEXT_STEP_LABEL: Partial<Record<CaseStatus, string>> = {
   [CaseStatus.APPROVED]: 'Chuyển sang: Đã cấp biển',
   [CaseStatus.PLATE_ISSUED]: 'Chuyển sang: Đã trả kết quả',
 };
+
+function formatFileSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
 
 export default function CaseDetailPage() {
   const params = useParams<{ id: string }>();
@@ -191,6 +198,66 @@ export default function CaseDetailPage() {
     }
   }
 
+  // ---- Tệp đính kèm ----
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [uploadingFiles, setUploadingFiles] = useState(false);
+  const [pendingFiles, setPendingFiles] = useState<File[]>([]);
+  const [viewerAttachmentId, setViewerAttachmentId] = useState<string | null>(null);
+
+  function handleFilesSelected(files: FileList | null) {
+    if (files?.length) {
+      setActionError(null);
+      setPendingFiles(Array.from(files));
+    }
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  }
+
+  async function handleConfirmUpload() {
+    if (!pendingFiles.length) return;
+    setUploadingFiles(true);
+    setActionError(null);
+    try {
+      for (const file of pendingFiles) {
+        await casesApi.uploadAttachment(caseId, file);
+      }
+      setPendingFiles([]);
+      await load();
+    } catch (err) {
+      setActionError(err instanceof ApiError ? err.message : 'Không tải tệp lên được');
+      // Tải lại để hiện các tệp đã lên thành công trước khi gặp lỗi.
+      setPendingFiles([]);
+      await load();
+    } finally {
+      setUploadingFiles(false);
+    }
+  }
+
+  async function handleDownloadAttachment(attachment: CaseAttachment) {
+    setActionError(null);
+    try {
+      const blob = await casesApi.downloadAttachment(caseId, attachment.id);
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = attachment.fileName;
+      link.click();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      setActionError(err instanceof ApiError ? err.message : 'Không tải được tệp');
+    }
+  }
+
+  async function handleDeleteAttachment(attachment: CaseAttachment) {
+    if (!confirm(`Xoá tệp "${attachment.fileName}"?`)) return;
+    setActionError(null);
+    try {
+      await casesApi.deleteAttachment(caseId, attachment.id);
+      await load();
+    } catch (err) {
+      setActionError(err instanceof ApiError ? err.message : 'Không xoá được tệp');
+    }
+  }
+
   if (loading) {
     return (
       <div className="p-6 flex items-center gap-2 text-sm text-fg-subtle">
@@ -203,6 +270,7 @@ export default function CaseDetailPage() {
   }
 
   const isTerminal = houseCase.status === CaseStatus.COMPLETED || houseCase.status === CaseStatus.REJECTED;
+  const attachments = houseCase.attachments ?? [];
 
   return (
     <div className="h-full overflow-auto p-6 space-y-4">
@@ -410,6 +478,123 @@ export default function CaseDetailPage() {
       )}
 
       <div className="glass p-4">
+        <div className="flex items-center justify-between gap-2 mb-1">
+          <h3 className="font-bold text-sm text-fg">Tệp đính kèm ({attachments.length})</h3>
+          {canEdit && (
+            <>
+              <input
+                ref={fileInputRef}
+                type="file"
+                multiple
+                accept=".pdf,.doc,.docx,.xls,.xlsx,.jpg,.jpeg,.png"
+                className="hidden"
+                onChange={(e) => handleFilesSelected(e.target.files)}
+                disabled={uploadingFiles}
+              />
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                disabled={uploadingFiles}
+                className="bg-brand hover:bg-brand/90 disabled:opacity-60 text-white px-4 py-2 rounded-xl text-sm font-semibold transition flex items-center gap-2"
+              >
+                {uploadingFiles && <ButtonSpinner light />}
+                Tải tệp lên
+              </button>
+            </>
+          )}
+        </div>
+        <p className="text-[11px] text-fg-subtle mb-3">
+          PDF, Word, Excel, JPG/PNG — tối đa 10MB mỗi tệp. Chỉ người đã đăng nhập xem/tải được.
+        </p>
+        {pendingFiles.length > 0 && (
+          <div className="mb-3 rounded-xl border border-accent/40 bg-accent/10 p-3">
+            <p className="text-sm font-semibold text-fg">
+              Xác nhận tải lên {pendingFiles.length} tệp?
+            </p>
+            <ul className="mt-1 space-y-0.5">
+              {pendingFiles.map((file, index) => (
+                <li
+                  key={`${file.name}-${index}`}
+                  className="flex items-center justify-between gap-2 text-xs text-fg-muted"
+                >
+                  <span className="truncate" title={file.name}>
+                    {file.name}
+                  </span>
+                  <span className="shrink-0">{formatFileSize(file.size)}</span>
+                </li>
+              ))}
+            </ul>
+            <div className="mt-2 flex gap-2">
+              <button
+                type="button"
+                onClick={handleConfirmUpload}
+                disabled={uploadingFiles}
+                className="flex items-center gap-2 rounded-xl bg-brand px-4 py-2 text-sm font-semibold text-white transition hover:bg-brand/90 disabled:opacity-60"
+              >
+                {uploadingFiles && <ButtonSpinner light />}
+                Xác nhận tải lên
+              </button>
+              <button
+                type="button"
+                onClick={() => setPendingFiles([])}
+                disabled={uploadingFiles}
+                className="rounded-xl border border-line bg-surface px-4 py-2 text-sm font-semibold text-fg-muted transition hover:bg-surface-2 disabled:opacity-60"
+              >
+                Huỷ
+              </button>
+            </div>
+          </div>
+        )}
+        {attachments.length === 0 ? (
+          <EmptyState text="Chưa có tệp đính kèm" />
+        ) : (
+          <div className="divide-y divide-line">
+            {attachments.map((a) => (
+              <div key={a.id} className="flex items-center gap-3 py-2">
+                <div className="min-w-0 flex-1">
+                  <button
+                    type="button"
+                    onClick={() => setViewerAttachmentId(a.id)}
+                    className="block max-w-full truncate text-left text-sm text-fg transition hover:text-accent"
+                    title={`Xem "${a.fileName}"`}
+                  >
+                    {a.fileName}
+                  </button>
+                  <p className="text-[11px] text-fg-subtle">
+                    {formatFileSize(a.size)} • {a.uploadedBy?.fullName ?? '—'} •{' '}
+                    {new Date(a.createdAt).toLocaleString('vi-VN')}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setViewerAttachmentId(a.id)}
+                  className="text-xs font-semibold text-accent hover:underline shrink-0"
+                >
+                  Xem
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleDownloadAttachment(a)}
+                  className="text-xs font-semibold text-fg-muted hover:text-fg hover:underline shrink-0"
+                >
+                  Tải
+                </button>
+                {canEdit && (
+                  <button
+                    type="button"
+                    onClick={() => handleDeleteAttachment(a)}
+                    className="text-xs font-semibold text-danger hover:underline shrink-0"
+                  >
+                    Xoá
+                  </button>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      <div className="glass p-4">
         <h3 className="font-bold text-sm text-fg mb-3">Lịch sử xử lý</h3>
         {(houseCase.events ?? []).length === 0 ? (
           <EmptyState text="Chưa có lịch sử xử lý" />
@@ -428,6 +613,17 @@ export default function CaseDetailPage() {
           </div>
         )}
       </div>
+
+      {viewerAttachmentId && (
+        <AttachmentViewerModal
+          caseId={caseId}
+          attachments={attachments}
+          activeId={viewerAttachmentId}
+          onSelect={setViewerAttachmentId}
+          onClose={() => setViewerAttachmentId(null)}
+          onDownload={handleDownloadAttachment}
+        />
+      )}
     </div>
   );
 }

@@ -2,6 +2,7 @@ import { NestFactory } from '@nestjs/core';
 import { NestExpressApplication } from '@nestjs/platform-express';
 import { Logger, ValidationPipe } from '@nestjs/common';
 import * as fs from 'fs';
+import * as path from 'path';
 import { AppModule } from './app.module';
 import { getUploadRoot } from './config/upload.config';
 
@@ -20,7 +21,10 @@ async function bootstrap() {
   // luôn yêu cầu JWT qua endpoint /api/houses/:id.
   const uploadRoot = getUploadRoot();
   fs.mkdirSync(uploadRoot, { recursive: true });
-  app.useStaticAssets(uploadRoot, { prefix: '/uploads/' });
+  // Chỉ mở static cho ảnh nhà/biển số. Thư mục `cases` (giấy tờ công dân) nằm
+  // ngoài vùng này — tải qua endpoint có JWT ở cases controller.
+  app.useStaticAssets(path.join(uploadRoot, 'houses'), { prefix: '/uploads/houses/' });
+  app.useStaticAssets(path.join(uploadRoot, 'plates'), { prefix: '/uploads/plates/' });
 
   // CORS mở toàn bộ (mọi origin) — dùng `origin: true` thay vì '*' vì
   // credentials:true không tương thích với wildcard theo spec CORS

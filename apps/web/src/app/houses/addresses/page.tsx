@@ -35,7 +35,7 @@ export default function AddressesAdminPage() {
     if (user && !canManage) router.replace('/houses');
   }, [user, canManage, router]);
 
-  const [tab, setTab] = useState<TabKey>('district');
+  const [tab, setTab] = useState<TabKey>('ward');
 
   const [districts, setDistricts] = useState<District[]>([]);
   const [wards, setWards] = useState<Ward[]>([]);
@@ -250,7 +250,7 @@ export default function AddressesAdminPage() {
       <div className="max-w-3xl mx-auto w-full">
       <PageHeader
         title="Danh mục địa chỉ"
-        subtitle="Quận/huyện → Xã/phường → Thôn/ấp/Tổ dân phố, và Đường/phố → Hẻm/ngõ. Dùng để chọn trong dropdown khi tạo/sửa hồ sơ số nhà."
+        subtitle="Xã/phường → Thôn/ấp/Tổ dân phố, và Đường/phố → Hẻm/ngõ. Dùng để chọn trong dropdown khi tạo/sửa hồ sơ số nhà."
         actions={
           <Link
             href="/houses"
@@ -342,6 +342,7 @@ export default function AddressesAdminPage() {
                     className={FIELD_CLASS}
                   />
                 </div>
+                {/* Quận/huyện: tạm ẩn — Tây Ninh không dùng cấp huyện.
                 <div className="w-48">
                   <label className="block text-xs font-bold text-fg-muted uppercase tracking-wide mb-1">
                     Quận/huyện (tùy chọn)
@@ -359,6 +360,7 @@ export default function AddressesAdminPage() {
                     ))}
                   </select>
                 </div>
+                */}
                 <button
                   disabled={wardSaving}
                   className="bg-brand hover:bg-brand/90 disabled:opacity-60 text-white px-4 py-2 rounded-xl text-sm font-semibold shadow-soft transition flex items-center gap-2"
@@ -367,9 +369,13 @@ export default function AddressesAdminPage() {
                 </button>
               </form>
               {wardError && <p className="text-danger text-sm mb-3">{wardError}</p>}
-              <CatalogTable
+              {/* Quận/huyện: tạm ẩn cột theo yêu cầu.
                 headers={['Tên', 'Quận/huyện']}
                 rows={wards.map((w) => [w.name, districtName(w.districtId ?? null)])}
+              */}
+              <CatalogTable
+                headers={['Tên']}
+                rows={wards.map((w) => [w.name])}
                 onDelete={wards.map((w) => () => handleDeleteWard(w.id))}
                 emptyLabel="Chưa có xã/phường nào"
               />

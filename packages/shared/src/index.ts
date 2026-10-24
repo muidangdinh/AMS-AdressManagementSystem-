@@ -1237,6 +1237,18 @@ export interface CaseEvent {
   createdAt: string;
 }
 
+/** Tệp đính kèm hồ sơ hành chính — tải qua endpoint có JWT, không phải URL static. */
+export interface CaseAttachment {
+  id: string;
+  caseId: string;
+  fileName: string;
+  mimeType: string;
+  size: number;
+  uploadedById?: string | null;
+  uploadedBy?: { id: string; fullName: string; username: string } | null;
+  createdAt: string;
+}
+
 export interface HouseCase {
   id: string;
   caseNumber: string;
@@ -1265,6 +1277,8 @@ export interface HouseCase {
   updatedAt: string;
   /** Chỉ có ở GET /house-cases/:id. */
   events?: CaseEvent[];
+  /** Tệp đính kèm — chỉ có ở GET /house-cases/:id. */
+  attachments?: CaseAttachment[];
 }
 
 export interface CreateCaseRequest {

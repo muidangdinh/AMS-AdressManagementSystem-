@@ -18,3 +18,11 @@ export function getHousePhotosDir(): string {
 export function getPlatePhotosDir(): string {
   return path.join(getUploadRoot(), 'plates');
 }
+
+/**
+ * Tệp đính kèm hồ sơ hành chính — giấy tờ công dân, KHÔNG phục vụ qua static
+ * `/uploads/*`; chỉ tải qua endpoint có JWT (xem cases controller).
+ */
+export function getCaseFilesDir(): string {
+  return path.join(getUploadRoot(), 'cases');
+}

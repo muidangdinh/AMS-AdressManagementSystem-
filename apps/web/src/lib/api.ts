@@ -58,3 +58,26 @@ export async function apiFetch<T>(path: string, options: RequestInit = {}): Prom
   if (res.status === 204) return undefined as T;
   return res.json() as Promise<T>;
 }
+
+/** Như `apiFetch` nhưng trả Blob — dùng cho tệp đính kèm cần JWT (không phải URL static). */
+export async function apiFetchBlob(path: string): Promise<Blob> {
+  const token = getToken();
+  const headers = new Headers();
+  if (token) headers.set('Authorization', `Bearer ${token}`);
+
+  const res = await fetch(`${API_URL}${path}`, { headers });
+
+  if (!res.ok) {
+    if (res.status === 401) clearToken();
+    let message = `HTTP ${res.status}`;
+    try {
+      const body = await res.json();
+      message = body.message ?? message;
+    } catch {
+      // ignore: body không phải JSON
+    }
+    throw new ApiError(res.status, message);
+  }
+
+  return res.blob();
+}

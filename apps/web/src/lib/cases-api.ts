@@ -1,11 +1,12 @@
 import type {
+  CaseAttachment,
   CaseStatus,
   CreateCaseRequest,
   HouseCase,
   PublicHouseSummary,
   UpdateCaseRequest,
 } from '@tayninh/shared';
-import { apiFetch } from './api';
+import { apiFetch, apiFetchBlob } from './api';
 
 /** Phase 10 — client API cho hồ sơ – quy trình (/api/house-cases). */
 export const casesApi = {
@@ -45,6 +46,20 @@ export const casesApi = {
       method: 'POST',
       body: JSON.stringify({ note }),
     }),
+  uploadAttachment: (id: string, file: File) => {
+    const fd = new FormData();
+    fd.append('file', file);
+    return apiFetch<CaseAttachment>(`/api/house-cases/${id}/attachments`, {
+      method: 'POST',
+      body: fd,
+    });
+  },
+  deleteAttachment: (id: string, attachmentId: string) =>
+    apiFetch<CaseAttachment>(`/api/house-cases/${id}/attachments/${attachmentId}`, {
+      method: 'DELETE',
+    }),
+  downloadAttachment: (id: string, attachmentId: string) =>
+    apiFetchBlob(`/api/house-cases/${id}/attachments/${attachmentId}/download`),
 };
 
 /** Tra cứu công khai bằng QR — không cần token. */

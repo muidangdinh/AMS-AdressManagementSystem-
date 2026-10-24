@@ -1,4 +1,19 @@
-import { Body, Controller, Get, Param, Patch, Post, Query } from '@nestjs/common';
+import {
+  BadRequestException,
+  Body,
+  Controller,
+  Delete,
+  Get,
+  Param,
+  Patch,
+  Post,
+  Query,
+  Res,
+  UploadedFile,
+  UseInterceptors,
+} from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
+import type { Response } from 'express';
 import { RequirePermissions } from '../auth/decorators/permissions.decorator';
 import { PERMISSIONS } from '../auth/permissions';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
@@ -11,6 +26,7 @@ import { LinkHouseDto } from './dto/link-house.dto';
 import { RejectCaseDto } from './dto/reject-case.dto';
 import { AddNoteDto } from './dto/add-note.dto';
 import { ListCasesQueryDto } from './dto/list-cases-query.dto';
+import { caseAttachmentMulterOptions } from './multer.config';
 
 /**
  * Hồ sơ – quy trình (Phase 10 — IX). Đọc mở cho mọi vai trò đã đăng nhập;
@@ -89,5 +105,47 @@ export class CasesController {
   @Post(':id/notes')
   addNote(@Param('id') id: string, @Body() dto: AddNoteDto, @CurrentUser() user: AuthenticatedUser) {
     return this.casesService.addNote(id, dto, user.id);
+  }
+
+  /** Tải tệp đính kèm lên — giấy tờ công dân, chỉ ADMIN/CADASTRAL (case:manage). */
+  @RequirePermissions(PERMISSIONS.CASE_MANAGE)
+  @Post(':id/attachments')
+  @UseInterceptors(FileInterceptor('file', caseAttachmentMulterOptions))
+  uploadAttachment(
+    @Param('id') id: string,
+    @UploadedFile() file: Express.Multer.File | undefined,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    if (!file) throw new BadRequestException('Thiếu tệp đính kèm');
+    return this.casesService.addAttachment(id, file, user.id);
+  }
+
+  /**
+   * Tải tệp về — mọi tài khoản đã đăng nhập (khớp quyền đọc chi tiết hồ sơ).
+   * Tệp nằm ngoài vùng static /uploads nên không lộ qua URL công khai.
+   */
+  @Get(':id/attachments/:attachmentId/download')
+  async downloadAttachment(
+    @Param('id') id: string,
+    @Param('attachmentId') attachmentId: string,
+    @Res() res: Response,
+  ) {
+    const file = await this.casesService.getAttachmentFile(id, attachmentId);
+    res.setHeader('Content-Type', file.mimeType);
+    res.setHeader(
+      'Content-Disposition',
+      `attachment; filename*=UTF-8''${encodeURIComponent(file.fileName)}`,
+    );
+    res.sendFile(file.absolutePath);
+  }
+
+  @RequirePermissions(PERMISSIONS.CASE_MANAGE)
+  @Delete(':id/attachments/:attachmentId')
+  removeAttachment(
+    @Param('id') id: string,
+    @Param('attachmentId') attachmentId: string,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.casesService.removeAttachment(id, attachmentId, user.id);
   }
 }
