@@ -25,6 +25,7 @@ async function bootstrap() {
   // ngoài vùng này — tải qua endpoint có JWT ở cases controller.
   app.useStaticAssets(path.join(uploadRoot, 'houses'), { prefix: '/uploads/houses/' });
   app.useStaticAssets(path.join(uploadRoot, 'plates'), { prefix: '/uploads/plates/' });
+  app.useStaticAssets(path.join(uploadRoot, 'branding'), { prefix: '/uploads/branding/' });
 
   // CORS mở toàn bộ (mọi origin) — dùng `origin: true` thay vì '*' vì
   // credentials:true không tương thích với wildcard theo spec CORS

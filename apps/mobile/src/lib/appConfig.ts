@@ -4,6 +4,7 @@ import { apiFetch } from './api';
 export interface AppConfig {
   provinceName: string;
   appShortName: string;
+  appLogoUrl: string | null;
 }
 
 /**

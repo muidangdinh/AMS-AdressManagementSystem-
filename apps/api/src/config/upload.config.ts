@@ -19,6 +19,11 @@ export function getPlatePhotosDir(): string {
   return path.join(getUploadRoot(), 'plates');
 }
 
+/** Logo thương hiệu tuỳ chỉnh cho header web và header app. */
+export function getBrandingDir(): string {
+  return path.join(getUploadRoot(), 'branding');
+}
+
 /**
  * Tệp đính kèm hồ sơ hành chính — giấy tờ công dân, KHÔNG phục vụ qua static
  * `/uploads/*`; chỉ tải qua endpoint có JWT (xem cases controller).

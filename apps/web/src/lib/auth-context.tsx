@@ -2,7 +2,13 @@
 
 import { createContext, useCallback, useContext, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import type { ChangePasswordRequest, LoginRequest, LoginResponse, UserSummary } from '@tayninh/shared';
+import type {
+  ChangePasswordRequest,
+  LoginRequest,
+  LoginResponse,
+  UpdateUnitRequest,
+  UserSummary,
+} from '@tayninh/shared';
 import { ApiError, apiFetch, clearToken, getToken, setToken } from './api';
 
 type CurrentUser = Pick<
@@ -17,6 +23,8 @@ interface AuthContextValue {
   logout: () => void;
   /** Tự đổi mật khẩu — server xác minh `currentPassword`, ném lỗi nếu sai. */
   changePassword: (dto: ChangePasswordRequest) => Promise<void>;
+  /** Tự cập nhật đơn vị — cập nhật state + localStorage để trang Tài khoản đổi ngay. */
+  updateUnit: (dto: UpdateUnitRequest) => Promise<void>;
   /** PHASE 17 — kiểm tra người dùng hiện tại có quyền `code` không. */
   hasPermission: (code: string) => boolean;
 }
@@ -92,6 +100,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     await apiFetch<void>('/api/auth/me/password', { method: 'PATCH', body: JSON.stringify(dto) });
   }, []);
 
+  const updateUnit = useCallback(
+    async (dto: UpdateUnitRequest) => {
+      const unit = dto.unit.trim();
+      await apiFetch<void>('/api/auth/me/unit', {
+        method: 'PATCH',
+        body: JSON.stringify({ unit }),
+      });
+      if (!user) return;
+      const fresh = { ...user, unit: unit || null };
+      setUser(fresh);
+      window.localStorage.setItem(USER_KEY, JSON.stringify(fresh));
+    },
+    [user],
+  );
+
   const hasPermission = useCallback(
     (code: string) => !!user && Array.isArray(user.permissions) && user.permissions.includes(code),
     [user],
@@ -99,7 +122,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   return (
     <AuthContext.Provider
-      value={{ user, isLoading, login, logout, changePassword, hasPermission }}
+      value={{ user, isLoading, login, logout, changePassword, updateUnit, hasPermission }}
     >
       {children}
     </AuthContext.Provider>

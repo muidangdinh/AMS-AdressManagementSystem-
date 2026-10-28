@@ -1,4 +1,7 @@
-import { Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger } from '@nestjs/common';
+import * as fs from 'fs';
+import * as path from 'path';
+import { getBrandingDir } from '../config/upload.config';
 import { PrismaService } from '../prisma/prisma.service';
 
 /** Giá trị mặc định khi `AppSetting` chưa được seed (an toàn cho môi trường mới). */
@@ -7,26 +10,92 @@ const DEFAULTS = {
   'app.shortName': 'AMS',
 };
 
+const LOGO_KEYS = {
+  web: 'branding.webLogo',
+  app: 'branding.appLogo',
+} as const;
+
+export type BrandLogoKind = keyof typeof LOGO_KEYS;
+const BRANDING_URL_PREFIX = '/uploads/branding/';
+
 /**
  * Đọc các hằng số toàn hệ thống (KHÔNG phải theo người dùng — xem
  * `apps/mobile/src/lib/workingWard.ts` cho ngữ cảnh "xã đang làm việc",
  * đó là theo người dùng nên không đặt ở đây) từ bảng `AppSetting` (có sẵn
- * từ Phase 0, trước đây không dùng tới). Chỉ 2 khoá: tên tỉnh và tên viết
- * tắt ứng dụng — theo góp ý khách hàng 11/09/2026 (đổi thương hiệu "AMS").
+ * từ Phase 0, trước đây không dùng tới). Ngoài tên tỉnh/tên viết tắt, hai
+ * khoá logo cho phép admin thay logo header web và header app.
  */
 @Injectable()
 export class AppConfigService {
+  private readonly logger = new Logger(AppConfigService.name);
+
   constructor(private readonly prisma: PrismaService) {}
 
   async getPublicConfig() {
+    const keys = [...Object.keys(DEFAULTS), ...Object.values(LOGO_KEYS)];
     const rows = await this.prisma.appSetting.findMany({
-      where: { key: { in: Object.keys(DEFAULTS) } },
+      where: { key: { in: keys } },
     });
     const byKey = new Map(rows.map((r) => [r.key, r.value]));
 
     return {
       provinceName: byKey.get('province.name') ?? DEFAULTS['province.name'],
       appShortName: byKey.get('app.shortName') ?? DEFAULTS['app.shortName'],
+      webLogoUrl: byKey.get(LOGO_KEYS.web) ?? null,
+      appLogoUrl: byKey.get(LOGO_KEYS.app) ?? null,
     };
+  }
+
+  async setLogo(kind: string, file?: Express.Multer.File) {
+    const logoKind = this.parseKind(kind);
+    if (!file) throw new BadRequestException('Vui lòng chọn file logo');
+
+    const key = LOGO_KEYS[logoKind];
+    const old = await this.prisma.appSetting.findUnique({ where: { key } });
+    const url = `${BRANDING_URL_PREFIX}${file.filename}`;
+
+    try {
+      await this.prisma.appSetting.upsert({
+        where: { key },
+        update: { value: url },
+        create: { key, value: url },
+      });
+    } catch (err) {
+      await this.removeFile(url);
+      throw err;
+    }
+
+    await this.removeFile(old?.value);
+    return this.getPublicConfig();
+  }
+
+  async clearLogo(kind: string) {
+    const logoKind = this.parseKind(kind);
+    const key = LOGO_KEYS[logoKind];
+    const old = await this.prisma.appSetting.findUnique({ where: { key } });
+
+    await this.prisma.appSetting.deleteMany({ where: { key } });
+    await this.removeFile(old?.value);
+    return this.getPublicConfig();
+  }
+
+  private parseKind(kind: string): BrandLogoKind {
+    if (kind !== 'web' && kind !== 'app') {
+      throw new BadRequestException('Loại logo không hợp lệ');
+    }
+    return kind;
+  }
+
+  private async removeFile(url?: string | null) {
+    if (!url?.startsWith(BRANDING_URL_PREFIX)) return;
+
+    const filePath = path.join(getBrandingDir(), path.basename(url));
+    try {
+      await fs.promises.unlink(filePath);
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code !== 'ENOENT') {
+        this.logger.warn(`Không xóa được logo cũ: ${filePath}`);
+      }
+    }
   }
 }

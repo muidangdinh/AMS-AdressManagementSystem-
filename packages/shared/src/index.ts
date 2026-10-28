@@ -130,6 +130,7 @@ export const EDITOR_ROLES: UserRole[] = [UserRole.ADMIN, UserRole.CADASTRAL];
 export const PERMISSIONS = {
   USER_MANAGE: 'user:manage',
   ROLE_MANAGE: 'role:manage',
+  SETTING_MANAGE: 'setting:manage',
   ADDRESS_WRITE: 'address:write',
   HOUSE_CREATE: 'house:create',
   HOUSE_UPDATE: 'house:update',
@@ -262,6 +263,11 @@ export interface UpdateUserRequest {
 export interface ChangePasswordRequest {
   currentPassword: string;
   newPassword: string;
+}
+
+/** Body PATCH /api/auth/me/unit — tự cập nhật đơn vị, chuỗi rỗng để xóa. */
+export interface UpdateUnitRequest {
+  unit: string;
 }
 
 /** Kết quả trả về của POST /api/auth/login. */

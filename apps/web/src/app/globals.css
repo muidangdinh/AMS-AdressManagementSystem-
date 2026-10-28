@@ -4,28 +4,10 @@
 
 /*
  * Token màu theo theme (kênh RGB, dùng qua Tailwind: bg-surface, text-fg, border-line…).
- * Mặc định TỐI (Cyber-Tech / Geospatial — UI.md); `data-theme="light"` cho theme sáng.
+ * Mặc định SÁNG; `data-theme="dark"` cho theme tối.
  * Trang in nhãn QR và tra cứu công khai tự đặt data-theme="light" cục bộ.
  */
 :root,
-[data-theme='dark'] {
-  --canvas: 15 23 42; /* #0F172A — nền app */
-  --shell: 11 17 32; /* #0B1120 — sidebar/header */
-  --surface: 30 41 59; /* #1E293B — card */
-  --surface-2: 38 52 74; /* hover, ô nhập */
-  --line: 30 41 59; /* slate-800 — viền */
-  --fg: 226 232 240; /* slate-200 */
-  --fg-muted: 148 163 184; /* slate-400 */
-  --fg-subtle: 100 116 139; /* slate-500 */
-  --brand: 37 99 235; /* blue-600 */
-  --accent: 6 182 212; /* cyan #06B6D4 */
-  --ok: 16 185 129; /* #10B981 */
-  --warn: 245 158 11; /* #F59E0B */
-  --danger: 239 68 68; /* #EF4444 */
-  --info: 99 102 241; /* #6366F1 */
-  color-scheme: dark;
-}
-
 [data-theme='light'] {
   --canvas: 244 246 250;
   --shell: 255 255 255;
@@ -42,6 +24,24 @@
   --danger: 220 38 38;
   --info: 79 70 229;
   color-scheme: light;
+}
+
+[data-theme='dark'] {
+  --canvas: 15 23 42; /* #0F172A — nền app */
+  --shell: 11 17 32; /* #0B1120 — sidebar/header */
+  --surface: 30 41 59; /* #1E293B — card */
+  --surface-2: 38 52 74; /* hover, ô nhập */
+  --line: 30 41 59; /* slate-800 — viền */
+  --fg: 226 232 240; /* slate-200 */
+  --fg-muted: 148 163 184; /* slate-400 */
+  --fg-subtle: 100 116 139; /* slate-500 */
+  --brand: 37 99 235; /* blue-600 */
+  --accent: 6 182 212; /* cyan #06B6D4 */
+  --ok: 16 185 129; /* #10B981 */
+  --warn: 245 158 11; /* #F59E0B */
+  --danger: 239 68 68; /* #EF4444 */
+  --info: 99 102 241; /* #6366F1 */
+  color-scheme: dark;
 }
 
 body {

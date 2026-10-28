@@ -7,13 +7,20 @@ import { ApiError } from '@/lib/api';
 import { ButtonSpinner, FIELD_CLASS, FormField, PageHeader } from '@/components/ui';
 
 /**
- * Trang "Tài khoản" — xem thông tin của chính người đang đăng nhập + tự đổi mật khẩu.
+ * Trang "Tài khoản" — xem thông tin của chính người đang đăng nhập + tự sửa đơn vị + đổi mật khẩu.
  * Khác `/houses/users` (chỉ ADMIN, quản lý người khác): trang này mở cho mọi vai trò, chỉ đọc
- * `useAuth().user` có sẵn (không gọi API để lấy thông tin), và đổi mật khẩu phải xác minh mật
- * khẩu hiện tại (API riêng `/api/auth/me/password`, khác `usersApi.update` của ADMIN).
+ * `useAuth().user` có sẵn (không gọi API để lấy thông tin), cập nhật đơn vị qua
+ * `/api/auth/me/unit`, và đổi mật khẩu phải xác minh mật khẩu hiện tại (API riêng
+ * `/api/auth/me/password`, khác `usersApi.update` của ADMIN).
  */
 export default function AccountPage() {
-  const { user, changePassword } = useAuth();
+  const { user, changePassword, updateUnit } = useAuth();
+
+  const [editingUnit, setEditingUnit] = useState(false);
+  const [unitDraft, setUnitDraft] = useState(user?.unit ?? '');
+  const [savingUnit, setSavingUnit] = useState(false);
+  const [unitError, setUnitError] = useState<string | null>(null);
+  const [unitSuccess, setUnitSuccess] = useState(false);
 
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
@@ -24,6 +31,34 @@ export default function AccountPage() {
   const [showCurrent, setShowCurrent] = useState(false);
   const [showNew, setShowNew] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
+
+  function startEditingUnit() {
+    setUnitDraft(user?.unit ?? '');
+    setUnitError(null);
+    setUnitSuccess(false);
+    setEditingUnit(true);
+  }
+
+  function cancelEditingUnit() {
+    setEditingUnit(false);
+    setUnitError(null);
+  }
+
+  async function handleSaveUnit(e: React.FormEvent) {
+    e.preventDefault();
+    setUnitError(null);
+    setUnitSuccess(false);
+    setSavingUnit(true);
+    try {
+      await updateUnit({ unit: unitDraft });
+      setEditingUnit(false);
+      setUnitSuccess(true);
+    } catch (err) {
+      setUnitError(err instanceof ApiError ? err.message : 'Không cập nhật được đơn vị');
+    } finally {
+      setSavingUnit(false);
+    }
+  }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -57,8 +92,52 @@ export default function AccountPage() {
         <Row label="Họ tên" value={user.fullName} />
         <Row label="Tên đăng nhập" value={user.username} />
         <Row label="Vai trò" value={USER_ROLE_LABELS[user.role as UserRole]} />
-        <Row label="Đơn vị" value={user.unit ?? '—'} />
+        {editingUnit ? (
+          <form onSubmit={handleSaveUnit} className="space-y-2">
+            <label className="block text-fg-muted" htmlFor="account-unit">
+              Đơn vị
+            </label>
+            <input
+              id="account-unit"
+              value={unitDraft}
+              onChange={(e) => setUnitDraft(e.target.value)}
+              placeholder="VD: Sở Xây dựng Tây Ninh"
+              className={FIELD_CLASS}
+              autoFocus
+            />
+            <div className="flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={cancelEditingUnit}
+                disabled={savingUnit}
+                className="px-3 py-1.5 text-sm font-semibold text-fg-muted hover:text-fg disabled:opacity-50"
+              >
+                Hủy
+              </button>
+              <button
+                type="submit"
+                disabled={savingUnit}
+                className="bg-brand hover:bg-brand/90 disabled:opacity-50 text-white px-3 py-1.5 rounded-lg text-sm font-semibold flex items-center gap-2"
+              >
+                {savingUnit && <ButtonSpinner light />}
+                Lưu
+              </button>
+            </div>
+          </form>
+        ) : (
+          <Row label="Đơn vị" value={user.unit ?? '—'} onEdit={startEditingUnit} />
+        )}
         <Row label="Chức vụ" value={user.position ?? '—'} />
+        {unitError && (
+          <div className="bg-danger/10 border border-danger/30 text-danger rounded-lg p-2.5 text-sm">
+            {unitError}
+          </div>
+        )}
+        {unitSuccess && (
+          <div className="bg-ok/10 border border-ok/30 text-ok rounded-lg p-2.5 text-sm">
+            Đã cập nhật đơn vị.
+          </div>
+        )}
       </div>
 
       <form
@@ -123,11 +202,30 @@ export default function AccountPage() {
   );
 }
 
-function Row({ label, value }: { label: string; value: string }) {
+function Row({
+  label,
+  value,
+  onEdit,
+}: {
+  label: string;
+  value: string;
+  onEdit?: () => void;
+}) {
   return (
     <div className="flex items-center justify-between gap-4">
       <span className="text-fg-muted">{label}</span>
-      <span className="font-semibold text-fg">{value}</span>
+      <span className="flex min-w-0 items-center gap-2">
+        <span className="truncate font-semibold text-fg">{value}</span>
+        {onEdit && (
+          <button
+            type="button"
+            onClick={onEdit}
+            className="shrink-0 text-xs font-semibold text-accent hover:underline"
+          >
+            Sửa
+          </button>
+        )}
+      </span>
     </div>
   );
 }

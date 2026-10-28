@@ -1,5 +1,12 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
-import type { ChangePasswordRequest, LoginRequest, LoginResponse, UserSummary } from '@tayninh/shared';
+import { AppState } from 'react-native';
+import type {
+  ChangePasswordRequest,
+  LoginRequest,
+  LoginResponse,
+  UpdateUnitRequest,
+  UserSummary,
+} from '@tayninh/shared';
 import { apiFetch, clearToken, getStoredUser, getToken, setStoredUser, setToken } from './api';
 import { availableModes as computeModes } from './appMode';
 import type { AppMode } from './appMode';
@@ -16,6 +23,10 @@ interface AuthContextValue {
   logout: () => Promise<void>;
   /** Tự đổi mật khẩu — server xác minh `currentPassword`, ném lỗi nếu sai. */
   changePassword: (dto: ChangePasswordRequest) => Promise<void>;
+  /** Tự cập nhật đơn vị — cập nhật state + bộ nhớ cục bộ để dashboard đổi ngay. */
+  updateUnit: (dto: UpdateUnitRequest) => Promise<void>;
+  /** Làm mới toàn bộ hồ sơ từ server (đơn vị có thể đã đổi trên web). */
+  refreshUser: () => Promise<void>;
   /** Các nhóm quyền (khảo sát/thi công) người dùng có. */
   availableModes: ('survey' | 'install')[];
   /** Phân hệ hiển thị: 1 quyền → phân hệ đó; đủ 2 quyền → 'all'; không quyền nào → null. */
@@ -28,6 +39,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<CurrentUser | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
+  const refreshUser = useCallback(async () => {
+    const token = await getToken();
+    if (!token) return;
+    try {
+      const fresh = await apiFetch<CurrentUser>('/api/auth/me');
+      await setStoredUser(fresh);
+      setUser(fresh);
+    } catch {
+      // Giữ hồ sơ cũ khi mất mạng; apiFetch tự xóa token nếu 401.
+    }
+  }, []);
+
   useEffect(() => {
     (async () => {
       const token = await getToken();
@@ -36,19 +59,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setUser(storedUser);
       }
       setIsLoading(false);
-      if (token && storedUser) {
-        // Quyền lưu từ lúc đăng nhập có thể đã đổi trên web — làm mới nền, lỗi mạng thì giữ bản cũ.
-        apiFetch<{ permissions?: string[] }>('/api/auth/me')
-          .then(async (me) => {
-            if (!Array.isArray(me.permissions)) return;
-            const fresh = { ...storedUser, permissions: me.permissions };
-            await setStoredUser(fresh);
-            setUser(fresh);
-          })
-          .catch(() => undefined);
-      }
+      if (token) await refreshUser();
     })();
-  }, []);
+  }, [refreshUser]);
+
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', (state) => {
+      if (state === 'active') refreshUser().catch(() => undefined);
+    });
+    return () => subscription.remove();
+  }, [refreshUser]);
 
   const login = useCallback(async (credentials: LoginRequest) => {
     const res = await apiFetch<LoginResponse>('/api/auth/login', {
@@ -69,6 +89,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     await apiFetch<void>('/api/auth/me/password', { method: 'PATCH', body: JSON.stringify(dto) });
   }, []);
 
+  const updateUnit = useCallback(
+    async (dto: UpdateUnitRequest) => {
+      const unit = dto.unit.trim();
+      await apiFetch<void>('/api/auth/me/unit', {
+        method: 'PATCH',
+        body: JSON.stringify({ unit }),
+      });
+      if (!user) return;
+      const fresh = { ...user, unit: unit || null };
+      await setStoredUser(fresh);
+      setUser(fresh);
+    },
+    [user],
+  );
+
   const availableModes = useMemo(() => computeModes(user?.permissions), [user?.permissions]);
   // 1 nhóm quyền → phân hệ đó; đủ 2 → 'all' (đủ tab, không phải chọn); không có quyền nào → null.
   const mode: AppMode | null =
@@ -76,7 +111,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   return (
     <AuthContext.Provider
-      value={{ user, isLoading, login, logout, changePassword, availableModes, mode }}
+      value={{
+        user,
+        isLoading,
+        login,
+        logout,
+        changePassword,
+        updateUnit,
+        refreshUser,
+        availableModes,
+        mode,
+      }}
     >
       {children}
     </AuthContext.Provider>

@@ -55,6 +55,15 @@ export class AuthService {
     };
   }
 
+  /** Tự cập nhật đơn vị — chỉ sửa user hiện tại, không cần quyền `user:manage`. */
+  async updateUnit(userId: string, unit: string) {
+    const trimmed = unit.trim();
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: { unit: trimmed || null },
+    });
+  }
+
   /**
    * Tự đổi mật khẩu — khác `UsersService.update` (chỉ ADMIN, reset hộ người khác, không cần biết
    * mật khẩu cũ): đây là người dùng tự đổi mật khẩu của chính mình, bắt buộc xác minh mật khẩu hiện tại.

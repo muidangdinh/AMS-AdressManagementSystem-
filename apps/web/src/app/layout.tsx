@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import { Inter } from 'next/font/google';
 import './globals.css';
+import { AppConfigProvider } from '@/lib/app-config';
 import { AuthProvider } from '@/lib/auth-context';
 import { THEME_INIT_SCRIPT } from '@/lib/theme';
 
@@ -21,14 +22,16 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    // data-theme do script bên dưới đặt trước khi vẽ (mặc định tối) — lệch so với HTML server
+    // data-theme do script bên dưới đặt trước khi vẽ (mặc định sáng) — lệch so với HTML server
     // là cố ý, nên tắt cảnh báo hydration cho riêng thẻ này.
-    <html lang="vi" className={inter.variable} data-theme="dark" suppressHydrationWarning>
+    <html lang="vi" className={inter.variable} data-theme="light" suppressHydrationWarning>
       <head>
         <script dangerouslySetInnerHTML={{ __html: THEME_INIT_SCRIPT }} />
       </head>
       <body>
-        <AuthProvider>{children}</AuthProvider>
+        <AppConfigProvider>
+          <AuthProvider>{children}</AuthProvider>
+        </AppConfigProvider>
       </body>
     </html>
   );

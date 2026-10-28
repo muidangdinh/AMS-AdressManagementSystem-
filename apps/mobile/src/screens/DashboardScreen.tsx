@@ -55,16 +55,18 @@ import {
   toStackedBreakdown,
 } from '@tayninh/shared';
 import { BarList, ChartSection, Donut, Gauge, StackedBarList } from '../components/charts';
+import ScanQrButton from '../components/ScanQrButton';
 import { apiFetch } from '../lib/api';
 import { fetchAppConfig } from '../lib/appConfig';
 import { fetchHamlets } from '../lib/addressCatalog';
 import { fetchMyDashboard, fetchSystemDashboard } from '../lib/dashboardApi';
+import { buildDashboardSubtitle } from '../lib/dashboardSubtitle';
+import { findHouseByQrCode } from '../lib/housesApi';
 import { getDrafts, syncAllPending, SurveyDraft } from '../lib/surveyStore';
 import { useAuth } from '../lib/AuthContext';
 import { useWorkingWard } from '../lib/workingWard';
 import WardSelectorBar from '../components/WardSelectorBar';
 
-const TOP_LIST_LIMIT = 5;
 const MODAL_ROW_LIMIT = 15;
 const SEARCH_DEBOUNCE_MS = 350;
 const SEARCH_PAGE_SIZE = 20;
@@ -341,7 +343,7 @@ function DetailModal({
  * xem nhanh trên điện thoại) cũng cần thấy được 10.1-10.12 như trên web.
  */
 export default function DashboardScreen() {
-  const { user } = useAuth();
+  const { user, refreshUser } = useAuth();
   const navigation = useNavigation<BottomTabNavigationProp<MainTabsParamList>>();
   const [data, setData] = useState<DashboardMine | null>(null);
   const [system, setSystem] = useState<DashboardSummary | null>(null);
@@ -400,8 +402,9 @@ export default function DashboardScreen() {
 
   useFocusEffect(
     useCallback(() => {
+      refreshUser().catch(() => undefined);
       load();
-    }, [load]),
+    }, [load, refreshUser]),
   );
 
   async function handleRefresh() {
@@ -485,7 +488,7 @@ export default function DashboardScreen() {
           signal: controller.signal,
         });
         if (searchAbortRef.current === controller) setResults(res.items);
-      } catch (err) {
+      } catch {
         if (controller.signal.aborted) return;
         setSearchError('Tìm kiếm thất bại (kiểm tra kết nối mạng)');
         setResults(null);
@@ -500,6 +503,15 @@ export default function DashboardScreen() {
   const selectedHamlet = hamlets.find((h) => h.id === hamletId);
 
   /** Bấm vào 1 dòng trong modal xem nhanh — đóng modal rồi bay tới vị trí đó ở tab Bản Đồ. */
+  async function handleScanQr(code: string) {
+    const house = await findHouseByQrCode(code);
+    if (!house) {
+      Alert.alert('Không tìm thấy', `Mã QR ${code} không khớp hồ sơ nhà nào.`);
+      return;
+    }
+    focusOnMap({ id: house.id, lat: house.latitude, lng: house.longitude });
+  }
+
   function focusOnMap(location: { id: string; lat: number; lng: number }) {
     if (!Number.isFinite(location.lat) || !Number.isFinite(location.lng)) {
       Alert.alert('Không có vị trí', 'Hồ sơ này chưa có toạ độ hợp lệ để hiện trên bản đồ.');
@@ -721,27 +733,30 @@ export default function DashboardScreen() {
         <Text style={styles.headerGreeting}>Xin chào, {user?.fullName ?? ''}</Text>
         {/* TN-13 — chức vụ + đơn vị + xã đang làm việc (góp ý khách hàng 11/09/2026). Bỏ qua
             đoạn nào không có dữ liệu (chức vụ/đơn vị tài khoản cũ, hoặc chưa chọn xã) — không
-            để lòi dấu phẩy/dấu gạch thừa. */}
+            để lòi dấu phẩy/dấu gạch thừa. Đơn vị trùng xã đang làm việc chỉ hiện một lần. */}
         <Text style={styles.headerSub}>
-          {[
-            [user?.position, user?.unit].filter(Boolean).join(' — '),
-            workingWard ? `Xã ${workingWard.name}, ${provinceName}` : provinceName,
-          ]
-            .filter(Boolean)
-            .join(' · ')}
+          {buildDashboardSubtitle({
+            position: user?.position,
+            unit: user?.unit,
+            wardName: workingWard?.name,
+            provinceName,
+          })}
         </Text>
       </View>
 
       {/* Tìm kiếm nhanh — giống web: tên đường/chủ hộ/SĐT/CCCD + lọc ấp/thôn, bấm kết quả bay tới Bản Đồ. */}
       <View style={styles.searchCard}>
-        <TextInput
-          value={search}
-          onChangeText={setSearch}
-          placeholder="Tên đường, tên chủ hộ, SĐT, CCCD/CMND…"
-          placeholderTextColor="#94a3b8"
-          style={styles.searchInput}
-          returnKeyType="search"
-        />
+        <View style={styles.searchRow}>
+          <TextInput
+            value={search}
+            onChangeText={setSearch}
+            placeholder="Tên đường, tên chủ hộ, SĐT, CCCD/CMND…"
+            placeholderTextColor="#94a3b8"
+            style={styles.searchInput}
+            returnKeyType="search"
+          />
+          <ScanQrButton onCode={handleScanQr} />
+        </View>
         <TouchableOpacity style={styles.hamletButton} onPress={() => setHamletPickerOpen(true)}>
           <Text style={styles.hamletButtonText} numberOfLines={1}>
             {selectedHamlet ? selectedHamlet.name : 'Ấp/Thôn/Tổ dân phố: Tất cả'}
@@ -1482,7 +1497,9 @@ const styles = StyleSheet.create({
   },
   syncButtonText: { color: '#fff', fontWeight: '700', fontSize: 12 },
   searchCard: { marginHorizontal: 12, marginBottom: 8, gap: 8 },
+  searchRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   searchInput: {
+    flex: 1,
     backgroundColor: '#fff',
     borderWidth: 1,
     borderColor: '#cbd5e1',

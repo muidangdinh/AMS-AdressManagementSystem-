@@ -6,12 +6,18 @@ import { useAuth } from '../lib/AuthContext';
 import { ApiError } from '../lib/api';
 
 /**
- * Màn "Tài khoản" — xem thông tin người đang đăng nhập + tự đổi mật khẩu. Đồng bộ với trang
- * `/houses/account` trên web: đọc thẳng `useAuth().user` (không gọi API), đổi mật khẩu qua
- * cùng endpoint `/api/auth/me/password` (bắt buộc đúng mật khẩu hiện tại).
+ * Màn "Tài khoản" — xem thông tin người đang đăng nhập + tự sửa đơn vị + đổi mật khẩu.
+ * Đọc thẳng `useAuth().user` (không gọi API khi mở), cập nhật đơn vị qua `/api/auth/me/unit`,
+ * đổi mật khẩu qua `/api/auth/me/password` (bắt buộc đúng mật khẩu hiện tại).
  */
 export default function AccountScreen() {
-  const { user, changePassword } = useAuth();
+  const { user, changePassword, updateUnit } = useAuth();
+
+  const [editingUnit, setEditingUnit] = useState(false);
+  const [unitDraft, setUnitDraft] = useState(user?.unit ?? '');
+  const [savingUnit, setSavingUnit] = useState(false);
+  const [unitError, setUnitError] = useState<string | null>(null);
+  const [unitSuccess, setUnitSuccess] = useState(false);
 
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
@@ -22,6 +28,33 @@ export default function AccountScreen() {
   const [showCurrent, setShowCurrent] = useState(false);
   const [showNew, setShowNew] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
+
+  function startEditingUnit() {
+    setUnitDraft(user?.unit ?? '');
+    setUnitError(null);
+    setUnitSuccess(false);
+    setEditingUnit(true);
+  }
+
+  function cancelEditingUnit() {
+    setEditingUnit(false);
+    setUnitError(null);
+  }
+
+  async function handleSaveUnit() {
+    setUnitError(null);
+    setUnitSuccess(false);
+    setSavingUnit(true);
+    try {
+      await updateUnit({ unit: unitDraft });
+      setEditingUnit(false);
+      setUnitSuccess(true);
+    } catch (err) {
+      setUnitError(err instanceof ApiError ? err.message : 'Không cập nhật được đơn vị');
+    } finally {
+      setSavingUnit(false);
+    }
+  }
 
   async function handleSubmit() {
     setError(null);
@@ -51,13 +84,52 @@ export default function AccountScreen() {
   if (!user) return null;
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+    <ScrollView
+      style={styles.container}
+      contentContainerStyle={styles.content}
+      keyboardShouldPersistTaps="handled"
+    >
       <View style={styles.card}>
         <Row label="Họ tên" value={user.fullName} />
         <Row label="Tên đăng nhập" value={user.username} />
         <Row label="Vai trò" value={USER_ROLE_LABELS[user.role as UserRole]} />
-        <Row label="Đơn vị" value={user.unit ?? '—'} />
+        {editingUnit ? (
+          <View style={styles.unitEditor}>
+            <Text style={styles.rowLabel}>Đơn vị</Text>
+            <TextInput
+              value={unitDraft}
+              onChangeText={setUnitDraft}
+              placeholder="VD: Sở Xây dựng Tây Ninh"
+              placeholderTextColor="#94a3b8"
+              style={[styles.input, styles.unitInput]}
+              autoFocus
+              returnKeyType="done"
+              onSubmitEditing={handleSaveUnit}
+            />
+            <View style={styles.unitActions}>
+              <TouchableOpacity
+                onPress={cancelEditingUnit}
+                disabled={savingUnit}
+                style={styles.cancelButton}
+              >
+                <Text style={styles.cancelButtonText}>Hủy</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={handleSaveUnit}
+                disabled={savingUnit}
+                style={[styles.unitSaveButton, savingUnit && styles.submitButtonDisabled]}
+              >
+                {savingUnit && <ActivityIndicator color="#fff" size="small" />}
+                <Text style={styles.unitSaveButtonText}>Lưu</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        ) : (
+          <Row label="Đơn vị" value={user.unit ?? '—'} onEdit={startEditingUnit} />
+        )}
         <Row label="Chức vụ" value={user.position ?? '—'} />
+        {unitError && <Text style={styles.errorText}>{unitError}</Text>}
+        {unitSuccess && <Text style={styles.successText}>Đã cập nhật đơn vị.</Text>}
       </View>
 
       <View style={styles.card}>
@@ -104,11 +176,32 @@ export default function AccountScreen() {
   );
 }
 
-function Row({ label, value }: { label: string; value: string }) {
+function Row({
+  label,
+  value,
+  onEdit,
+}: {
+  label: string;
+  value: string;
+  onEdit?: () => void;
+}) {
   return (
     <View style={styles.row}>
       <Text style={styles.rowLabel}>{label}</Text>
-      <Text style={styles.rowValue}>{value}</Text>
+      <View style={styles.rowValueWrap}>
+        <Text style={styles.rowValue} numberOfLines={1}>
+          {value}
+        </Text>
+        {onEdit && (
+          <TouchableOpacity
+            onPress={onEdit}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            accessibilityLabel={`Sửa ${label.toLowerCase()}`}
+          >
+            <Icon name="pencil-outline" size={16} color="#2563eb" />
+          </TouchableOpacity>
+        )}
+      </View>
     </View>
   );
 }
@@ -175,7 +268,34 @@ const styles = StyleSheet.create({
     borderBottomColor: '#f1f5f9',
   },
   rowLabel: { fontSize: 13, color: '#64748b' },
-  rowValue: { fontSize: 13, fontWeight: '700', color: '#0f172a' },
+  rowValueWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginLeft: 12,
+    flexShrink: 1,
+  },
+  rowValue: { fontSize: 13, fontWeight: '700', color: '#0f172a', flexShrink: 1, textAlign: 'right' },
+  unitEditor: {
+    paddingTop: 8,
+    paddingBottom: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f1f5f9',
+  },
+  unitInput: { marginTop: 6 },
+  unitActions: { flexDirection: 'row', justifyContent: 'flex-end', gap: 8, marginTop: 8 },
+  cancelButton: { paddingVertical: 8, paddingHorizontal: 12 },
+  cancelButtonText: { fontSize: 13, fontWeight: '600', color: '#64748b' },
+  unitSaveButton: {
+    backgroundColor: '#2563eb',
+    borderRadius: 8,
+    paddingVertical: 8,
+    paddingHorizontal: 14,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  unitSaveButtonText: { color: '#fff', fontWeight: '700', fontSize: 13 },
   fieldLabel: { fontSize: 12, fontWeight: '600', color: '#475569', marginTop: 10, marginBottom: 4 },
   input: {
     borderWidth: 1,

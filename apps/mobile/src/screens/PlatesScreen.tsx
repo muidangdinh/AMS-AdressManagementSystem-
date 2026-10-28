@@ -4,8 +4,6 @@ import {
   Alert,
   FlatList,
   Modal,
-  PermissionsAndroid,
-  Platform,
   RefreshControl,
   StyleSheet,
   Text,
@@ -17,6 +15,9 @@ import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import type { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import { launchCamera } from 'react-native-image-picker';
+import ScanQrButton from '../components/ScanQrButton';
+import { requestCameraPermission } from '../lib/cameraPermission';
+import { findHouseByQrCode } from '../lib/housesApi';
 import { PHOTO_PICKER_OPTIONS } from '../lib/imageOptions';
 import type { HousePlate, HouseSummary, PaginatedResult } from '@tayninh/shared';
 import { HOUSE_STATUS_LABELS } from '@tayninh/shared';
@@ -28,11 +29,9 @@ const SEARCH_DEBOUNCE_MS = 400;
 const SEARCH_RESULT_LIMIT = 15;
 
 /**
- * Phase 8 — mobile nhóm 7 "Quản lý gắn biển số". Không quét QR bằng camera
- * (chưa có thư viện scan trong dự án, thêm mới cần native-link không kiểm
- * chứng được ở máy dev này) — cán bộ chọn thẳng biển từ danh sách "chờ gắn"
- * thay vì quét, tác dụng nghiệp vụ tương đương (7.1, 7.4 qua xem trực tiếp
- * thông tin nhà trước khi xác nhận).
+ * Phase 8 — mobile nhóm 7 "Quản lý gắn biển số". Quét QR nhà trực tiếp bằng
+ * camera (ScanQrButton) để mở hồ sơ trên Bản đồ; cán bộ vẫn có thể
+ * chọn thẳng biển từ danh sách "chờ gắn" như trước.
  *
  * TN-19 — góp ý khách hàng 11/09/2026: đổi tab "Gắn Biển" thành "Tra Cứu",
  * thêm thanh tra cứu toàn bộ hồ sơ số nhà (GET /api/houses?search=) ở đầu
@@ -40,17 +39,6 @@ const SEARCH_RESULT_LIMIT = 15;
  * chưa gắn GIỮ NGUYÊN bên dưới — đây là đường DUY NHẤT để hồ sơ tự chuyển
  * sang "Đã cấp biển & QR" (BR-40 trong business-logic.md), không được bỏ.
  */
-async function requestCameraPermission(): Promise<boolean> {
-  if (Platform.OS !== 'android') return true;
-  const granted = await PermissionsAndroid.request(PermissionsAndroid.PERMISSIONS.CAMERA, {
-    title: 'Quyền truy cập máy ảnh',
-    message: 'Ứng dụng cần máy ảnh để chụp ảnh hiện trường sau khi gắn biển số.',
-    buttonPositive: 'Đồng ý',
-    buttonNegative: 'Từ chối',
-  });
-  return granted === PermissionsAndroid.RESULTS.GRANTED;
-}
-
 export default function PlatesScreen() {
   const navigation = useNavigation<BottomTabNavigationProp<MainTabsParamList>>();
   const [plates, setPlates] = useState<HousePlate[]>([]);
@@ -98,6 +86,15 @@ export default function PlatesScreen() {
     navigation.navigate('Map', { focusId: house.id, lat: house.latitude, lng: house.longitude });
   }
 
+  async function handleScanQr(code: string) {
+    const house = await findHouseByQrCode(code);
+    if (!house) {
+      Alert.alert('Không tìm thấy', `Mã QR ${code} không khớp hồ sơ nhà nào.`);
+      return;
+    }
+    handleSelectSearchResult(house);
+  }
+
   const [reasonTarget, setReasonTarget] = useState<HousePlate | null>(null);
   const [reasonText, setReasonText] = useState('');
   const [submittingReason, setSubmittingReason] = useState(false);
@@ -125,7 +122,9 @@ export default function PlatesScreen() {
   }
 
   async function handleInstall(plate: HousePlate) {
-    const hasPermission = await requestCameraPermission();
+    const hasPermission = await requestCameraPermission(
+      'Ứng dụng cần máy ảnh để chụp ảnh hiện trường sau khi gắn biển số.',
+    );
     if (!hasPermission) {
       Alert.alert('Thiếu quyền', 'Cần cấp quyền máy ảnh để chụp ảnh xác nhận đã gắn.');
       return;
@@ -193,6 +192,7 @@ export default function PlatesScreen() {
           autoCapitalize="none"
         />
         {searching && <ActivityIndicator size="small" color="#2563eb" />}
+        <ScanQrButton onCode={handleScanQr} />
       </View>
 
       {searchQuery.trim().length > 0 ? (

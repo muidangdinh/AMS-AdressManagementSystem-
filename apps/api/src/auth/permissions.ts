@@ -12,6 +12,7 @@
 export const PERMISSIONS = {
   USER_MANAGE: 'user:manage',
   ROLE_MANAGE: 'role:manage',
+  SETTING_MANAGE: 'setting:manage',
   ADDRESS_WRITE: 'address:write',
   HOUSE_CREATE: 'house:create',
   HOUSE_UPDATE: 'house:update',
@@ -47,6 +48,7 @@ export interface PermissionDef {
 export const PERMISSION_CATALOG: PermissionDef[] = [
   { code: PERMISSIONS.USER_MANAGE, name: 'Quản lý tài khoản người dùng', group: 'Người dùng & phân quyền' },
   { code: PERMISSIONS.ROLE_MANAGE, name: 'Quản lý vai trò & phân quyền', group: 'Người dùng & phân quyền' },
+  { code: PERMISSIONS.SETTING_MANAGE, name: 'Quản lý cấu hình & logo', group: 'Hệ thống' },
   { code: PERMISSIONS.ADDRESS_WRITE, name: 'Thêm/sửa/xóa danh mục địa chỉ', group: 'Danh mục địa chỉ' },
   { code: PERMISSIONS.HOUSE_CREATE, name: 'Tạo mới hồ sơ số nhà', group: 'Hồ sơ nhà' },
   { code: PERMISSIONS.HOUSE_UPDATE, name: 'Sửa hồ sơ số nhà', group: 'Hồ sơ nhà' },

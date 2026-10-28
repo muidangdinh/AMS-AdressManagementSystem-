@@ -15,6 +15,7 @@ import {
   MapPin,
   Moon,
   Route,
+  Settings,
   ShieldCheck,
   Sun,
   UserCheck,
@@ -23,6 +24,7 @@ import {
 import { PERMISSIONS, USER_ROLE_LABELS, UserRole } from '@tayninh/shared';
 import { useAuth } from '@/lib/auth-context';
 import { useTheme } from '@/lib/theme';
+import BrandLogo from '@/components/BrandLogo';
 import NotificationBell from '@/components/NotificationBell';
 // import WardSelector from '@/components/WardSelector';
 
@@ -38,6 +40,7 @@ const NAV_ICONS: Record<string, LucideIcon> = {
   addresses: MapPin,
   users: UserCheck,
   roles: ShieldCheck,
+  branding: Settings,
 };
 
 function NavIcon({ name, large }: { name: string; large?: boolean }) {
@@ -287,6 +290,7 @@ export default function HousesLayout({ children }: { children: React.ReactNode }
     hasPermission(c),
   );
   const canSeeNumbering = hasPermission(PERMISSIONS.SCHEME_MANAGE) || hasPermission(PERMISSIONS.SCHEME_APPROVE);
+  const canSeeBranding = hasPermission(PERMISSIONS.SETTING_MANAGE);
 
   // Chặn gõ thẳng địa chỉ trang của phân hệ không có quyền → đưa về Tổng quan (chỉ ở giao diện web).
   useEffect(() => {
@@ -296,9 +300,10 @@ export default function HousesLayout({ children }: { children: React.ReactNode }
       (pathname.startsWith('/houses/cases') && !canSeeCases) ||
       (pathname.startsWith('/houses/surveys') && !canSeeSurveys) ||
       (pathname.startsWith('/houses/installs') && !canSeeInstalls) ||
-      (pathname.startsWith('/houses/numbering') && !canSeeNumbering);
+      (pathname.startsWith('/houses/numbering') && !canSeeNumbering) ||
+      (pathname.startsWith('/houses/branding') && !canSeeBranding);
     if (blocked) router.replace('/houses/dashboard');
-  }, [isLoading, user, pathname, canSeeHouses, canSeeCases, canSeeSurveys, canSeeInstalls, canSeeNumbering, router]);
+  }, [isLoading, user, pathname, canSeeHouses, canSeeCases, canSeeSurveys, canSeeInstalls, canSeeNumbering, canSeeBranding, router]);
 
   if (isLoading || !user) {
     return (
@@ -320,18 +325,7 @@ export default function HousesLayout({ children }: { children: React.ReactNode }
             aria-label="Tây Ninh — Hệ thống Đánh số & Gắn biển số nhà"
             className="shrink-0 transition-opacity hover:opacity-80"
           >
-            {/* Logo trắng nền trong suốt nên ăn theo màu thanh nav. Dưới sm chỉ lấy biểu tượng ngôi nhà
-                (khung hẹp cắt bớt phần chữ bên phải); từ sm trở lên hiện cả logo — cùng 1 ảnh, chỉ đổi bề rộng khung. */}
-            <div className="relative h-14 w-12 sm:w-[129px] overflow-hidden">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src="/logo.png"
-                alt="Tây Ninh"
-                width={914}
-                height={397}
-                className="absolute top-0 -left-[3px] sm:left-0 h-14 w-auto max-w-none invert dark:invert-0"
-              />
-            </div>
+            <BrandLogo className="h-9 sm:h-12" />
           </Link>
           {/* Dòng phụ + khẩu hiệu — chữ HTML (trước đây nằm trong ảnh logo); ẩn ở màn hình hẹp cho đỡ chật header. */}
           <div className="hidden md:block min-w-0 border-l border-line pl-4 leading-tight">
@@ -532,6 +526,13 @@ export default function HousesLayout({ children }: { children: React.ReactNode }
                     </NavLink>
                   </NavItem>
                 )}
+                {canSeeBranding && (
+                  <NavItem index={8}>
+                    <NavLink href="/houses/branding" icon="branding" block touch onNavigate={closeNav}>
+                      Cấu hình logo
+                    </NavLink>
+                  </NavItem>
+                )}
                 {canSeeHouses && (
                   <NavItem index={8}>
                     <LocateButton block touch onNavigate={closeNav} />
@@ -589,9 +590,9 @@ export default function HousesLayout({ children }: { children: React.ReactNode }
               </NavLink>
             </>
           )}
-          {(hasPermission(PERMISSIONS.USER_MANAGE) || hasPermission(PERMISSIONS.ROLE_MANAGE)) && (
-            <NavGroup label="Hệ thống" />
-          )}
+          {(hasPermission(PERMISSIONS.USER_MANAGE) ||
+            hasPermission(PERMISSIONS.ROLE_MANAGE) ||
+            canSeeBranding) && <NavGroup label="Hệ thống" />}
           {hasPermission(PERMISSIONS.USER_MANAGE) && (
             <NavLink href="/houses/users" icon="users" block>
               Người dùng
@@ -600,6 +601,11 @@ export default function HousesLayout({ children }: { children: React.ReactNode }
           {hasPermission(PERMISSIONS.ROLE_MANAGE) && (
             <NavLink href="/houses/roles" icon="roles" block>
               Vai trò & phân quyền
+            </NavLink>
+          )}
+          {canSeeBranding && (
+            <NavLink href="/houses/branding" icon="branding" block>
+              Cấu hình logo
             </NavLink>
           )}
         </nav>

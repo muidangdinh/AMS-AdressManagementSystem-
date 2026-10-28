@@ -2,6 +2,7 @@ import { Body, Controller, Get, HttpCode, HttpStatus, Patch, Post } from '@nestj
 import { AuthService } from './auth.service';
 import { LoginDto } from './dto/login.dto';
 import { ChangePasswordDto } from './dto/change-password.dto';
+import { UpdateUnitDto } from './dto/update-unit.dto';
 import { Public } from './decorators/public.decorator';
 import { CurrentUser } from './decorators/current-user.decorator';
 import { AuthenticatedUser } from './types/authenticated-user';
@@ -26,6 +27,13 @@ export class AuthController {
   @Get('me')
   me(@CurrentUser() user: AuthenticatedUser) {
     return user;
+  }
+
+  /** PATCH /api/auth/me/unit — tự cập nhật đơn vị của chính mình. */
+  @Patch('me/unit')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  updateUnit(@Body() dto: UpdateUnitDto, @CurrentUser() user: AuthenticatedUser) {
+    return this.authService.updateUnit(user.id, dto.unit);
   }
 
   /** PATCH /api/auth/me/password — tự đổi mật khẩu của chính mình, phải nhập đúng mật khẩu hiện tại. */
