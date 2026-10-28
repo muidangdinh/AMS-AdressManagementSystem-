@@ -47,6 +47,7 @@ export default function SurveyCampaignDetailPage() {
   const campaignId = params.id;
   const { user, hasPermission } = useAuth();
   const canEdit = !!user && EDITOR_ROLES.includes(user.role as UserRole);
+  const canManageSurvey = hasPermission(PERMISSIONS.SURVEY_MANAGE);
   // Tuyến đường khảo sát: cùng quyền với API `survey-routes` (ghi cần survey:manage).
   const canManageRoutes = hasPermission(PERMISSIONS.SURVEY_MANAGE);
 
@@ -251,7 +252,7 @@ export default function SurveyCampaignDetailPage() {
         )}
       </div>
 
-      {canEdit && (
+      {canManageSurvey && (
         <form
           onSubmit={handleAddZone}
           className="glass p-4 flex gap-3 items-end flex-wrap"
