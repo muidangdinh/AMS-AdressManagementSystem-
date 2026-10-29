@@ -17,7 +17,7 @@ import {
 } from 'react-native';
 import MapView, { Marker, Region } from 'react-native-maps';
 import Geolocation from '@react-native-community/geolocation';
-import { RouteProp, useRoute } from '@react-navigation/native';
+import { RouteProp, useFocusEffect, useRoute } from '@react-navigation/native';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import {
   BUILDING_TYPE_LABELS,
@@ -198,6 +198,26 @@ export default function MapScreen() {
     return () => clearTimeout(t);
   }, [houses]);
 
+  const [markerRevision, setMarkerRevision] = useState(0);
+
+  useFocusEffect(
+    useCallback(() => {
+      setTrackMarkers(true);
+
+      const recreateTimer = setTimeout(() => {
+        setMarkerRevision((revision) => revision + 1);
+      }, 300);
+
+      const stopTrackingTimer = setTimeout(() => {
+        setTrackMarkers(false);
+      }, 1200);
+
+      return () => {
+        clearTimeout(recreateTimer);
+        clearTimeout(stopTrackingTimer);
+      };
+    }, []),
+  );
   const fetchHouses = useCallback(
     async (
       searchVal: string,
@@ -407,7 +427,7 @@ export default function MapScreen() {
             // key gồm status/houseNumber để marker tự tạo lại (vẽ lại đúng màu/nhãn)
             // khi hồ sơ được cập nhật — tracksViewChanges=false bên dưới chỉ tối ưu
             // hiệu năng cho marker KHÔNG đổi, không dùng để re-render marker đã đổi.
-            key={`${h.id}-${h.status}-${h.houseNumber}`}
+            key={`${markerRevision}-${h.id}-${h.status}-${h.houseNumber}`}
             coordinate={{ latitude: h.latitude, longitude: h.longitude }}
             onPress={() => openDetail(h.id)}
             tracksViewChanges={trackMarkers}

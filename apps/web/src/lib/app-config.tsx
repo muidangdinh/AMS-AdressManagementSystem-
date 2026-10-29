@@ -7,14 +7,16 @@ import { apiFetch } from './api';
 export interface AppConfig {
   provinceName: string;
   appShortName: string;
-  webLogoUrl: string | null;
+  webLogoLightUrl: string | null;
+  webLogoDarkUrl: string | null;
   appLogoUrl: string | null;
 }
 
 const DEFAULT_CONFIG: AppConfig = {
   provinceName: 'Tỉnh Tây Ninh',
   appShortName: 'AMS',
-  webLogoUrl: null,
+  webLogoLightUrl: null,
+  webLogoDarkUrl: null,
   appLogoUrl: null,
 };
 
@@ -38,7 +40,8 @@ export function AppConfigProvider({ children }: { children: React.ReactNode }) {
       setConfig({
         ...DEFAULT_CONFIG,
         ...next,
-        webLogoUrl: next.webLogoUrl ?? null,
+        webLogoLightUrl: next.webLogoLightUrl ?? null,
+        webLogoDarkUrl: next.webLogoDarkUrl ?? null,
         appLogoUrl: next.appLogoUrl ?? null,
       });
     } catch {

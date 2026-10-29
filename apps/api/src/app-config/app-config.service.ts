@@ -11,7 +11,8 @@ const DEFAULTS = {
 };
 
 const LOGO_KEYS = {
-  web: 'branding.webLogo',
+  'web-light': 'branding.webLogoLight',
+  'web-dark': 'branding.webLogoDark',
   app: 'branding.appLogo',
 } as const;
 
@@ -22,8 +23,8 @@ const BRANDING_URL_PREFIX = '/uploads/branding/';
  * Đọc các hằng số toàn hệ thống (KHÔNG phải theo người dùng — xem
  * `apps/mobile/src/lib/workingWard.ts` cho ngữ cảnh "xã đang làm việc",
  * đó là theo người dùng nên không đặt ở đây) từ bảng `AppSetting` (có sẵn
- * từ Phase 0, trước đây không dùng tới). Ngoài tên tỉnh/tên viết tắt, hai
- * khoá logo cho phép admin thay logo header web và header app.
+ * từ Phase 0, trước đây không dùng tới). Ngoài tên tỉnh/tên viết tắt, ba
+ * khoá logo cho phép admin thay logo header web (sáng/tối) và header app.
  */
 @Injectable()
 export class AppConfigService {
@@ -41,7 +42,8 @@ export class AppConfigService {
     return {
       provinceName: byKey.get('province.name') ?? DEFAULTS['province.name'],
       appShortName: byKey.get('app.shortName') ?? DEFAULTS['app.shortName'],
-      webLogoUrl: byKey.get(LOGO_KEYS.web) ?? null,
+      webLogoLightUrl: byKey.get(LOGO_KEYS['web-light']) ?? null,
+      webLogoDarkUrl: byKey.get(LOGO_KEYS['web-dark']) ?? null,
       appLogoUrl: byKey.get(LOGO_KEYS.app) ?? null,
     };
   }
@@ -69,18 +71,8 @@ export class AppConfigService {
     return this.getPublicConfig();
   }
 
-  async clearLogo(kind: string) {
-    const logoKind = this.parseKind(kind);
-    const key = LOGO_KEYS[logoKind];
-    const old = await this.prisma.appSetting.findUnique({ where: { key } });
-
-    await this.prisma.appSetting.deleteMany({ where: { key } });
-    await this.removeFile(old?.value);
-    return this.getPublicConfig();
-  }
-
   private parseKind(kind: string): BrandLogoKind {
-    if (kind !== 'web' && kind !== 'app') {
+    if (kind !== 'web-light' && kind !== 'web-dark' && kind !== 'app') {
       throw new BadRequestException('Loại logo không hợp lệ');
     }
     return kind;

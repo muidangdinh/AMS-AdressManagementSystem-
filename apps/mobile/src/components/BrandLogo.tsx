@@ -3,9 +3,9 @@ import { AppState, Image, StyleSheet } from 'react-native';
 import { API_URL } from '../lib/api';
 import { fetchAppConfig } from '../lib/appConfig';
 
-const DEFAULT_LOGO = require('../assets/ams-mark.png');
+const DEFAULT_LOGO = require('../assets/ams-mark-blue.png');
 
-/** Logo góc trái header app; dùng logo admin tải lên, fallback asset bundled. */
+/** Logo góc trái header app; dùng logo admin tải lên đúng màu gốc, fallback asset bundled. */
 export default function BrandLogo() {
   const [customUrl, setCustomUrl] = useState<string | null>(null);
   const [failed, setFailed] = useState(false);
@@ -51,5 +51,5 @@ export default function BrandLogo() {
 }
 
 const styles = StyleSheet.create({
-  logo: { width: 28, height: 28, tintColor: '#2563eb' },
+  logo: { width: 28, height: 28 },
 });

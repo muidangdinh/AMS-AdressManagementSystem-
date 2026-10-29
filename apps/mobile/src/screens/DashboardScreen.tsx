@@ -739,7 +739,7 @@ export default function DashboardScreen() {
             position: user?.position,
             unit: user?.unit,
             wardName: workingWard?.name,
-            provinceName,
+            // provinceName,
           })}
         </Text>
       </View>

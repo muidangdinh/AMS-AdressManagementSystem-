@@ -3,6 +3,7 @@ import {
   ActivityIndicator,
   KeyboardAvoidingView,
   Platform,
+  Image,
   StyleSheet,
   Text,
   TextInput,
@@ -61,8 +62,13 @@ export default function LoginScreen() {
     >
       <View style={styles.card}>
         <View style={styles.header}>
-          <Text style={styles.title}>{appShortName}</Text>
-          <Text style={styles.subtitle}>{provinceName}</Text>
+          {/* <Text style={styles.title}>{appShortName}</Text> */}
+           <Image
+              source={require('../assets/ams-logo-doc-nen-toi-md.png')}
+              style={styles.logo}
+              resizeMode="contain"
+              accessibilityLabel="AMS"
+            /> 
         </View>
 
         <View style={styles.form}>
@@ -126,8 +132,8 @@ const styles = StyleSheet.create({
     shadowRadius: 12,
     elevation: 4,
   },
-  header: { backgroundColor: '#0f172a', padding: 24 },
-  title: { color: '#fff', fontSize: 20, fontWeight: '700' },
+  header: { backgroundColor: '#0f172a', padding: 24, alignItems: 'center', },
+  title: { color: '#fff', fontSize: 20, fontWeight: '700', textAlign: 'center' },
   subtitle: { color: '#94a3b8', fontSize: 12, marginTop: 4 },
   form: { padding: 24, gap: 4 },
   errorBox: {
@@ -173,4 +179,5 @@ const styles = StyleSheet.create({
   },
   buttonDisabled: { opacity: 0.6 },
   buttonText: { color: '#fff', fontWeight: '700', fontSize: 15 },
+  logo: { width: 180, height: 100 },
 });

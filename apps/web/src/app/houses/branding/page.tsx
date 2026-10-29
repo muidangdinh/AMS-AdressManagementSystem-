@@ -1,6 +1,6 @@
 'use client';
 
-import type { CSSProperties, ReactNode } from 'react';
+import type { ReactNode } from 'react';
 import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { PERMISSIONS } from '@tayninh/shared';
@@ -11,58 +11,31 @@ import { brandingApi, type BrandLogoKind } from '@/lib/branding-api';
 import { Button, ButtonSpinner, Card, PageHeader } from '@/components/ui';
 
 const LABELS: Record<BrandLogoKind, string> = {
-  web: 'logo web',
+  'web-light': 'logo web nền sáng',
+  'web-dark': 'logo web nền tối',
   app: 'logo app',
 };
 
-function WebPreview({ src }: { src: string }) {
+function WebPreview({ src, dark }: { src: string; dark: boolean }) {
   return (
-    <div className="grid grid-cols-2 gap-2">
-      {[
-        { label: 'Nền sáng', dark: false },
-        { label: 'Nền tối', dark: true },
-      ].map(({ label, dark }) => (
-        <div key={label}>
-          <div
-            className={`min-h-24 rounded-lg p-4 flex items-center justify-center ${
-              dark ? 'bg-slate-900' : 'bg-white border border-slate-200'
-            }`}
-          >
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src={src}
-              alt=""
-              className={`h-9 w-auto max-w-full object-contain ${dark ? '' : 'invert'}`}
-            />
-          </div>
-          <p className="mt-1 text-[11px] text-fg-subtle text-center">{label}</p>
-        </div>
-      ))}
+    <div
+      className={`min-h-24 rounded-lg p-4 flex items-center justify-center ${
+        dark ? 'bg-slate-900' : 'bg-white border border-slate-200'
+      }`}
+    >
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img src={src} alt="" className="h-9 w-auto max-w-full object-contain" />
     </div>
   );
 }
 
 function AppPreview({ src }: { src: string }) {
-  function maskStyle(size: number): CSSProperties {
-    return {
-      width: size,
-      height: size,
-      backgroundColor: '#2563eb',
-      WebkitMaskImage: `url("${src}")`,
-      WebkitMaskRepeat: 'no-repeat',
-      WebkitMaskPosition: 'center',
-      WebkitMaskSize: 'contain',
-      maskImage: `url("${src}")`,
-      maskRepeat: 'no-repeat',
-      maskPosition: 'center',
-      maskSize: 'contain',
-    };
-  }
-
   return (
     <div className="min-h-24 rounded-lg bg-white border border-slate-200 p-5 flex items-end justify-center gap-6">
-      <div style={maskStyle(28)} />
-      <div style={maskStyle(56)} />
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img src={src} alt="" style={{ width: 28, height: 28 }} className="object-contain" />
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img src={src} alt="" style={{ width: 56, height: 56 }} className="object-contain" />
     </div>
   );
 }
@@ -71,20 +44,20 @@ function LogoCard({
   kind,
   title,
   description,
+  hint,
   preview,
   hasCustom,
   saving,
   onUpload,
-  onReset,
 }: {
   kind: BrandLogoKind;
   title: string;
   description: string;
+  hint: string;
   preview: ReactNode;
   hasCustom: boolean;
   saving: BrandLogoKind | null;
   onUpload: (kind: BrandLogoKind, file: File) => Promise<boolean>;
-  onReset: (kind: BrandLogoKind) => Promise<boolean>;
 }) {
   const [file, setFile] = useState<File | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -119,9 +92,7 @@ function LogoCard({
           onChange={(e) => setFile(e.target.files?.[0] ?? null)}
           className="block w-full text-xs text-fg-muted file:mr-3 file:rounded-lg file:border-0 file:bg-surface-2 file:px-3 file:py-2 file:text-xs file:font-semibold file:text-fg hover:file:bg-surface"
         />
-        <p className="text-[11px] text-fg-subtle">
-          PNG/WebP, nền trong suốt, màu trắng, tối đa 2MB.
-        </p>
+        <p className="text-[11px] text-fg-subtle">{hint}</p>
       </div>
 
       <div className="flex items-center gap-2 flex-wrap">
@@ -129,16 +100,6 @@ function LogoCard({
           {busy && <ButtonSpinner light />}
           {hasCustom ? 'Thay logo' : 'Tải logo lên'}
         </Button>
-        {hasCustom && (
-          <Button
-            type="button"
-            variant="ghost"
-            onClick={() => void onReset(kind)}
-            disabled={busy}
-          >
-            Khôi phục mặc định
-          </Button>
-        )}
       </div>
     </Card>
   );
@@ -161,7 +122,10 @@ export default function BrandingPage() {
   if (!canManage) return null;
 
   const apiBase = getApiUrl().replace(/\/$/, '');
-  const webLogoSrc = config.webLogoUrl ? `${apiBase}${config.webLogoUrl}` : '/logo.png';
+  const webLightSrc = config.webLogoLightUrl
+    ? `${apiBase}${config.webLogoLightUrl}`
+    : '/logo-light.png';
+  const webDarkSrc = config.webLogoDarkUrl ? `${apiBase}${config.webLogoDarkUrl}` : '/logo.png';
   const appLogoSrc = config.appLogoUrl ? `${apiBase}${config.appLogoUrl}` : '/ams-mark.png';
 
   async function upload(kind: BrandLogoKind, file: File): Promise<boolean> {
@@ -175,24 +139,6 @@ export default function BrandingPage() {
       return true;
     } catch (err) {
       setError(err instanceof ApiError ? err.message : `Không thể cập nhật ${LABELS[kind]}.`);
-      return false;
-    } finally {
-      setSaving(null);
-    }
-  }
-
-  async function reset(kind: BrandLogoKind): Promise<boolean> {
-    if (!window.confirm(`Khôi phục ${LABELS[kind]} mặc định?`)) return false;
-    setSaving(kind);
-    setError(null);
-    setNotice(null);
-    try {
-      await brandingApi.reset(kind);
-      await refresh();
-      setNotice(`Đã khôi phục ${LABELS[kind]} mặc định.`);
-      return true;
-    } catch (err) {
-      setError(err instanceof ApiError ? err.message : `Không thể khôi phục ${LABELS[kind]}.`);
       return false;
     } finally {
       setSaving(null);
@@ -220,24 +166,34 @@ export default function BrandingPage() {
 
         <div className="grid gap-5 lg:grid-cols-2">
           <LogoCard
-            kind="web"
-            title="Logo web"
-            description="Hiển thị ở góc trái header của trang quản trị web."
-            preview={<WebPreview src={webLogoSrc} />}
-            hasCustom={!!config.webLogoUrl}
+            kind="web-light"
+            title="Logo web nền sáng"
+            description="Dùng khi giao diện web ở chế độ sáng."
+            hint="PNG/WebP, tối đa 2MB. Nên dùng logo màu tối/đen, nền trong suốt."
+            preview={<WebPreview src={webLightSrc} dark={false} />}
+            hasCustom={!!config.webLogoLightUrl}
             saving={saving}
             onUpload={upload}
-            onReset={reset}
+          />
+          <LogoCard
+            kind="web-dark"
+            title="Logo web nền tối"
+            description="Dùng khi giao diện web ở chế độ tối."
+            hint="PNG/WebP, tối đa 2MB. Nên dùng logo màu sáng/trắng, nền trong suốt."
+            preview={<WebPreview src={webDarkSrc} dark />}
+            hasCustom={!!config.webLogoDarkUrl}
+            saving={saving}
+            onUpload={upload}
           />
           <LogoCard
             kind="app"
             title="Logo app"
-            description="Hiển thị ở góc trái header ứng dụng di động; logo trắng được tô xanh."
+            description="Hiển thị ở góc trái header ứng dụng di động, giữ đúng màu gốc."
+            hint="PNG/WebP, tối đa 2MB. Nên dùng logo màu đậm, nền trong suốt vì header app nền trắng."
             preview={<AppPreview src={appLogoSrc} />}
             hasCustom={!!config.appLogoUrl}
             saving={saving}
             onUpload={upload}
-            onReset={reset}
           />
         </div>
       </div>

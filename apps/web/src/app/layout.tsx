@@ -12,7 +12,7 @@ const inter = Inter({
 });
 
 export const metadata: Metadata = {
-  title: 'Tây Ninh — Hệ thống Đánh số & Gắn biển số nhà',
+  title: 'AMS — Hệ thống Đánh số & Gắn biển số nhà',
   description: 'Next.js + NestJS + PostgreSQL/PostGIS — CSDL số nhà (Phase 2)',
 };
 
