@@ -1,0 +1,460 @@
+TÍCH HỢP MAPLIBRE TRÊN NỀN BẢN ĐỒ GOONG VÀO ANDROID
+TỔNG QUAN
+SDK bản đồ Android (Android Map SDK) cho phép bạn có thể phát triển ứng dụng với tính năng bản đồ và định vị trên nền tảng Android. Nó bao gồm các công cụ và thư viện để tích hợp bản đồ vào ứng dụng, hỗ trợ người dùng hiển thị và tương tác với bản đồ.
+
+Goong Android SDK cho phép bạn tùy chỉnh bản đồ với nội dung để hiển thị trên thiết bị android.
+
+Goong Android SDK không chỉ mang hình ảnh thực tế lên trên bản đồ, ngoài ra còn cho phép tương tác và điều chỉnh các đối tượng trên bản đồ của bạn.
+
+Tài liệu dưới đây trình bày cách tính hợp MapLibre trên nền bản đồ của Goong và sử dụng các dịch vụ cơ bản của Goong, bao gồm:
+
+Hiện các kiểu bản đồ: Cơ bản, vệ tinh, tối, sáng,… gắn marker, vẽ vòng tròn bao quanh marker.
+Tìm kiếm: Nhập tên địa chỉ, hiển thị các gợi ý liên quan tới tên địa chỉ nhập, sau khi chọn thì nhảy ra điểm đó trên bản đồ.
+Định vị vị trí: Xác định và hiển thị vị trí hiện tại của người dùng trên bản đồ.
+Dẫn đường: Nhập tọa độ điểm đầu và cuối, hiển thị đường dẫn trên bản đó, có thông tin về khoảng cách và thời gian di chuyển.
+Đánh dấu và chú thích: Cho phép nhà phát triển thêm các điểm đánh dấu (marker) hoặc chú thích (annotation) vào bản đồ để chỉ ra các vị trí cụ thể (cửa hàng, chi nhánh….)
+Tương tác: Hỗ trợ người dùng các thao tác tương tác như phóng to, thu nhỏ, xoay và di chuyển bản đồ.
+CÁCH THỨC TÍCH HỢP GOONG MAP SDK VÀO ANDROID
+Khởi tạo và các tham số cần thiết
+Truy cập trang https://account.goong.io/keys, sau đó thực hiện tạo key (API key và Maptitles Key).
+
+(Tham khảo cách đăng ký tài khoản và tạo key tại đây).
+
+Không cần phải sử dụng token và config token, thư viện free.
+
+Config key tại file “strings.xml”:
+<resources xmlns:tools="http://schemas.android.com/tools">
+    <string name="app_name">goong-inapbox</string>
+    <string name="goong_api_url">https://rsapi.goong.io/</string>
+    <string name="goong_map_url">https://tiles.goong.io</string>
+    <string name="goong_api_key">YOUR_API_KEY</string>
+    <string name="goong_map_key">YOUR_MAP_KEY</string>
+</resources>
+Config thư viện:
+Thêm “maven { url ‘https://jitpack.io’ }” vào file “settings.gradle” ở root folder như dưới đây:
+
+dependencyResolutionManagement {
+    repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+    repositories {
+        google()
+        mavenCentral()
+        maven { url 'https://jitpack.io' }
+    }
+}
+Build.gradle:
+Thêm “goong-map-android-sdk” vào file “build.gradle” của module app (app/build.gradle):
+
+implementation('com.github.goong-io:goong-map-android-sdk:1.5@aar') {
+    transitive = true
+}
+Các API được sử dụng
+API tìm kiếm (Autocomplete):
+https://rsapi.goong.io/Place/AutoComplete?api_key={{api_key}} 
+&location=21.013715429594125%2C%20105.79829597455202&input=H%C3%A0%20N%E1%BB%99i
+API lấy chi tiết địa điểm (Place Detail):
+https://rsapi.goong.io//Place/Detail?api_key={{api_key}} 
+&place_id=KS1l5qA4VOcn9IGw1oYZNO5ehPpQbZoT_MXVhz1VUkJQxyQaIyBh8zPa3ZNYCg4MjjUFXF4o_%2FNeuGarUu
+EvXA%3D%3D.ZXhwYW5kMA%3D%3D\
+API điều hướng (Directions):
+https://rsapi.goong.io//Direction?origin=21.029579719995272%2C105.85242472181584&destination
+=20.9409074%2C106.2832288&vehicle=car&api_key={{api_key}}
+Khai báo các API và call:
+Sử dụng Retrofit để gọi sang API của Goong
+
+Add dependencies:
+implementation 'com.squareup.retrofit2:retrofit:2.6.4'
+implementation 'com.squareup.retrofit2:converter-gson:2.6.4'
+Khởi tạo Retrofit instance:
+public class RetrofitInstance {
+    private static Retrofit retrofit;
+    public static Retrofit getRetrofitInstance(String url) {
+        if (retrofit == null) {
+            retrofit = new Retrofit.Builder()
+                .baseUrl(url)
+                .addConverterFactory(GsonConverterFactory.create())
+                .build();
+        }
+        return retrofit;
+    }
+}
+Tạo service để call API:
+package com.example.mapbox.api;
+
+import com.example.mapbox.response.AutoCompleteResponse;
+import com.example.mapbox.response.DirectionResponse;
+import com.example.mapbox.response.PlaceByLatLngResponse;
+import com.example.mapbox.response.PlaceDetailResponse;
+import retrofit2.Call;
+import retrofit2.http.GET;
+import retrofit2.http.Query;
+public interface IApiService {
+    @GET("/Place/AutoComplete")
+    Call<AutoCompleteResponse> getAutoComplete(
+        @Query("input") String input,
+        @Query("api_key") String apikey
+    );
+
+    @GET("/Place/Detail")
+    Call<PlaceDetailResponse> getPlaceDetail(
+        @Query("place_id") String placeId,
+        @Query("api_key") String apikey
+    );
+
+    @GET("/Direction")
+    Call<DirectionResponse> getDirection(
+        @Query("origin") String origin,
+        @Query("destination") String destination,
+        @Query("vehicle") String vehicle,
+        @Query("api_key") String apikey
+    );
+}
+TÍCH HỢP CÁC TÍNH NĂNG
+Gắn marker
+public void onMapReady(@NonNull MapLibreMap mapLibreMap) {
+    String uri = "https://tiles.goong.io/assets/goong_map_web.json?api_key=" + "YOUR_MAP_KEY";
+    
+    mapLibreMap.setStyle(uri, style -> {
+        LatLng start = new LatLng(21.029579719995272, 105.85242472181584);
+        LatLng end = new LatLng(20.9409074, 106.2832288);
+
+        // Custom marker using bitmap (not vector image)
+        IconFactory iconFactory = IconFactory.getInstance(MainActivity.this);
+        Icon icon = iconFactory.fromResource(R.drawable.blue_marker_view);
+
+        mapLibreMap.addMarker(new MarkerOptions().position(start).icon(icon));
+        mapLibreMap.addMarker(new MarkerOptions().position(end).icon(icon));
+
+        CameraPosition position = new CameraPosition.Builder()
+            .target(start)
+            .zoom(15)
+            .tilt(20)
+            .build();
+
+        mapLibreMap.animateCamera(CameraUpdateFactory.newCameraPosition(position), 1200);
+
+        this.mapLibreMap = mapLibreMap;  // Storing the map instance in a field if needed
+    });
+}
+Sử dụng hàm “addMarker” để thêm marker cho một điểm với tọa độ bất kỳ.
+
+Trong trường hợp không muốn sử dụng marker có sẵn của Mapbox ta phải sử dụng:
+
+IconFactory iconFactory = IconFactory.getInstance(MainActivity.this);
+Icon icon = iconFactory.fromResource(R.drawable.blue_marker_view);
+mapLibreMap.addMarker(new MarkerOptions()
+    .position(start)
+    .icon(icon));
+Lưu ý: Ảnh sử dụng làm marker thay thế phải dưới dạng bitmap (không được sử dụng ảnh dạng vector).
+
+Tìm kiếm địa điểm
+Vẽ giao diện tìm kiếm, sử dụng “EditText”, “RecyclerView” để làm Autocomplete:
+<EditText
+android:id="@+id/search_edit_text"
+android:layout_width="match_parent"
+android:layout_height="32dp"
+android:layout_alignParentLeft="false"
+android:layout_alignParentBottom="false" 
+android:background="@color/white"
+android:hint="Search" />
+
+<androidx.recyclerview.widget.RecyclerView
+android:layout_marginTop="32dp"
+android:id="@+id/recycler_view"
+android:layout_width="match_parent"
+android:layout_height="wrap_content"
+android:background="@color/white"
+android:layout_below="@id/llTopBar" />
+Tạo 1 layout mới để custom giao diện bên trong mỗi item khi thực hiện tìm kiếm:
+<?xml version="1.0" encoding="utf-8"?> 
+<androidx.constraintlayout.widget.ConstraintLayout
+xmlns:android="http://schemas.android.com/apk/res/android" 
+xmlns:map="http://schemas.android.com/apk/res-auto" 
+xmlns:tools="http://schemas.android.com/tools"
+android:layout_width="match_parent" 
+android:layout_height="wrap_content">
+<!--
+Vẽ mỗi item bên trong recycle view-->
+<LinearLayout
+     android:id="@+id/llTopBar"
+     android:layout_width="match_parent"
+     android:layout_height="wrap_content"
+     android:background="@color/white"
+     android:gravity="center_vertical" 
+     android:orientation="vertical"
+     tools: ignore="Missing Constraints"> 
+<TextView
+     android:layout_width="match_parent" 
+     android:layout_height="wrap_content"
+     android:minHeight="32dp"
+     android:paddingLeft="8dp"
+     android:id="@+id/suggestion_text"
+     android:textColor="@color/black"/>
+<TextView
+     android:layout_width="0dp"
+     android:layout_height="0dp"
+     android:paddingLeft="8dp"
+     android:id="@+id/place_id"
+     android:visibility="invisible"/>
+</LinearLayout>
+</androidx.constraintlayout.widget.ConstraintLayout>
+Gán sự kiện cho ô tìm kiếm khi người dùng gõ:
+searchEditText.addTextChangedListener(new TextWatcher() {
+    @Override
+    public void beforeTextChanged(CharSequence s, int start, int count, int after) {
+        // No action needed before text changes
+    }
+
+    @Override
+    public void onTextChanged(CharSequence s, int start, int before, int count) {
+        search(s.toString());
+    }
+
+    @Override
+    public void afterTextChanged(Editable s) {
+        // No action needed after text changes
+    }
+});
+Xử lý gọi Autocomplete API:
+private void search(String textSearch) {
+    if (recyclerView != null) {
+        recyclerView.setVisibility(View.VISIBLE);
+    }
+
+    List<AutoComplete> filteredList = new ArrayList<>();
+
+    try {
+        if (textSearch != null) {
+            IApiService service = RetrofitInstance.getRetrofitInstance("https://rsapi.goong.io/")
+                .create(IApiService.class);
+                
+            Call<AutoCompleteResponse> call = service.getAutoComplete(textSearch, "YOUR_API_KEY");
+            call.enqueue(new Callback<AutoCompleteResponse>() {
+                @Override
+                public void onResponse(Call<AutoCompleteResponse> call, Response<AutoCompleteResponse> response) {
+                    if (response != null && response.isSuccessful()) {
+                        AutoCompleteResponse data = response.body();
+                        if (data != null && data.getPredictions() != null) {
+                            List<AutoComplete> autoCompletes = data.getPredictions();
+                            for (AutoComplete item : autoCompletes) {
+                                filteredList.add(item);
+                            }
+
+                            if (filteredList != null && MainActivity.this.adapter != null) {
+                                MainActivity.this.adapter.updateSuggestions(filteredList);
+                            }
+                        }
+                    } else {
+                        // Handle error
+                    }
+                }
+
+                @Override
+                public void onFailure(Call<AutoCompleteResponse> call, Throwable t) {
+                    Toast.makeText(MainActivity.this, "Auto complete is error!!!", Toast.LENGTH_SHORT).show();
+                }
+            });
+        }
+    } catch (Exception e) {
+        e.printStackTrace();
+    }
+}
+Lưu ý: Số lần gọi Autocomplete thì cần phải tối ưu, tùy theo nhu cầu của ứng dụng, ví dụ theo kiểu sau 2,3 ký tự mới được gọi hoặc khách nhập nhưng chỉ gọi sau 3s không nhập gì. Vì Goong sẽ tính phí mỗi lần gọi này.
+
+Chi tiết địa điểm được chọn
+Gọi Place Detail API:
+private void fetchDetailLocation(String placeId) {
+    Style style = mapboxMap.getStyle();
+    IApiService service = RetrofitInstance.getRetrofitInstance(getResources().getString(R.string.goong_api_url))
+        .create(IApiService.class);
+
+    Call<PlaceDetailResponse> call = service.getPlaceDetail(placeId, getResources().getString(R.string.goong_api_key));
+    
+    call.enqueue(new Callback<PlaceDetailResponse>() {
+        @Override
+        public void onResponse(Call<PlaceDetailResponse> call, Response<PlaceDetailResponse> response) {
+            // TODO: Hiển thị đánh marker cho điểm theo tọa độ
+            if (response != null && response.isSuccessful()) {
+                PlaceDetailResponse data = response.body();
+                if (data != null && data.getResult() != null && data.getResult().getGeometry() != null) {
+                    Location location = data.getResult().getGeometry().getLocation();
+                    try {
+                        LatLng center = new LatLng(
+                            Double.parseDouble(location.getLat()), 
+                            Double.parseDouble(location.getLng())
+                        );
+                        drawCircleLineAndMarker(center, style);
+                        selectedLocation = center;
+                        mapboxMap.addMarker(new MarkerOptions().position(center));
+                    } catch (Exception e) {
+                        Toast.makeText(MainActivity.this, "Parsing is error!!!", Toast.LENGTH_SHORT).show();
+                    }
+                }
+            }
+        }
+
+        @Override
+        public void onFailure(Call<PlaceDetailResponse> call, Throwable t) {
+            Toast.makeText(MainActivity.this, "FetchDetailLocation is error!!!", Toast.LENGTH_SHORT).show();
+        }
+    });
+}
+Vẽ điểm và vòng tròn bao quanh điểm:
+
+Tính toán các điểm xung quanh điểm ở tâm:
+public List<Point> getCircleLatLng(LatLng center, double radius) {
+    List<Point> result = new ArrayList<>();
+    int points = 64; // Number of points to form the circle
+    double[][] coordinates = new double[points + 1][2];
+
+    for (int i = 0; i < points; i++) {
+        double angle = i * (2 * Math.PI / points);
+        double dx = radius * Math.cos(angle);
+        double dy = radius * Math.sin(angle);
+        
+        coordinates[i] = new double[]{
+            center.getLongitude() + (dx / 110540f),
+            center.getLatitude() + (dy / 110540f)
+        };
+    }
+
+    coordinates[points] = coordinates[0]; // Close the circle
+
+    for (double[] coordinate : coordinates) {
+        result.add(Point.fromLngLat(coordinate[0], coordinate[1]));
+    }
+
+    return result; // Return the list of points
+}
+Tạo Polygon:
+public static Polygon createPolygonFromPoints(List<Point> points) {
+    List<List<Point>> polygonCoordinates = new ArrayList<>();
+    polygonCoordinates.add(points);
+    return Polygon.fromLngLats(polygonCoordinates);
+}
+Vẽ các điểm xung quanh và marker điểm ở tâm:
+public void drawCircleLineAndMarker(LatLng center, Style style) {
+    List<Point> points = this.getCircleLatLng(center, 300); // Radius of 300
+    mapboxMap.clear(); // Clear previous markers and shapes
+
+    // Draw fill color for the circle
+    Feature circlePolygon = Feature.fromGeometry(createPolygonFromPoints(points));
+    style.addSource(new GeoJsonSource("circle_polygon", circlePolygon));
+    style.addLayer(new FillLayer("polygon-layer", "circle_polygon")
+            .withProperties(
+                PropertyFactory.fillOpacity(0.2f),
+                PropertyFactory.fillColor(Color.parseColor("#588888"))
+            ));
+
+    // Draw line around the circle
+    style.addLayer(new LineLayer("circle_layer", "circle_polygon")
+            .withProperties(
+                PropertyFactory.lineCap(Property.LINE_CAP_SQUARE),
+                PropertyFactory.lineJoin(Property.LINE_JOIN_MITER),
+                PropertyFactory.lineOpacity(0.7f),
+                PropertyFactory.lineWidth(0.3f),
+                PropertyFactory.lineColor(Color.parseColor("#588888"))
+            ));
+
+    // Move camera to the selected point
+    CameraPosition position = new CameraPosition.Builder()
+            .target(center)
+            .zoom(15)
+            .tilt(20)
+            .build();
+    mapboxMap.animateCamera(CameraUpdateFactory.newCameraPosition(position), 1200);
+}
+ Dẫn đường
+Gọi Directions API:
+private void fetchDirections(LatLng start, LatLng end, Style style) {
+    String origin = start.getLatitude() + "," + start.getLongitude();
+    String destination = end.getLatitude() + "," + end.getLongitude();
+
+    IApiService service = RetrofitInstance.getRetrofitInstance(getResources().getString(R.string.goong_api_url))
+            .create(IApiService.class);
+    Call<DirectionResponse> call = service.getDirection(origin, destination, "car", getResources().getString(R.string.goong_api_key));
+
+    call.enqueue(new Callback<DirectionResponse>() {
+        @Override
+        public void onResponse(Call<DirectionResponse> call, Response<DirectionResponse> response) {
+            // Get the list of points from the API response
+            if (response != null && response.isSuccessful()) {
+                DirectionResponse data = response.body();
+                if (data != null && data.getRoutes() != null) {
+                    Route route = data.getRoutes().get(0);
+                    if (route.getOverviewPolyline() != null && route.getOverviewPolyline().getPoints() != null) {
+                        String geometry = route.getOverviewPolyline().getPoints();
+                        List<Point> points = LineString.fromPolyline(geometry, 5).coordinates();
+
+                        // Draw the line between the points
+                        drawLineBetweenTwoPoints(points, style);
+
+                        // Clear previous markers and add new markers
+                        mapboxMap.clear();
+                        mapboxMap.addMarker(new MarkerOptions().position(start));
+                        mapboxMap.addMarker(new MarkerOptions().position(end));
+                        
+                        // Bound the view to the markers
+                        bound(start, end);
+                    }
+                }
+            }
+        }
+
+        @Override
+        public void onFailure(Call<DirectionResponse> call, Throwable t) {
+            Log.d("Call error", "Call error");
+        }
+    });
+}
+Lấy danh sách điểm:
+Cài đặt thêm “dependencies”:
+
+implementation 'com.mapbox.mapboxsdk:mapbox-android-plugin-annotation-v9:0.9.0'
+Trong kết quả trả về có “overview_polyline”, trong đó có points đã được mã hóa, sử dụng “LineString” để tạo đường line từ danh sách các điểm:
+
+LineString.fromPolyline(geometry, 5).coordinates();
+Sử dụng GeoJson để vẽ line giữa 2 điểm:
+private void fetchDirections(LatLng start, LatLng end, Style style) {
+    String origin = start.getLatitude() + "," + start.getLongitude();
+    String destination = end.getLatitude() + "," + end.getLongitude();
+
+    IApiService service = RetrofitInstance.getRetrofitInstance(getResources().getString(R.string.goong_api_url))
+            .create(IApiService.class);
+    
+    Call<DirectionResponse> call = service.getDirection(origin, destination, "car", getResources().getString(R.string.goong_api_key));
+    
+    call.enqueue(new Callback<DirectionResponse>() {
+        @Override
+        public void onResponse(Call<DirectionResponse> call, Response<DirectionResponse> response) {
+            // Get the list of points from the API response
+            if (response != null && response.isSuccessful()) {
+                DirectionResponse data = response.body();
+                if (data != null && data.getRoutes() != null) {
+                    Route route = data.getRoutes().get(0);
+                    if (route.getOverviewPolyline() != null && route.getOverviewPolyline().getPoints() != null) {
+                        String geometry = route.getOverviewPolyline().getPoints();
+                        List<Point> points = LineString.fromPolyline(geometry, 5).coordinates();
+
+                        // Draw the line between the points
+                        drawLineBetweenTwoPoints(points, style);
+                        
+                        // Clear previous markers and add new markers
+                        mapboxMap.clear();
+                        mapboxMap.addMarker(new MarkerOptions().position(start));
+                        mapboxMap.addMarker(new MarkerOptions().position(end));
+                        
+                        // Bound the view to the markers
+                        bound(start, end);
+                    }
+                }
+            }
+        }
+
+        @Override
+        public void onFailure(Call<DirectionResponse> call, Throwable t) {
+            Log.d("Call error", "Call error");
+        }
+    });
+}
+Tham khảo ví dụ mẫu tại đây: Goong Sample android Maplibre
+Tham khảo tích hợp và các hàm: https://maplibre.org/maplibre-native/android/examples/getting-started/
