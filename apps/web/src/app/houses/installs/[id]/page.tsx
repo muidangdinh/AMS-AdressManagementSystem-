@@ -30,7 +30,7 @@ import { wardsApi } from '@/lib/addresses-api';
 import { formatLength } from '@/lib/routing';
 import { formatDueDate, isOverdue } from '@/lib/deadline';
 import RemindButton from '@/components/RemindButton';
-import { EMPTY_DRAFT, SURVEYOR_DRAG_TYPE, type MapDot } from '@/components/RoutePickerMap';
+import { EMPTY_DRAFT, SURVEYOR_DRAG_TYPE, type MapDot } from '@/components/route-map-types';
 import { Button, ButtonSpinner, EmptyState, FIELD_CLASS, StatusBadge, type StatusTone } from '@/components/ui';
 
 // Leaflet cần `window` nên chỉ render phía client.

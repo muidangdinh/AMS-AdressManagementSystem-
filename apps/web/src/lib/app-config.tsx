@@ -10,6 +10,8 @@ export interface AppConfig {
   webLogoLightUrl: string | null;
   webLogoDarkUrl: string | null;
   appLogoUrl: string | null;
+  /** Ẩn lớp icon địa điểm (nhà hàng, cửa hàng…) của nền bản đồ — Hệ thống → Cấu hình bản đồ. */
+  mapHidePoi: boolean;
 }
 
 const DEFAULT_CONFIG: AppConfig = {
@@ -18,6 +20,8 @@ const DEFAULT_CONFIG: AppConfig = {
   webLogoLightUrl: null,
   webLogoDarkUrl: null,
   appLogoUrl: null,
+  // Giống mặc định phía API — tránh icon địa điểm hiện chớp lên rồi mới ẩn lúc tải trang.
+  mapHidePoi: true,
 };
 
 export function fetchAppConfig(): Promise<AppConfig> {
@@ -43,6 +47,7 @@ export function AppConfigProvider({ children }: { children: React.ReactNode }) {
         webLogoLightUrl: next.webLogoLightUrl ?? null,
         webLogoDarkUrl: next.webLogoDarkUrl ?? null,
         appLogoUrl: next.appLogoUrl ?? null,
+        mapHidePoi: next.mapHidePoi ?? DEFAULT_CONFIG.mapHidePoi,
       });
     } catch {
       // Giữ logo mặc định khi API chưa sẵn sàng.

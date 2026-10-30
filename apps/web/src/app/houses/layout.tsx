@@ -10,6 +10,7 @@ import {
   Globe,
   Hammer,
   Home,
+  Layers,
   LayoutDashboard,
   ListOrdered,
   MapPin,
@@ -41,6 +42,7 @@ const NAV_ICONS: Record<string, LucideIcon> = {
   users: UserCheck,
   roles: ShieldCheck,
   branding: Settings,
+  mapSettings: Layers,
 };
 
 function NavIcon({ name, large }: { name: string; large?: boolean }) {
@@ -301,7 +303,8 @@ export default function HousesLayout({ children }: { children: React.ReactNode }
       (pathname.startsWith('/houses/surveys') && !canSeeSurveys) ||
       (pathname.startsWith('/houses/installs') && !canSeeInstalls) ||
       (pathname.startsWith('/houses/numbering') && !canSeeNumbering) ||
-      (pathname.startsWith('/houses/branding') && !canSeeBranding);
+      (pathname.startsWith('/houses/branding') && !canSeeBranding) ||
+      (pathname.startsWith('/houses/map-settings') && !canSeeBranding);
     if (blocked) router.replace('/houses/dashboard');
   }, [isLoading, user, pathname, canSeeHouses, canSeeCases, canSeeSurveys, canSeeInstalls, canSeeNumbering, canSeeBranding, router]);
 
@@ -533,6 +536,13 @@ export default function HousesLayout({ children }: { children: React.ReactNode }
                     </NavLink>
                   </NavItem>
                 )}
+                {canSeeBranding && (
+                  <NavItem index={9}>
+                    <NavLink href="/houses/map-settings" icon="mapSettings" block touch onNavigate={closeNav}>
+                      Cấu hình bản đồ
+                    </NavLink>
+                  </NavItem>
+                )}
                 {canSeeHouses && (
                   <NavItem index={8}>
                     <LocateButton block touch onNavigate={closeNav} />
@@ -606,6 +616,11 @@ export default function HousesLayout({ children }: { children: React.ReactNode }
           {canSeeBranding && (
             <NavLink href="/houses/branding" icon="branding" block>
               Cấu hình logo
+            </NavLink>
+          )}
+          {canSeeBranding && (
+            <NavLink href="/houses/map-settings" icon="mapSettings" block>
+              Cấu hình bản đồ
             </NavLink>
           )}
         </nav>

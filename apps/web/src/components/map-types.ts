@@ -43,5 +43,16 @@ export const STATUS_COLOR: Record<HouseStatus, string> = {
   [HouseStatus.NEEDS_ADJUST]: '#f43f5e',
 };
 
-/** Trung tâm mặc định: TP. Tây Ninh — dùng khi chưa có điểm nào để canh giữa. */
-export const TAYNINH_CENTER: [number, number] = [11.3151, 106.098];
+/** Tâm UBND xã Thạnh Hóa, tỉnh Tây Ninh (trung tâm thị trấn Thạnh Hóa cũ) — [lat, lng]. */
+const THANH_HOA_CENTER: [number, number] = [10.65528, 106.18222];
+
+/** Đọc `NEXT_PUBLIC_MAP_DEFAULT_CENTER="lat,lng"` (mỗi bản triển khai một tâm riêng); sai định dạng → bỏ qua. */
+function parseCenter(raw: string | undefined): [number, number] | null {
+  const [lat, lng] = (raw ?? '').split(',').map((s) => Number(s.trim()));
+  if (!Number.isFinite(lat) || !Number.isFinite(lng) || Math.abs(lat) > 90 || Math.abs(lng) > 180) return null;
+  return [lat, lng];
+}
+
+/** Tâm bản đồ lúc mới mở (mọi bản đồ web) — mặc định UBND xã Thạnh Hóa. */
+export const DEFAULT_MAP_CENTER: [number, number] =
+  parseCenter(process.env.NEXT_PUBLIC_MAP_DEFAULT_CENTER) ?? THANH_HOA_CENTER;
