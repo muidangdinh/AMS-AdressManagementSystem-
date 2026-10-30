@@ -1,5 +1,13 @@
-import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
-import { AppState } from 'react-native';
+import React, {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
+import { Alert, AppState } from 'react-native';
 import type {
   ChangePasswordRequest,
   LoginRequest,
@@ -7,7 +15,16 @@ import type {
   UpdateUnitRequest,
   UserSummary,
 } from '@tayninh/shared';
-import { apiFetch, clearToken, getStoredUser, getToken, setStoredUser, setToken } from './api';
+import {
+  ApiError,
+  apiFetch,
+  clearToken,
+  getStoredUser,
+  getToken,
+  setStoredUser,
+  setToken,
+  setUnauthorizedHandler,
+} from './api';
 import { availableModes as computeModes } from './appMode';
 import type { AppMode } from './appMode';
 
@@ -38,6 +55,19 @@ const AuthContext = createContext<AuthContextValue | null>(null);
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<CurrentUser | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const sessionExpiredNotified = useRef(false);
+
+  const handleSessionExpired = useCallback(() => {
+    setUser(null);
+    if (sessionExpiredNotified.current) return;
+    sessionExpiredNotified.current = true;
+    Alert.alert('Phiên đăng nhập đã hết hạn', 'Vui lòng đăng nhập lại.');
+  }, []);
+
+  useEffect(() => {
+    setUnauthorizedHandler(handleSessionExpired);
+    return () => setUnauthorizedHandler(null);
+  }, [handleSessionExpired]);
 
   const refreshUser = useCallback(async () => {
     const token = await getToken();
@@ -46,10 +76,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const fresh = await apiFetch<CurrentUser>('/api/auth/me');
       await setStoredUser(fresh);
       setUser(fresh);
-    } catch {
-      // Giữ hồ sơ cũ khi mất mạng; apiFetch tự xóa token nếu 401.
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 401) handleSessionExpired();
     }
-  }, []);
+  }, [handleSessionExpired]);
 
   useEffect(() => {
     (async () => {
@@ -77,10 +107,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     });
     await setToken(res.accessToken);
     await setStoredUser(res.user);
+    sessionExpiredNotified.current = false;
     setUser(res.user);
   }, []);
 
   const logout = useCallback(async () => {
+    sessionExpiredNotified.current = true;
     await clearToken();
     setUser(null);
   }, []);

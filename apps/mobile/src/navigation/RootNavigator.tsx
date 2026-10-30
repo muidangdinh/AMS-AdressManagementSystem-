@@ -8,15 +8,17 @@ import NotificationsScreen from '../screens/NotificationsScreen';
 import AccountScreen from '../screens/AccountScreen';
 import NoAccessScreen from '../screens/NoAccessScreen';
 import { useAuth } from '../lib/AuthContext';
+import { useAppConfig } from '../lib/AppConfigContext';
 import { useAutoSync } from '../lib/useAutoSync';
 
 const Stack = createNativeStackNavigator();
 
 export default function RootNavigator() {
   const { user, isLoading, mode } = useAuth();
+  const { isLoading: isConfigLoading } = useAppConfig();
   useAutoSync(!!user);
 
-  if (isLoading) {
+  if (isLoading || isConfigLoading) {
     return (
       <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
         <ActivityIndicator size="large" color="#2563eb" />

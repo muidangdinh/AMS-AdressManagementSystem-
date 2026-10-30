@@ -41,7 +41,7 @@ COPY packages/shared ./packages/shared
 # Vì vậy PHẢI truyền qua --build-arg lúc build image (hoặc build.args
 # trong docker-compose.yml), đặt ở "environment:" runtime KHÔNG có tác dụng.
 #   docker build --build-arg NEXT_PUBLIC_API_URL=https://api.example.vn -f apps/web/Dockerfile .
-ARG NEXT_PUBLIC_API_URL=https://rv.librasoft.vn
+ARG NEXT_PUBLIC_API_URL=https://ams.librasoft.vn
 ENV NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL}
 
 # Bản đồ GIS — chọn trong file apps/web/.env (NEXT_PUBLIC_MAP_PROVIDER = "leaflet" |

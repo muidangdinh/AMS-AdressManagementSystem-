@@ -1,4 +1,4 @@
-import { Injectable, UnauthorizedException } from '@nestjs/common';
+import { BadRequestException, Injectable, UnauthorizedException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcryptjs';
 import { PrismaService } from '../prisma/prisma.service';
@@ -73,7 +73,7 @@ export class AuthService {
     if (!user) throw new UnauthorizedException('Không tìm thấy người dùng');
 
     const passwordOk = await bcrypt.compare(currentPassword, user.passwordHash);
-    if (!passwordOk) throw new UnauthorizedException('Mật khẩu hiện tại không đúng');
+    if (!passwordOk) throw new BadRequestException('Mật khẩu hiện tại không đúng');
 
     const passwordHash = await bcrypt.hash(newPassword, SALT_ROUNDS);
     await this.prisma.user.update({ where: { id: userId }, data: { passwordHash } });

@@ -7,11 +7,36 @@ export interface AppConfig {
   appLogoUrl: string | null;
 }
 
+export const DEFAULT_APP_CONFIG: AppConfig = {
+  provinceName: 'Tỉnh Tây Ninh',
+  appShortName: 'AMS',
+  appLogoUrl: null,
+};
+
+let cachedConfig: AppConfig | null = null;
+let inflight: Promise<AppConfig> | null = null;
+
+/** Cấu hình đã tải trong phiên hiện tại — dùng để render logo ngay, không chờ API. */
+export function getCachedAppConfig(): AppConfig | null {
+  return cachedConfig;
+}
+
 /**
- * TN-11 — hằng số toàn hệ thống (tên tỉnh, tên viết tắt ứng dụng "AMS") cho
- * màn Đăng nhập (góp ý khách hàng 11/09/2026). Route công khai
- * (`@Public()` ở API) nên gọi được trước khi có token.
+ * TN-11 — tải cấu hình toàn hệ thống. Mặc định dùng cache; `force` để làm mới khi app
+ * quay lại foreground. Các lời gọi song song dùng chung một request.
  */
-export function fetchAppConfig(): Promise<AppConfig> {
-  return apiFetch<AppConfig>('/api/app-config');
+export function fetchAppConfig(force = false): Promise<AppConfig> {
+  if (!force && cachedConfig) return Promise.resolve(cachedConfig);
+  if (inflight) return inflight;
+
+  inflight = apiFetch<AppConfig>('/api/app-config')
+    .then((config) => {
+      cachedConfig = config;
+      return config;
+    })
+    .finally(() => {
+      inflight = null;
+    });
+
+  return inflight;
 }

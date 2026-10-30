@@ -6,7 +6,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 // TẠM THỜI cho test qua USB (adb reverse tcp:3001 tcp:3001) — đổi lại
 // 'https://rv.librasoft.vn' khi build bản thật/không còn cắm dây debug.
 export const API_URL = 'http://localhost:4002';
-// export const API_URL = 'https://rv.librasoft.vn';
+// export const API_URL = 'https://ams.librasoft.vn';
 // export const API_URL = ' http://10.0.2.2:3001';
 
 
@@ -23,6 +23,13 @@ export async function setToken(token: string): Promise<void> {
 
 export async function clearToken(): Promise<void> {
   await AsyncStorage.multiRemove([TOKEN_KEY, USER_KEY]);
+}
+
+let unauthorizedHandler: (() => void) | null = null;
+
+/** AuthProvider đăng ký để đưa người dùng về màn đăng nhập khi token hết hạn. */
+export function setUnauthorizedHandler(handler: (() => void) | null) {
+  unauthorizedHandler = handler;
 }
 
 export async function getStoredUser<T>(): Promise<T | null> {
@@ -51,6 +58,7 @@ export class ApiError extends Error {
  */
 export async function apiFetch<T>(path: string, options: RequestInit = {}): Promise<T> {
   const token = await getToken();
+  const hadToken = !!token;
   const headers = new Headers(options.headers);
   if (token) headers.set('Authorization', `Bearer ${token}`);
   if (options.body && !(options.body instanceof FormData) && !headers.has('Content-Type')) {
@@ -60,7 +68,10 @@ export async function apiFetch<T>(path: string, options: RequestInit = {}): Prom
   const res = await fetch(`${API_URL}${path}`, { ...options, headers });
 
   if (!res.ok) {
-    if (res.status === 401) await clearToken();
+    if (res.status === 401) {
+      await clearToken();
+      if (hadToken && path !== '/api/auth/login') unauthorizedHandler?.();
+    }
     let message = `HTTP ${res.status}`;
     try {
       const body = await res.json();

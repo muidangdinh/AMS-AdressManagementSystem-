@@ -10,6 +10,7 @@ import { StatusBar, useColorScheme } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { AuthProvider } from './src/lib/AuthContext';
+import { AppConfigProvider } from './src/lib/AppConfigContext';
 import { UnreadProvider } from './src/lib/UnreadContext';
 import RootNavigator from './src/navigation/RootNavigator';
 import Geolocation from '@react-native-community/geolocation';
@@ -27,11 +28,13 @@ function App() {
     <GestureHandlerRootView style={{ flex: 1 }}>
       <SafeAreaProvider>
         <StatusBar barStyle={isDarkMode ? 'light-content' : 'dark-content'} />
-        <AuthProvider>
-          <UnreadProvider>
-            <RootNavigator />
-          </UnreadProvider>
-        </AuthProvider>
+        <AppConfigProvider>
+          <AuthProvider>
+            <UnreadProvider>
+              <RootNavigator />
+            </UnreadProvider>
+          </AuthProvider>
+        </AppConfigProvider>
       </SafeAreaProvider>
     </GestureHandlerRootView>
   );

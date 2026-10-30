@@ -1,6 +1,6 @@
 'use client';
 
-import { createContext, useCallback, useContext, useEffect, useState } from 'react';
+import { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import type {
   ChangePasswordRequest,
@@ -9,7 +9,7 @@ import type {
   UpdateUnitRequest,
   UserSummary,
 } from '@tayninh/shared';
-import { ApiError, apiFetch, clearToken, getToken, setToken } from './api';
+import { ApiError, apiFetch, clearToken, getToken, setToken, setUnauthorizedHandler } from './api';
 
 type CurrentUser = Pick<
   UserSummary,
@@ -37,6 +37,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<CurrentUser | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const router = useRouter();
+  const sessionExpiredNotified = useRef(false);
+
+  const handleSessionExpired = useCallback(() => {
+    clearToken();
+    window.localStorage.removeItem(USER_KEY);
+    setUser(null);
+    if (sessionExpiredNotified.current) return;
+    sessionExpiredNotified.current = true;
+    window.alert('Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.');
+    router.push('/login');
+  }, [router]);
+
+  useEffect(() => {
+    setUnauthorizedHandler(handleSessionExpired);
+    return () => setUnauthorizedHandler(null);
+  }, [handleSessionExpired]);
 
   useEffect(() => {
     const token = getToken();
@@ -66,14 +82,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       .catch((err) => {
         // Token hết hạn/không hợp lệ → buộc đăng nhập lại. Lỗi mạng khác thì giữ
         // nguyên phiên lạc quan đã hiển thị ở trên.
-        if (err instanceof ApiError && err.status === 401) {
-          clearToken();
-          window.localStorage.removeItem(USER_KEY);
-          setUser(null);
-        }
+        if (err instanceof ApiError && err.status === 401) handleSessionExpired();
       })
       .finally(() => setIsLoading(false));
-  }, []);
+  }, [handleSessionExpired]);
 
   const login = useCallback(
     async (credentials: LoginRequest) => {
@@ -83,6 +95,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       });
       setToken(res.accessToken);
       window.localStorage.setItem(USER_KEY, JSON.stringify(res.user));
+      sessionExpiredNotified.current = false;
       setUser(res.user);
       router.push('/houses/dashboard');
     },
@@ -90,6 +103,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   );
 
   const logout = useCallback(() => {
+    sessionExpiredNotified.current = true;
     clearToken();
     window.localStorage.removeItem(USER_KEY);
     setUser(null);

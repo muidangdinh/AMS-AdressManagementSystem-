@@ -46,7 +46,7 @@ import { ApiError } from '../lib/api';
 import type { MainTabsParamList } from '../navigation/MainTabs';
 import { resolveWorkingWard } from '../lib/workingWard';
 import LocationPickerModal from '../components/LocationPickerModal';
-import WardSelectorBar from '../components/WardSelectorBar';
+// import WardSelectorBar from '../components/WardSelectorBar';
 import OwnerAutocompleteField from '../components/OwnerAutocompleteField';
 import NearbyOwnersCard from '../components/NearbyOwnersCard';
 
@@ -782,7 +782,7 @@ export default function SurveyScreen() {
       keyboardShouldPersistTaps="handled"
       refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />}
     >
-      <WardSelectorBar />
+      {/* <WardSelectorBar /> */}
 
       {(resurveyHouseId || resurveyHouse) && (
         <View style={styles.resurveyBanner}>

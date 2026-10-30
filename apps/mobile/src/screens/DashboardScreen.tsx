@@ -65,7 +65,7 @@ import { findHouseByQrCode } from '../lib/housesApi';
 import { getDrafts, syncAllPending, SurveyDraft } from '../lib/surveyStore';
 import { useAuth } from '../lib/AuthContext';
 import { useWorkingWard } from '../lib/workingWard';
-import WardSelectorBar from '../components/WardSelectorBar';
+// import WardSelectorBar from '../components/WardSelectorBar';
 
 const MODAL_ROW_LIMIT = 15;
 const SEARCH_DEBOUNCE_MS = 350;
@@ -727,7 +727,7 @@ export default function DashboardScreen() {
       style={styles.container}
       refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />}
     >
-      <WardSelectorBar />
+      {/* <WardSelectorBar /> */}
 
       <View style={styles.header}>
         <Text style={styles.headerGreeting}>Xin chào, {user?.fullName ?? ''}</Text>

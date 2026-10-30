@@ -18,6 +18,13 @@ export function clearToken() {
   window.localStorage.removeItem(TOKEN_KEY);
 }
 
+let unauthorizedHandler: (() => void) | null = null;
+
+/** AuthProvider đăng ký để đưa người dùng về trang đăng nhập khi token hết hạn. */
+export function setUnauthorizedHandler(handler: (() => void) | null) {
+  unauthorizedHandler = handler;
+}
+
 export class ApiError extends Error {
   constructor(
     public status: number,
@@ -35,6 +42,7 @@ export class ApiError extends Error {
  */
 export async function apiFetch<T>(path: string, options: RequestInit = {}): Promise<T> {
   const token = getToken();
+  const hadToken = !!token;
   const headers = new Headers(options.headers);
   if (token) headers.set('Authorization', `Bearer ${token}`);
   if (options.body && !(options.body instanceof FormData) && !headers.has('Content-Type')) {
@@ -44,7 +52,10 @@ export async function apiFetch<T>(path: string, options: RequestInit = {}): Prom
   const res = await fetch(`${API_URL}${path}`, { ...options, headers });
 
   if (!res.ok) {
-    if (res.status === 401) clearToken();
+    if (res.status === 401) {
+      clearToken();
+      if (hadToken && path !== '/api/auth/login') unauthorizedHandler?.();
+    }
     let message = `HTTP ${res.status}`;
     try {
       const body = await res.json();
@@ -62,13 +73,17 @@ export async function apiFetch<T>(path: string, options: RequestInit = {}): Prom
 /** Như `apiFetch` nhưng trả Blob — dùng cho tệp đính kèm cần JWT (không phải URL static). */
 export async function apiFetchBlob(path: string): Promise<Blob> {
   const token = getToken();
+  const hadToken = !!token;
   const headers = new Headers();
   if (token) headers.set('Authorization', `Bearer ${token}`);
 
   const res = await fetch(`${API_URL}${path}`, { headers });
 
   if (!res.ok) {
-    if (res.status === 401) clearToken();
+    if (res.status === 401) {
+      clearToken();
+      if (hadToken) unauthorizedHandler?.();
+    }
     let message = `HTTP ${res.status}`;
     try {
       const body = await res.json();
