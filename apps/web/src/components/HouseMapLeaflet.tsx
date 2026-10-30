@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
-import { STATUS_COLOR, TAYNINH_CENTER, type HouseMapProps } from './map-types';
+import { STATUS_COLOR, DEFAULT_MAP_CENTER, type HouseMapProps } from './map-types';
 import { createSatelliteLayer, createStreetLayer } from '@/lib/map-tiles';
 
 /**
@@ -43,7 +43,7 @@ export default function HouseMapLeaflet({
     if (!containerRef.current || mapRef.current) return;
 
     const map = L.map(containerRef.current, { zoomControl: false }).setView(
-      TAYNINH_CENTER,
+      DEFAULT_MAP_CENTER,
       15,
     );
 

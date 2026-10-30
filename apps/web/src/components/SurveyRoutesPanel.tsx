@@ -8,7 +8,7 @@ import { ApiError } from '@/lib/api';
 import { assignmentsApi, routesApi } from '@/lib/surveys-api';
 import { streetsApi } from '@/lib/addresses-api';
 import { formatLength } from '@/lib/routing';
-import { EMPTY_DRAFT, SURVEYOR_DRAG_TYPE, type RouteDraft } from '@/components/RoutePickerMap';
+import { EMPTY_DRAFT, SURVEYOR_DRAG_TYPE, type RouteDraft } from '@/components/route-map-types';
 import { ButtonSpinner, EmptyState, FIELD_CLASS } from '@/components/ui';
 
 // Leaflet cần `window` nên chỉ render phía client.

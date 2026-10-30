@@ -3,15 +3,22 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { GoogleMap, InfoWindowF, MarkerF, useJsApiLoader } from '@react-google-maps/api';
 import type { Libraries } from '@react-google-maps/api';
-import { STATUS_COLOR, TAYNINH_CENTER, type HouseMapProps } from './map-types';
+import { STATUS_COLOR, DEFAULT_MAP_CENTER, type HouseMapProps } from './map-types';
+import { useAppConfig } from '@/lib/app-config';
 
-const TAYNINH_CENTER_OBJ = { lat: TAYNINH_CENTER[0], lng: TAYNINH_CENTER[1] };
+const DEFAULT_CENTER_OBJ = { lat: DEFAULT_MAP_CENTER[0], lng: DEFAULT_MAP_CENTER[1] };
 
 /** Mảng rỗng khai báo NGOÀI component — `useJsApiLoader` cảnh báo/re-init script nếu prop
  * `libraries` đổi tham chiếu mỗi lần render. */
 const GOOGLE_MAPS_LIBRARIES: Libraries = [];
 
 const MAP_CONTAINER_STYLE = { width: '100%', height: '100%' };
+
+/** Ẩn icon địa điểm (nhà hàng, cửa hàng…) và icon trạm giao thông — Hệ thống → Cấu hình bản đồ. */
+const HIDE_POI_STYLES: google.maps.MapTypeStyle[] = [
+  { featureType: 'poi', stylers: [{ visibility: 'off' }] },
+  { featureType: 'transit', elementType: 'labels.icon', stylers: [{ visibility: 'off' }] },
+];
 
 /** SVG chấm tròn viền trắng theo màu trạng thái — dùng làm icon marker, số nhà hiển thị qua `label`. */
 function buildMarkerIcon(color: string) {
@@ -48,6 +55,7 @@ export default function HouseMapGoogle({
 
   const mapRef = useRef<google.maps.Map | null>(null);
   const [layer, setLayer] = useState<'street' | 'satellite'>('street');
+  const { config } = useAppConfig();
   const [activeHouseId, setActiveHouseId] = useState<string | null>(null);
   const [myLocation, setMyLocation] = useState<{ lat: number; lng: number } | null>(null);
 
@@ -114,7 +122,7 @@ export default function HouseMapGoogle({
       {apiKey && isLoaded && (
         <GoogleMap
           mapContainerStyle={MAP_CONTAINER_STYLE}
-          center={TAYNINH_CENTER_OBJ}
+          center={DEFAULT_CENTER_OBJ}
           zoom={15}
           onLoad={onLoad}
           onUnmount={onUnmount}
@@ -126,6 +134,7 @@ export default function HouseMapGoogle({
             zoomControlOptions: { position: google.maps.ControlPosition.RIGHT_BOTTOM },
             clickableIcons: false,
             mapTypeId: 'roadmap',
+            styles: config.mapHidePoi ? HIDE_POI_STYLES : undefined,
           }}
         >
           {houses.map((h) => (
