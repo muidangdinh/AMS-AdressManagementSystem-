@@ -86,14 +86,50 @@ export class RoutesService {
   async update(id: string, dto: UpdateRouteDto) {
     await this.findOneOrThrow(id);
     await this.assertStreet(dto.streetId);
-    return this.prisma.surveyRoute.update({
-      where: { id },
-      data: {
-        name: dto.name?.trim(),
-        streetId: dto.streetId === undefined ? undefined : dto.streetId || null,
-        note: dto.note,
-      },
-      include: ROUTE_INCLUDE,
+
+    const geometryFields = [
+      dto.startLat,
+      dto.startLng,
+      dto.endLat,
+      dto.endLng,
+      dto.path,
+      dto.lengthM,
+      dto.snapped,
+    ];
+    const hasGeometry = geometryFields.some((value) => value !== undefined);
+    if (hasGeometry) {
+      if (geometryFields.some((value) => value === undefined) || !isValidPath(dto.path)) {
+        throw new BadRequestException('Cần gửi đầy đủ tọa độ, đường đi, độ dài và trạng thái bám đường');
+      }
+    }
+
+    return this.prisma.$transaction(async (tx) => {
+      if (hasGeometry) {
+        const [surveyCount, installCount] = await Promise.all([
+          tx.surveyAssignment.count({ where: { routeId: id } }),
+          tx.installAssignment.count({ where: { routeId: id } }),
+        ]);
+        if (surveyCount + installCount > 0) {
+          throw new ConflictException('Không thể sửa tuyến đã được giao nhiệm vụ');
+        }
+      }
+
+      return tx.surveyRoute.update({
+        where: { id },
+        data: {
+          name: dto.name?.trim(),
+          streetId: dto.streetId === undefined ? undefined : dto.streetId || null,
+          note: dto.note === undefined ? undefined : dto.note || null,
+          startLat: dto.startLat,
+          startLng: dto.startLng,
+          endLat: dto.endLat,
+          endLng: dto.endLng,
+          path: dto.path,
+          lengthM: dto.lengthM,
+          snapped: dto.snapped,
+        },
+        include: ROUTE_INCLUDE,
+      });
     });
   }
 

@@ -1,6 +1,19 @@
-import { IsOptional, IsString, MinLength } from 'class-validator';
+import { Type } from 'class-transformer';
+import {
+  ArrayMaxSize,
+  ArrayMinSize,
+  IsArray,
+  IsBoolean,
+  IsLatitude,
+  IsLongitude,
+  IsNumber,
+  IsOptional,
+  IsString,
+  Min,
+  MinLength,
+} from 'class-validator';
 
-/** Chỉ sửa thông tin mô tả — muốn đổi hình tuyến thì xóa rồi chấm lại. */
+/** Cập nhật thông tin hoặc hình tuyến khi tuyến chưa được giao nhiệm vụ. */
 export class UpdateRouteDto {
   @IsOptional()
   @IsString()
@@ -15,4 +28,40 @@ export class UpdateRouteDto {
   @IsOptional()
   @IsString()
   note?: string;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsLatitude()
+  startLat?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsLongitude()
+  startLng?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsLatitude()
+  endLat?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsLongitude()
+  endLng?: number;
+
+  @IsOptional()
+  @IsArray()
+  @ArrayMinSize(2)
+  @ArrayMaxSize(20000)
+  path?: [number, number][];
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  @Min(0)
+  lengthM?: number;
+
+  @IsOptional()
+  @IsBoolean()
+  snapped?: boolean;
 }

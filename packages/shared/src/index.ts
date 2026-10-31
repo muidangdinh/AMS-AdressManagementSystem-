@@ -940,6 +940,13 @@ export interface UpdateSurveyRouteRequest {
   /** Chuỗi rỗng = bỏ liên kết đường. */
   streetId?: string;
   note?: string;
+  startLat?: number;
+  startLng?: number;
+  endLat?: number;
+  endLng?: number;
+  path?: [number, number][];
+  lengthM?: number;
+  snapped?: boolean;
 }
 
 // ============================================================

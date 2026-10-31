@@ -66,6 +66,7 @@ export default function SurveyRoutesPanel({
   const [focusNonce, setFocusNonce] = useState<number | undefined>(undefined);
 
   const [drawing, setDrawing] = useState(false);
+  const [editingRouteId, setEditingRouteId] = useState<string | null>(null);
   const [draft, setDraft] = useState<RouteDraft>(EMPTY_DRAFT);
   const [form, setForm] = useState(EMPTY_FORM);
   const [streets, setStreets] = useState<Street[]>([]);
@@ -150,14 +151,42 @@ export default function SurveyRoutesPanel({
   function startDrawing() {
     setError(null);
     setPendingAssign(null);
+    setEditingRouteId(null);
     setForm({ ...EMPTY_FORM, zoneId: zones.length === 1 ? zones[0].id : '' });
     setDraft(EMPTY_DRAFT);
     setSelectedRouteId(null);
     setDrawing(true);
   }
 
+  function startEditing(route: SurveyRoute) {
+    if (assignmentByRoute.has(route.id)) return;
+    setError(null);
+    setPendingAssign(null);
+    setEditingRouteId(route.id);
+    setForm({
+      zoneId: route.zoneId,
+      name: route.name,
+      streetId: route.streetId ?? '',
+      note: route.note ?? '',
+    });
+    setDraft({
+      start: [route.startLat, route.startLng],
+      end: [route.endLat, route.endLng],
+      result: {
+        path: route.path,
+        lengthM: route.lengthM ?? 0,
+        snapped: route.snapped,
+      },
+      computing: false,
+    });
+    setSelectedRouteId(route.id);
+    setFocusNonce(Date.now());
+    setDrawing(true);
+  }
+
   function cancelDrawing() {
     setDrawing(false);
+    setEditingRouteId(null);
     setDraft(EMPTY_DRAFT);
     setError(null);
   }
@@ -174,11 +203,8 @@ export default function SurveyRoutesPanel({
     setSaving(true);
     setError(null);
     try {
-      const created = await routesApi.create({
-        zoneId: form.zoneId,
+      const routeData = {
         name: form.name.trim(),
-        streetId: form.streetId || undefined,
-        note: form.note.trim() || undefined,
         startLat: start[0],
         startLng: start[1],
         endLat: end[0],
@@ -186,11 +212,28 @@ export default function SurveyRoutesPanel({
         path: result.path,
         lengthM: Math.round(result.lengthM),
         snapped: result.snapped,
-      });
-      setRoutes((prev) => [...prev, created]);
+      };
+      if (editingRouteId) {
+        const updated = await routesApi.update(editingRouteId, {
+          ...routeData,
+          streetId: form.streetId,
+          note: form.note.trim(),
+        });
+        setRoutes((prev) => prev.map((route) => (route.id === updated.id ? updated : route)));
+        setSelectedRouteId(updated.id);
+      } else {
+        const created = await routesApi.create({
+          zoneId: form.zoneId,
+          ...routeData,
+          streetId: form.streetId || undefined,
+          note: form.note.trim() || undefined,
+        });
+        setRoutes((prev) => [...prev, created]);
+        setSelectedRouteId(created.id);
+      }
       setDrawing(false);
+      setEditingRouteId(null);
       setDraft(EMPTY_DRAFT);
-      setSelectedRouteId(created.id);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Không lưu được tuyến đường');
     } finally {
@@ -317,6 +360,7 @@ export default function SurveyRoutesPanel({
             <select
               required
               value={form.zoneId}
+              disabled={!!editingRouteId}
               onChange={(e) => setForm((f) => ({ ...f, zoneId: e.target.value, streetId: '' }))}
               className={FIELD_CLASS}
             >
@@ -404,7 +448,7 @@ export default function SurveyRoutesPanel({
               className="bg-brand hover:bg-brand/90 disabled:opacity-50 text-white text-xs font-semibold px-4 py-1.5 rounded-lg transition inline-flex items-center gap-1.5"
             >
               {saving && <ButtonSpinner light />}
-              Lưu tuyến
+              {editingRouteId ? 'Cập nhật tuyến' : 'Lưu tuyến'}
             </button>
           </div>
         </form>
@@ -549,16 +593,28 @@ export default function SurveyRoutesPanel({
                               )}
                             </div>
                             {canManage && !a && (
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  handleRemove(r);
-                                }}
-                                className="text-danger hover:underline text-xs font-semibold shrink-0"
-                              >
-                                Xóa
-                              </button>
+                              <div className="flex shrink-0 items-center gap-2">
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    startEditing(r);
+                                  }}
+                                  className="text-accent hover:underline text-xs font-semibold"
+                                >
+                                  Sửa
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleRemove(r);
+                                  }}
+                                  className="text-danger hover:underline text-xs font-semibold"
+                                >
+                                  Xóa
+                                </button>
+                              </div>
                             )}
                           </li>
                         );
