@@ -18,8 +18,10 @@ import {
 import { Camera, type CameraRef, GeoJSONSource, Layer, Marker } from '@maplibre/maplibre-react-native';
 import GoongMap from '../components/GoongMap';
 import { GOONG_TEXT_FONT } from '../lib/goong';
+import { useAppConfig } from '../lib/AppConfigContext';
 import Geolocation from '@react-native-community/geolocation';
-import { RouteProp, useRoute } from '@react-navigation/native';
+import { RouteProp, useFocusEffect, useRoute } from '@react-navigation/native';
+
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import {
   BUILDING_TYPE_LABELS,
@@ -39,7 +41,7 @@ import { fetchHamlets, fetchStreets, fetchWards } from '../lib/addressCatalog';
 import type { MainTabsParamList } from '../navigation/MainTabs';
 
 /** Trung tâm mặc định: TP. Tây Ninh — dùng khi chưa lấy được GPS thật. */
-const TAYNINH_CENTER: [number, number] = [106.098, 11.3151];
+const TAYNINH_CENTER: [number, number] = [106.18222, 10.65528];
 const MAP_ZOOM = 12;
 
 /** Bán kính mặc định khi bấm vào chỗ trống trên bản đồ để tra cứu số nhà xung quanh (mét). */
@@ -117,6 +119,12 @@ async function requestLocationPermission(): Promise<boolean> {
 }
 
 export default function MapScreen() {
+  const { refresh } = useAppConfig();
+  useFocusEffect(
+    useCallback(() => {
+      void refresh();
+    }, [refresh]),
+  );
   const cameraRef = useRef<CameraRef>(null);
   const abortRef = useRef<AbortController | null>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);

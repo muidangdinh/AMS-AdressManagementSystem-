@@ -370,12 +370,16 @@ export default function HousesPage() {
   // vẫn đổi được bình thường qua dropdown bên dưới sau khi trang đã mở.
   const { ward: workingWard } = useWorkingWard();
   const [wardId, setWardId] = useState('');
+  const [hamletId, setHamletId] = useState('');
   const [streetId, setStreetId] = useState('');
   const [status, setStatus] = useState<HouseStatus | ''>('');
   const [page, setPage] = useState(1);
 
   useEffect(() => {
-    if (workingWard) setWardId(workingWard.id);
+    if (workingWard) {
+      setWardId(workingWard.id);
+      setHamletId('');
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [workingWard?.id]);
 
@@ -478,7 +482,7 @@ export default function HousesPage() {
 
   const fetchHouses = useCallback(async ({ force = false }: { force?: boolean } = {}) => {
     if (sortDir) {
-      const key = [search, streetId, wardId, status, sortDir].join('|');
+      const key = [search, streetId, wardId, hamletId, status, sortDir].join('|');
       const cached = sortedCacheRef.current;
       if (!force && cached?.key === key) {
         setData({
@@ -508,6 +512,7 @@ export default function HousesPage() {
           if (search) qs.set('search', search);
           if (streetId) qs.set('streetId', streetId);
           if (wardId) qs.set('wardId', wardId);
+          if (hamletId) qs.set('hamletId', hamletId);
           if (status) qs.set('status', status);
           return apiFetch<PaginatedResult<HouseSummary>>(`/api/houses?${qs.toString()}`, {
             signal: controller.signal,
@@ -525,7 +530,7 @@ export default function HousesPage() {
             dir * HOUSE_NUMBER_COLLATOR.compare(a.houseNumber, b.houseNumber) ||
             HOUSE_NUMBER_COLLATOR.compare(a.street, b.street),
         );
-        sortedCacheRef.current = { key: [search, streetId, wardId, status, sortDir].join('|'), items: all };
+        sortedCacheRef.current = { key: [search, streetId, wardId, hamletId, status, sortDir].join('|'), items: all };
         setData({
           items: all.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE),
           total: all.length,
@@ -541,6 +546,7 @@ export default function HousesPage() {
       if (search) params.set('search', search);
       if (streetId) params.set('streetId', streetId);
       if (wardId) params.set('wardId', wardId);
+      if (hamletId) params.set('hamletId', hamletId);
       if (status) params.set('status', status);
       const res = await apiFetch<PaginatedResult<HouseSummary>>(
         `/api/houses?${params.toString()}`,
@@ -553,7 +559,7 @@ export default function HousesPage() {
     } finally {
       if (housesAbortRef.current === controller) setLoading(false);
     }
-  }, [page, search, streetId, wardId, status, sortDir]);
+  }, [page, search, streetId, wardId, hamletId, status, sortDir]);
 
   useEffect(() => {
     fetchHouses();
@@ -579,6 +585,7 @@ export default function HousesPage() {
       if (search) params.set('search', search);
       if (streetId) params.set('streetId', streetId);
       if (wardId) params.set('wardId', wardId);
+      if (hamletId) params.set('hamletId', hamletId);
       if (status) params.set('status', status);
 
       const token = getToken();
@@ -617,6 +624,7 @@ export default function HousesPage() {
       if (search) params.set('search', search);
       if (streetId) params.set('streetId', streetId);
       if (wardId) params.set('wardId', wardId);
+      if (hamletId) params.set('hamletId', hamletId);
       if (status) params.set('status', status);
       const res = await apiFetch<HouseGeoJson>(`/api/houses/geojson?${params.toString()}`, {
         signal: controller.signal,
@@ -640,7 +648,7 @@ export default function HousesPage() {
     } finally {
       if (mapAbortRef.current === controller) setMapLoading(false);
     }
-  }, [search, streetId, wardId, status]);
+  }, [search, streetId, wardId, hamletId, status]);
 
   useEffect(() => {
     if (viewMode === 'map') fetchMapHouses();
@@ -991,7 +999,7 @@ export default function HousesPage() {
             className="flex items-center gap-1.5 text-sm font-semibold text-fg-muted hover:text-fg px-2 py-1.5 rounded-lg hover:bg-surface-2"
           >
             <Filter className="w-4 h-4" /> Bộ lọc &amp; thống kê
-            {(search || wardId || streetId || status) && (
+            {(search || wardId || hamletId || streetId || status) && (
               <span className="w-2 h-2 rounded-full bg-brand" title="Đang có bộ lọc" />
             )}
           </button>
@@ -1025,19 +1033,21 @@ export default function HousesPage() {
             Ấp/thôn
           </label>
           <select
-            value={wardId}
+            value={hamletId}
             onChange={(e) => {
               setPage(1);
-              setWardId(e.target.value);
+              setHamletId(e.target.value);
             }}
             className={FILTER_FIELD}
           >
             <option value="">-- Tất cả --</option>
-            {wards.map((w) => (
-              <option key={w.id} value={w.id}>
-                {w.name}
-              </option>
-            ))}
+            {hamlets
+              .filter((h) => !wardId || h.wardId === wardId)
+              .map((h) => (
+                <option key={h.id} value={h.id}>
+                  {h.name}
+                </option>
+              ))}
           </select>
         </div>
         <div className="w-44">
