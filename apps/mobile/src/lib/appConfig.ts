@@ -5,12 +5,15 @@ export interface AppConfig {
   provinceName: string;
   appShortName: string;
   appLogoUrl: string | null;
+  /** Ẩn lớp icon địa điểm của nền bản đồ (giống tuỳ chọn bên web). */
+  mapHidePoi: boolean;
 }
 
 export const DEFAULT_APP_CONFIG: AppConfig = {
   provinceName: 'Tỉnh Tây Ninh',
   appShortName: 'AMS',
   appLogoUrl: null,
+  mapHidePoi: true,
 };
 
 let cachedConfig: AppConfig | null = null;
@@ -31,8 +34,12 @@ export function fetchAppConfig(force = false): Promise<AppConfig> {
 
   inflight = apiFetch<AppConfig>('/api/app-config')
     .then((config) => {
-      cachedConfig = config;
-      return config;
+      cachedConfig = {
+        ...DEFAULT_APP_CONFIG,
+        ...config,
+        mapHidePoi: config.mapHidePoi ?? DEFAULT_APP_CONFIG.mapHidePoi,
+      };
+      return cachedConfig;
     })
     .finally(() => {
       inflight = null;

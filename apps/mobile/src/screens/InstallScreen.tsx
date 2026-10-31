@@ -15,13 +15,14 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import MapView, { Marker, Polyline, Region } from 'react-native-maps';
+import { Camera, type CameraRef, GeoJSONSource, Layer, Marker } from '@maplibre/maplibre-react-native';
 import Geolocation from '@react-native-community/geolocation';
 import { useFocusEffect } from '@react-navigation/native';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import { launchCamera } from 'react-native-image-picker';
 import type { InstallAssignment, InstallPlateItem } from '@tayninh/shared';
 import { ASSIGNMENT_STATUS_LABELS, AssignmentStatus, PlateStatus } from '@tayninh/shared';
+import GoongMap from '../components/GoongMap';
 import { PHOTO_PICKER_OPTIONS } from '../lib/imageOptions';
 import { ApiError } from '../lib/api';
 import { installPlate, markPlateNotInstalled } from '../lib/platesApi';
@@ -45,7 +46,8 @@ const NOT_INSTALLED_REASONS = [
   'Sai địa chỉ / không tìm thấy nhà',
 ];
 
-const TAYNINH_REGION: Region = { latitude: 11.3151, longitude: 106.098, latitudeDelta: 0.08, longitudeDelta: 0.08 };
+const TAYNINH_CENTER: [number, number] = [106.098, 11.3151];
+const MAP_ZOOM = 12;
 
 const STATUS_COLOR: Record<AssignmentStatus, { bg: string; text: string }> = {
   [AssignmentStatus.ASSIGNED]: { bg: '#f1f5f9', text: '#475569' },
@@ -255,7 +257,7 @@ export default function InstallScreen() {
 }
 
 function InstallDetail({ assignmentId, onBack }: { assignmentId: string; onBack: () => void }) {
-  const mapRef = useRef<MapView>(null);
+  const cameraRef = useRef<CameraRef>(null);
   const [assignment, setAssignment] = useState<InstallAssignment | null>(null);
   const [plates, setPlates] = useState<InstallPlateItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -338,9 +340,21 @@ function InstallDetail({ assignmentId, onBack }: { assignmentId: string; onBack:
       ...plates.map((p) => ({ latitude: p.house.latitude, longitude: p.house.longitude })),
     ];
     if (pts.length === 0) return;
-    mapRef.current?.fitToCoordinates(pts, {
-      edgePadding: { top: 80, right: 50, bottom: 160, left: 50 },
-      animated: true,
+    const lats = pts.map((p) => p.latitude);
+    const lngs = pts.map((p) => p.longitude);
+    const bounds: [number, number, number, number] = [
+      Math.min(...lngs),
+      Math.min(...lats),
+      Math.max(...lngs),
+      Math.max(...lats),
+    ];
+    if (bounds[0] === bounds[2] && bounds[1] === bounds[3]) {
+      cameraRef.current?.flyTo({ center: [bounds[0], bounds[1]], zoom: 17, duration: 800 });
+      return;
+    }
+    cameraRef.current?.fitBounds(bounds, {
+      padding: { top: 80, right: 50, bottom: 160, left: 50 },
+      duration: 800,
     });
   }
 
@@ -349,7 +363,11 @@ function InstallDetail({ assignmentId, onBack }: { assignmentId: string; onBack:
       Alert.alert('Chưa có vị trí', 'Đang chờ GPS — hãy ra nơi thoáng và thử lại sau ít giây.');
       return;
     }
-    mapRef.current?.animateToRegion({ ...myLocation, latitudeDelta: 0.005, longitudeDelta: 0.005 }, 700);
+    cameraRef.current?.flyTo({
+      center: [myLocation.longitude, myLocation.latitude],
+      zoom: 17,
+      duration: 700,
+    });
   }
 
   function openDirections(p: InstallPlateItem) {
@@ -626,50 +644,69 @@ function InstallDetail({ assignmentId, onBack }: { assignmentId: string; onBack:
         </>
       ) : (
         <View style={{ flex: 1 }}>
-          <MapView
-            ref={mapRef}
-            style={StyleSheet.absoluteFill}
-            initialRegion={TAYNINH_REGION}
-            onMapReady={fitMap}
-            onPress={() => setSelectedPlateId(null)}
-          >
+          <GoongMap onReady={fitMap} onPress={() => setSelectedPlateId(null)}>
+            <Camera ref={cameraRef} initialViewState={{ center: TAYNINH_CENTER, zoom: MAP_ZOOM }} />
+
+            {routeCoords.length >= 2 && (
+              <GeoJSONSource
+                id="install-route"
+                data={{
+                  type: 'FeatureCollection',
+                  features: [
+                    {
+                      type: 'Feature',
+                      geometry: {
+                        type: 'LineString',
+                        coordinates: routeCoords.map((p) => [p.longitude, p.latitude]),
+                      },
+                      properties: {},
+                    },
+                  ],
+                }}
+              >
+                <Layer
+                  id="install-route-line"
+                  type="line"
+                  source="install-route"
+                  layout={{ 'line-cap': 'round', 'line-join': 'round' }}
+                  paint={{
+                    'line-color': '#1d4ed8',
+                    'line-width': 5,
+                    ...(assignment.route?.snapped === false ? { 'line-dasharray': [2, 2] } : {}),
+                  }}
+                />
+              </GeoJSONSource>
+            )}
+
             {routeCoords.length >= 2 && (
               <>
-                <Polyline
-                  coordinates={routeCoords}
-                  strokeColor="#1d4ed8"
-                  strokeWidth={5}
-                  lineDashPattern={assignment.route?.snapped === false ? [12, 8] : undefined}
-                />
-                <Marker coordinate={routeCoords[0]} anchor={{ x: 0.5, y: 0.5 }} tracksViewChanges={false}>
-                  <View collapsable={false} style={[styles.endpoint, { backgroundColor: '#16a34a' }]}>
+                <Marker lngLat={[routeCoords[0].longitude, routeCoords[0].latitude]}>
+                  <View style={[styles.endpoint, { backgroundColor: '#16a34a' }]}>
                     <Text style={styles.endpointText}>A</Text>
                   </View>
                 </Marker>
                 <Marker
-                  coordinate={routeCoords[routeCoords.length - 1]}
-                  anchor={{ x: 0.5, y: 0.5 }}
-                  tracksViewChanges={false}
+                  lngLat={[
+                    routeCoords[routeCoords.length - 1].longitude,
+                    routeCoords[routeCoords.length - 1].latitude,
+                  ]}
                 >
-                  <View collapsable={false} style={[styles.endpoint, { backgroundColor: '#dc2626' }]}>
+                  <View style={[styles.endpoint, { backgroundColor: '#dc2626' }]}>
                     <Text style={styles.endpointText}>B</Text>
                   </View>
                 </Marker>
               </>
             )}
+
             {plates.map((p) => {
               const s = plateState(p);
               return (
                 <Marker
                   key={`${p.id}-${s}-${p.id === selectedPlateId ? 's' : ''}`}
-                  coordinate={{ latitude: p.house.latitude, longitude: p.house.longitude }}
-                  anchor={{ x: 0.5, y: 0.5 }}
-                  tracksViewChanges={false}
-                  zIndex={p.id === selectedPlateId ? 50 : 10}
+                  lngLat={[p.house.longitude, p.house.latitude]}
                   onPress={() => setSelectedPlateId(p.id)}
                 >
                   <View
-                    collapsable={false}
                     style={[
                       styles.plateDot,
                       { backgroundColor: STATE_COLOR[s] },
@@ -683,12 +720,13 @@ function InstallDetail({ assignmentId, onBack }: { assignmentId: string; onBack:
                 </Marker>
               );
             })}
+
             {myLocation && (
-              <Marker coordinate={myLocation} anchor={{ x: 0.5, y: 0.5 }} zIndex={100} tracksViewChanges={false}>
-                <View collapsable={false} style={styles.myDot} />
+              <Marker lngLat={[myLocation.longitude, myLocation.latitude]}>
+                <View style={styles.myDot} />
               </Marker>
             )}
-          </MapView>
+          </GoongMap>
 
           <View style={styles.mapButtons}>
             <TouchableOpacity style={styles.fab} onPress={fitMap}>

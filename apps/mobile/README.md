@@ -53,24 +53,16 @@ export const API_URL = 'http://10.0.2.2:3001'; // mặc định cho Android Emul
 - **Backend chạy trên máy chủ dev từ xa**: đổi thành domain/IP public của máy chủ đó
   (nhớ mở port 3001 hoặc đặt sau reverse proxy HTTPS).
 
-## Cấu hình Google Maps API key (bắt buộc trên Android)
+## Bản đồ Goong (MapLibre)
 
-Tab **Bản Đồ** dùng `react-native-maps`. Trên **iOS**, mặc định dùng Apple Maps
-(`PROVIDER_DEFAULT`) — **không cần** API key. Trên **Android**, `react-native-maps`
-luôn cần Google Maps SDK dù dùng provider nào, nên **bắt buộc** phải có key:
+Tab **Bản Đồ** dùng `@maplibre/maplibre-react-native` + tile Goong, không cần Google
+Maps SDK hay key native. Maptiles key nằm trong `src/lib/goong.ts` (dùng chung với web).
 
-1. Tạo API key ở [Google Cloud Console](https://console.cloud.google.com/google/maps-apis/credentials),
-   bật **"Maps SDK for Android"** cho project đó.
-2. Tạo/sửa file `android/local.properties` (đã có sẵn trong `.gitignore`, KHÔNG commit —
-   giống hệt `sdk.dir` mà Android Studio tự sinh), thêm dòng:
-   ```properties
-   MAPS_API_KEY=AIza...key_thật_của_bạn
-   ```
-3. Build lại (`npm run android`) — `android/app/build.gradle` tự đọc key này và
-   inject vào `AndroidManifest.xml` qua `manifestPlaceholders` (xem 2 file đó nếu
-   cần đổi cách nạp key, ví dụ CI dùng biến môi trường thay vì `local.properties`).
-
-Thiếu key: bản đồ Android hiển thị lưới ô xám (không có tile) thay vì lỗi crash.
+- Android: không cần cấu hình thêm.
+- iOS: chạy `pod install` trong `ios/` (Podfile đã thêm `$MLRN.post_install`).
+- Nếu Goong chặn key theo domain/package, tạo key riêng cho mobile rồi thay trong `goong.ts`.
+- Ẩn POI (nhà hàng, cửa hàng...) theo cấu hình `mapHidePoi` của web; tải style JSON lỗi
+  thì tự fallback về style URL (vẫn hiện POI).
 
 ## Chạy thử
 
@@ -100,7 +92,7 @@ src/
     useAutoSync.ts     Tự động đồng bộ khi thiết bị có mạng trở lại (NetInfo)
   screens/
     LoginScreen.tsx
-    MapScreen.tsx      Bản đồ số nhà (react-native-maps) — tìm kiếm/lọc trạng thái,
+    MapScreen.tsx      Bản đồ số nhà (MapLibre + Goong) — tìm kiếm/lọc trạng thái,
                        marker màu theo trạng thái, chi tiết hồ sơ, tra cứu theo tọa độ
     SurveyScreen.tsx   GPS + chụp/chọn ảnh + form + Lưu Tạm/Gửi Duyệt
     HistoryScreen.tsx  Danh sách đã khảo sát, trạng thái đồng bộ, đồng bộ thủ công

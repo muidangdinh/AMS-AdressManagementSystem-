@@ -1,8 +1,9 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, Modal, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
-import MapView, { Marker, Polyline } from 'react-native-maps';
+import { Camera, type CameraRef, GeoJSONSource, Layer, Marker } from '@maplibre/maplibre-react-native';
 import Geolocation from '@react-native-community/geolocation';
 import { distanceToPathM } from '@tayninh/shared';
+import GoongMap from './GoongMap';
 
 /** Tuyến đường của nhiệm vụ đang chọn — vẽ lên bản đồ để chấm nhà dọc tuyến. */
 export interface PickerRoute {
@@ -20,10 +21,10 @@ function formatDistance(m: number): string {
 }
 
 /**
- * Chọn tọa độ bằng cách kéo thả ghim trên bản đồ — thay thế/bổ sung cho
+ * Chọn tọa độ bằng cách chạm bản đồ hoặc thả ghim giữa khung nhìn — thay thế/bổ sung cho
  * "Cập nhật GPS" khi máy không bắt được tín hiệu vệ tinh (trong nhà, khu vực
- * sóng yếu) nhưng khảo sát viên biết rõ vị trí trên bản đồ. Dùng chung thư
- * viện react-native-maps đã có ở MapScreen.tsx, không kéo thêm dependency mới.
+ * sóng yếu) nhưng khảo sát viên biết rõ vị trí trên bản đồ. Dùng chung
+ * MapLibre + tile Goong với MapScreen.tsx.
  *
  * Có `route` (nhiệm vụ đang chọn được giao theo tuyến) → vẽ tuyến và mở ra ngay tại tuyến để
  * chấm nhà dọc tuyến. Nút 📍 bay về vị trí đang đứng (không tự dời ghim).
@@ -51,9 +52,9 @@ export default function LocationPickerModal({
   onClose: () => void;
   onConfirm: (lat: number, lng: number) => void;
 }) {
-  const mapRef = useRef<MapView>(null);
+  const cameraRef = useRef<CameraRef>(null);
   const [coord, setCoord] = useState({ latitude: initialLat, longitude: initialLng });
-  /** Có tuyến thì ghim ẩn lúc đầu — bấm nút "Ghim" để thả ghim vào giữa khung nhìn rồi kéo chỉnh. */
+  /** Có tuyến thì ghim ẩn lúc đầu — bấm nút "Ghim" để thả ghim vào giữa khung nhìn. */
   const [pinPlaced, setPinPlaced] = useState(true);
   /** Tâm khung nhìn hiện tại — nơi nút "Ghim" thả ghim xuống. */
   const centerRef = useRef({ latitude: initialLat, longitude: initialLng });
@@ -65,15 +66,16 @@ export default function LocationPickerModal({
 
   function fitRoute() {
     if (routeCoords.length < 2) return;
-    mapRef.current?.fitToCoordinates(routeCoords, {
-      edgePadding: { top: 60, right: 50, bottom: 60, left: 50 },
-      animated: true,
-    });
+    const lats = routeCoords.map((p) => p.latitude);
+    const lngs = routeCoords.map((p) => p.longitude);
+    cameraRef.current?.fitBounds(
+      [Math.min(...lngs), Math.min(...lats), Math.max(...lngs), Math.max(...lats)],
+      { padding: { top: 60, right: 50, bottom: 60, left: 50 }, duration: 800 },
+    );
   }
 
-  // Modal được render sẵn từ lúc mở màn hình (chỉ đổi `visible`), nên useState ở trên chỉ giữ
-  // tọa độ LẦN ĐẦU (thường là mặc định, trước khi GPS lấy xong) — trong khi MapView mở ra canh
-  // giữa tọa độ hiện tại → ghim nằm lệch khỏi khung nhìn. Đặt lại ghim mỗi lần mở modal.
+  // Map chỉ mount khi `visible`, nhưng prop ban đầu có thể là mặc định trước khi GPS xong —
+  // đặt lại ghim mỗi lần mở modal để khớp tọa độ hiện tại.
   // Có tuyến mà chưa có vị trí thật → ghim ở điểm giữa tuyến để luôn nằm trong khung nhìn.
   useEffect(() => {
     if (!visible) return;
@@ -88,7 +90,11 @@ export default function LocationPickerModal({
   /** Bay về vị trí nhà đang chọn (không dời ghim — người dùng tự chạm hoặc bấm "Ghim"). */
   function flyToHouse() {
     if (!houseLocation) return;
-    mapRef.current?.animateToRegion({ ...houseLocation, latitudeDelta: 0.002, longitudeDelta: 0.002 }, 700);
+    cameraRef.current?.flyTo({
+      center: [houseLocation.longitude, houseLocation.latitude],
+      zoom: 18,
+      duration: 700,
+    });
   }
 
   function handleLocateMe() {
@@ -107,7 +113,7 @@ export default function LocationPickerModal({
         clearTimeout(timer);
         const { latitude, longitude } = position.coords;
         setMyLocation({ latitude, longitude });
-        mapRef.current?.animateToRegion({ latitude, longitude, latitudeDelta: 0.005, longitudeDelta: 0.005 }, 800);
+        cameraRef.current?.flyTo({ center: [longitude, latitude], zoom: 17, duration: 800 });
         setLocating(false);
       },
       () => {
@@ -131,85 +137,104 @@ export default function LocationPickerModal({
           <Text style={styles.title}>Chọn vị trí trên bản đồ</Text>
           <Text style={styles.hint}>
             {hasRoute
-              ? `Di chuyển tới đoạn tuyến "${route!.name}" cần chấm, bấm "Ghim" rồi kéo ghim đúng vị trí căn nhà`
-              : 'Chạm vào bản đồ, bấm "Ghim" hoặc kéo ghim để chọn đúng vị trí căn nhà'}
+              ? `Di chuyển tới đoạn tuyến "${route!.name}" cần chấm, rồi chạm vào đúng vị trí căn nhà`
+              : 'Chạm vào bản đồ hoặc bấm "Ghim" để chọn đúng vị trí căn nhà'}
           </Text>
         </View>
 
         <View style={styles.mapWrap}>
-          <MapView
-            ref={mapRef}
-            style={StyleSheet.absoluteFill}
-            initialRegion={{
-              latitude: initialLat,
-              longitude: initialLng,
-              latitudeDelta: 0.01,
-              longitudeDelta: 0.01,
-            }}
-            onMapReady={() => {
-              if (hasRoute) fitRoute();
-            }}
-            // Chạm để dời ghim — kéo ghim nhỏ trên điện thoại khó thao tác.
-            onRegionChangeComplete={(r) => {
-              centerRef.current = { latitude: r.latitude, longitude: r.longitude };
-            }}
-            onPress={(e) => {
-              setCoord(e.nativeEvent.coordinate);
-              setPinPlaced(true);
-            }}
-          >
-            {hasRoute && (
-              <>
-                <Polyline
-                  coordinates={routeCoords}
-                  strokeColor="#1d4ed8"
-                  strokeWidth={6}
-                  lineDashPattern={route!.snapped === false ? [12, 8] : undefined}
-                  zIndex={10}
-                />
-                <Marker coordinate={routeCoords[0]} anchor={{ x: 0.5, y: 0.5 }} tracksViewChanges={false} zIndex={20}>
-                  <View collapsable={false} style={[styles.endpoint, styles.endpointStart]}>
-                    <Text style={styles.endpointText}>A</Text>
-                  </View>
-                </Marker>
-                <Marker
-                  coordinate={routeCoords[routeCoords.length - 1]}
-                  anchor={{ x: 0.5, y: 0.5 }}
-                  tracksViewChanges={false}
-                  zIndex={20}
-                >
-                  <View collapsable={false} style={[styles.endpoint, styles.endpointEnd]}>
-                    <Text style={styles.endpointText}>B</Text>
-                  </View>
-                </Marker>
-              </>
-            )}
-
-            {houseLocation && (
-              <Marker coordinate={houseLocation} anchor={{ x: 0.5, y: 0.5 }} tracksViewChanges={false} zIndex={22}>
-                <View collapsable={false} style={styles.homeMarker}>
-                  <Text style={styles.homeMarkerText}>🏠</Text>
-                </View>
-              </Marker>
-            )}
-
-            {myLocation && (
-              <Marker coordinate={myLocation} anchor={{ x: 0.5, y: 0.5 }} zIndex={25}>
-                <View collapsable={false} style={styles.myLocationDot} />
-              </Marker>
-            )}
-
-            {pinPlaced && (
-              <Marker
-                coordinate={coord}
-                draggable
-                zIndex={30}
-                onDragEnd={(e) => setCoord(e.nativeEvent.coordinate)}
+          {visible && (
+            <GoongMap
+              onReady={() => {
+                if (hasRoute) fitRoute();
+              }}
+              onRegionDidChange={(center) => {
+                centerRef.current = center;
+              }}
+              onPress={(latitude, longitude) => {
+                setCoord({ latitude, longitude });
+                setPinPlaced(true);
+              }}
+            >
+              <Camera
+                ref={cameraRef}
+                initialViewState={{ center: [initialLng, initialLat], zoom: 14 }}
               />
-            )}
-          </MapView>
 
-          {/* Thả ghim vào giữa khung nhìn hiện tại (vd sau khi bay tới tuyến) rồi kéo để chỉnh. */}
+              {hasRoute && (
+                <GeoJSONSource
+                  id="picker-route"
+                  data={{
+                    type: 'FeatureCollection',
+                    features: [
+                      {
+                        type: 'Feature',
+                        geometry: {
+                          type: 'LineString',
+                          coordinates: routeCoords.map((p) => [p.longitude, p.latitude]),
+                        },
+                        properties: {},
+                      },
+                    ],
+                  }}
+                >
+                  <Layer
+                    id="picker-route-line"
+                    type="line"
+                    source="picker-route"
+                    layout={{ 'line-cap': 'round', 'line-join': 'round' }}
+                    paint={{
+                      'line-color': '#1d4ed8',
+                      'line-width': 6,
+                      ...(route!.snapped === false ? { 'line-dasharray': [2, 2] } : {}),
+                    }}
+                  />
+                </GeoJSONSource>
+              )}
+
+              {hasRoute && (
+                <>
+                  <Marker lngLat={[routeCoords[0].longitude, routeCoords[0].latitude]}>
+                    <View style={[styles.endpoint, styles.endpointStart]}>
+                      <Text style={styles.endpointText}>A</Text>
+                    </View>
+                  </Marker>
+                  <Marker
+                    lngLat={[
+                      routeCoords[routeCoords.length - 1].longitude,
+                      routeCoords[routeCoords.length - 1].latitude,
+                    ]}
+                  >
+                    <View style={[styles.endpoint, styles.endpointEnd]}>
+                      <Text style={styles.endpointText}>B</Text>
+                    </View>
+                  </Marker>
+                </>
+              )}
+
+              {houseLocation && (
+                <Marker lngLat={[houseLocation.longitude, houseLocation.latitude]}>
+                  <View style={styles.homeMarker}>
+                    <Text style={styles.homeMarkerText}>🏠</Text>
+                  </View>
+                </Marker>
+              )}
+
+              {myLocation && (
+                <Marker lngLat={[myLocation.longitude, myLocation.latitude]}>
+                  <View style={styles.myLocationDot} />
+                </Marker>
+              )}
+
+              {pinPlaced && (
+                <Marker lngLat={[coord.longitude, coord.latitude]}>
+                  <View style={styles.pinMarker} />
+                </Marker>
+              )}
+            </GoongMap>
+          )}
+
+          {/* Thả ghim vào giữa khung nhìn hiện tại (vd sau khi bay tới tuyến). */}
           <TouchableOpacity style={styles.pinButton} onPress={dropPinAtCenter}>
             <Text style={styles.pinButtonText}>📌 {pinPlaced ? 'Ghim lại giữa màn hình' : 'Ghim'}</Text>
           </TouchableOpacity>
@@ -319,6 +344,15 @@ const styles = StyleSheet.create({
     borderWidth: 2,
     borderColor: '#fff',
     elevation: 4,
+  },
+  pinMarker: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    backgroundColor: '#dc2626',
+    borderWidth: 3,
+    borderColor: '#fff',
+    elevation: 5,
   },
   coordRow: { padding: 10, alignItems: 'center', backgroundColor: '#f8fafc' },
   coordText: { fontFamily: 'monospace', fontSize: 13, color: '#0f172a' },

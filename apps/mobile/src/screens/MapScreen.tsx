@@ -15,9 +15,11 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import MapView, { Marker, Region } from 'react-native-maps';
+import { Camera, type CameraRef, GeoJSONSource, Layer, Marker } from '@maplibre/maplibre-react-native';
+import GoongMap from '../components/GoongMap';
+import { GOONG_TEXT_FONT } from '../lib/goong';
 import Geolocation from '@react-native-community/geolocation';
-import { RouteProp, useFocusEffect, useRoute } from '@react-navigation/native';
+import { RouteProp, useRoute } from '@react-navigation/native';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import {
   BUILDING_TYPE_LABELS,
@@ -37,12 +39,8 @@ import { fetchHamlets, fetchStreets, fetchWards } from '../lib/addressCatalog';
 import type { MainTabsParamList } from '../navigation/MainTabs';
 
 /** Trung tâm mặc định: TP. Tây Ninh — dùng khi chưa lấy được GPS thật. */
-const TAYNINH_REGION: Region = {
-  latitude: 11.3151,
-  longitude: 106.098,
-  latitudeDelta: 0.08,
-  longitudeDelta: 0.08,
-};
+const TAYNINH_CENTER: [number, number] = [106.098, 11.3151];
+const MAP_ZOOM = 12;
 
 /** Bán kính mặc định khi bấm vào chỗ trống trên bản đồ để tra cứu số nhà xung quanh (mét). */
 const NEARBY_RADIUS_METERS = 500;
@@ -93,6 +91,17 @@ interface HouseGeoJson {
 
 type NearbyHouse = HouseSummary & { distance: number };
 
+function toFeatureCollection(houses: HouseGeoPoint[]): GeoJSON.FeatureCollection<GeoJSON.Point> {
+  return {
+    type: 'FeatureCollection',
+    features: houses.map((h) => ({
+      type: 'Feature',
+      geometry: { type: 'Point', coordinates: [h.longitude, h.latitude] },
+      properties: { id: h.id, houseNumber: h.houseNumber, color: STATUS_COLOR[h.status] ?? '#64748b' },
+    })),
+  };
+}
+
 async function requestLocationPermission(): Promise<boolean> {
   if (Platform.OS !== 'android') return true;
   const granted = await PermissionsAndroid.request(
@@ -108,12 +117,12 @@ async function requestLocationPermission(): Promise<boolean> {
 }
 
 export default function MapScreen() {
-  const mapRef = useRef<MapView>(null);
+  const cameraRef = useRef<CameraRef>(null);
   const abortRef = useRef<AbortController | null>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const route = useRoute<RouteProp<MainTabsParamList, 'Map'>>();
   const consumedFocusRef = useRef<string | null>(null);
-  // Map sẵn sàng (onMapReady) — lệnh animateToRegion trước đó bị nuốt khi tab mount lười lần đầu.
+  // Camera sẵn sàng — lệnh bay tới trước khi map load xong sẽ bị bỏ qua.
   const [mapReady, setMapReady] = useState(false);
   // Nhà đang được chọn từ Dashboard — luôn vẽ ghim nổi bật dù không nằm trong danh sách đã lọc.
   const [focusTarget, setFocusTarget] = useState<{ id: string; lat: number; lng: number } | null>(null);
@@ -191,33 +200,6 @@ export default function MapScreen() {
       .catch(() => {});
   }, []);
 
-  const [trackMarkers, setTrackMarkers] = useState(true);
-  useEffect(() => {
-    setTrackMarkers(true);
-    const t = setTimeout(() => setTrackMarkers(false), 500);
-    return () => clearTimeout(t);
-  }, [houses]);
-
-  const [markerRevision, setMarkerRevision] = useState(0);
-
-  useFocusEffect(
-    useCallback(() => {
-      setTrackMarkers(true);
-
-      const recreateTimer = setTimeout(() => {
-        setMarkerRevision((revision) => revision + 1);
-      }, 300);
-
-      const stopTrackingTimer = setTimeout(() => {
-        setTrackMarkers(false);
-      }, 1200);
-
-      return () => {
-        clearTimeout(recreateTimer);
-        clearTimeout(stopTrackingTimer);
-      };
-    }, []),
-  );
   const fetchHouses = useCallback(
     async (
       searchVal: string,
@@ -331,10 +313,7 @@ export default function MapScreen() {
     // Đã có vị trí từ watch nền (pre-warm) — dùng ngay, khỏi đợi GPS tìm fix mới.
     if (lastKnownPositionRef.current) {
       const { latitude, longitude } = lastKnownPositionRef.current;
-      mapRef.current?.animateToRegion(
-        { latitude, longitude, latitudeDelta: 0.01, longitudeDelta: 0.01 },
-        800,
-      );
+      cameraRef.current?.flyTo({ center: [longitude, latitude], zoom: 17, duration: 800 });
       setMyLocation({ latitude, longitude });
       setLocating(false);
       return;
@@ -358,10 +337,7 @@ export default function MapScreen() {
         resolved = true;
         clearTimeout(timeoutTimer);
         const { latitude, longitude } = position.coords;
-        mapRef.current?.animateToRegion(
-          { latitude, longitude, latitudeDelta: 0.01, longitudeDelta: 0.01 },
-          800,
-        );
+        cameraRef.current?.flyTo({ center: [longitude, latitude], zoom: 17, duration: 800 });
         setMyLocation({ latitude, longitude });
         setLocating(false);
       },
@@ -388,10 +364,7 @@ export default function MapScreen() {
   }
 
   function flyTo(lat: number, lng: number) {
-    mapRef.current?.animateToRegion(
-      { latitude: lat, longitude: lng, latitudeDelta: 0.005, longitudeDelta: 0.005 },
-      800,
-    );
+    cameraRef.current?.flyTo({ center: [lng, lat], zoom: 17, duration: 800 });
   }
 
   // Được điều hướng từ Dashboard (bấm 1 dòng trong modal xem nhanh) — bay tới
@@ -411,57 +384,76 @@ export default function MapScreen() {
 
   return (
     <View style={styles.container}>
-      <MapView
-        ref={mapRef}
-        style={StyleSheet.absoluteFill}
-        initialRegion={TAYNINH_REGION}
-        onMapReady={() => setMapReady(true)}
-        onPress={(e) => {
+      <GoongMap
+        onReady={() => setMapReady(true)}
+        onPress={(latitude, longitude) => {
           setNearby(null);
-          const { latitude, longitude } = e.nativeEvent.coordinate;
           handleMapPress(latitude, longitude);
         }}
       >
-        {houses.map((h) => (
-          <Marker
-            // key gồm status/houseNumber để marker tự tạo lại (vẽ lại đúng màu/nhãn)
-            // khi hồ sơ được cập nhật — tracksViewChanges=false bên dưới chỉ tối ưu
-            // hiệu năng cho marker KHÔNG đổi, không dùng để re-render marker đã đổi.
-            key={`${markerRevision}-${h.id}-${h.status}-${h.houseNumber}`}
-            coordinate={{ latitude: h.latitude, longitude: h.longitude }}
-            onPress={() => openDetail(h.id)}
-            tracksViewChanges={trackMarkers}
-          >
-            {/* collapsable={false}: bắt buộc trên Android — nếu không, view-flattening
-                (càng gắt hơn ở kiến trúc mới/Fabric) sẽ dẹp View này trước khi
-                react-native-maps kịp chụp snapshot, khiến marker vô hình dù toạ độ đúng. */}
-            <View
-              collapsable={false}
-              style={[styles.markerBadge, { backgroundColor: STATUS_COLOR[h.status] }]}
-            >
-              <Text style={styles.markerText} numberOfLines={1}>
-                {h.houseNumber}
-              </Text>
-            </View>
-          </Marker>
-        ))}
+        <Camera ref={cameraRef} initialViewState={{ center: TAYNINH_CENTER, zoom: MAP_ZOOM }} />
+
+        <GeoJSONSource
+          id="houses"
+          data={toFeatureCollection(houses)}
+          onPress={(event) => {
+            event.stopPropagation();
+            const id = event.nativeEvent.features[0]?.properties?.id;
+            if (typeof id === 'string') openDetail(id);
+          }}
+        >
+          <Layer
+            id="houses-glow"
+            type="circle"
+            source="houses"
+            paint={{
+              'circle-radius': 20,
+              'circle-color': ['get', 'color'],
+              'circle-opacity': 0.25,
+              'circle-blur': 0.8,
+            }}
+          />
+          <Layer
+            id="houses-circle"
+            type="circle"
+            source="houses"
+            paint={{
+              'circle-radius': 14,
+              'circle-color': ['get', 'color'],
+              'circle-stroke-width': 2,
+              'circle-stroke-color': 'rgba(255,255,255,0.9)',
+            }}
+          />
+          <Layer
+            id="houses-label"
+            type="symbol"
+            source="houses"
+            layout={{
+              'text-field': ['get', 'houseNumber'],
+              'text-font': GOONG_TEXT_FONT,
+              'text-size': 11,
+              'text-allow-overlap': true,
+              'text-ignore-placement': true,
+            }}
+            paint={{ 'text-color': '#ffffff' }}
+          />
+        </GeoJSONSource>
 
         {focusTarget && !houses.some((h) => h.id === focusTarget.id) && (
           <Marker
-            coordinate={{ latitude: focusTarget.lat, longitude: focusTarget.lng }}
+            lngLat={[focusTarget.lng, focusTarget.lat]}
             onPress={() => openDetail(focusTarget.id)}
-            zIndex={998}
           >
-            <View collapsable={false} style={styles.focusMarker} />
+            <View style={styles.focusMarker} />
           </Marker>
         )}
 
         {myLocation && (
-          <Marker coordinate={myLocation} anchor={{ x: 0.5, y: 0.5 }} zIndex={999}>
-            <View collapsable={false} style={styles.myLocationDot} />
+          <Marker lngLat={[myLocation.longitude, myLocation.latitude]}>
+            <View style={styles.myLocationDot} />
           </Marker>
         )}
-      </MapView>
+      </GoongMap>
 
       {/* Thanh tìm kiếm & lọc — TN-22 (góp ý khách hàng 11/09/2026: "thanh tìm kiếm đa dạng, dễ
           tìm kiếm, dễ sử dụng") thêm nút Bộ lọc mở modal chọn Xã/Ấp/Đường, bên cạnh ô tìm chữ
@@ -792,23 +784,6 @@ function InfoRow({ label, value }: { label: string; value: string }) {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#f8fafc' },
-  markerBadge: {
-    minWidth: 30,
-    height: 30,
-    paddingHorizontal: 4,
-    borderRadius: 15,
-    backgroundColor: '#64748b',
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 2,
-    borderColor: '#fff',
-    shadowColor: '#000',
-    shadowOpacity: 0.3,
-    shadowRadius: 3,
-    shadowOffset: { width: 0, height: 1 },
-    elevation: 3,
-  },
-  markerText: { color: '#fff', fontWeight: '700', fontSize: 10 },
   focusMarker: {
     width: 26,
     height: 26,

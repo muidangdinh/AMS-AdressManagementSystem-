@@ -73,17 +73,6 @@ def enableProguardInReleaseBuilds = false
  */
 def jscFlavor = 'io.github.react-native-community:jsc-android:2026004.+'
 
-// react-native-maps (Bản Đồ) cần Google Maps API key trên Android — đọc từ
-// android/local.properties (KHÔNG commit, đã có sẵn trong .gitignore, giống
-// sdk.dir) thay vì hardcode trong AndroidManifest.xml. Xem README.md phần
-// "Cấu hình Google Maps API key".
-def localProperties = new Properties()
-def localPropertiesFile = rootProject.file("local.properties")
-if (localPropertiesFile.exists()) {
-    localPropertiesFile.withInputStream { localProperties.load(it) }
-}
-def mapsApiKey = localProperties.getProperty("MAPS_API_KEY", "")
-
 android {
     ndkVersion rootProject.ext.ndkVersion
     buildToolsVersion rootProject.ext.buildToolsVersion
@@ -96,7 +85,6 @@ android {
         targetSdkVersion rootProject.ext.targetSdkVersion
         versionCode 12
         versionName "1.11"
-        manifestPlaceholders = [mapsApiKey: mapsApiKey]
     }
     signingConfigs {
         debug {
