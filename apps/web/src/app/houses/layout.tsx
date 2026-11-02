@@ -293,6 +293,7 @@ export default function HousesLayout({ children }: { children: React.ReactNode }
   );
   const canSeeNumbering = hasPermission(PERMISSIONS.SCHEME_MANAGE) || hasPermission(PERMISSIONS.SCHEME_APPROVE);
   const canSeeBranding = hasPermission(PERMISSIONS.SETTING_MANAGE);
+  const canSeeAddresses = hasPermission(PERMISSIONS.ADDRESS_WRITE) || hasPermission(PERMISSIONS.ROUTE_MANAGE);
 
   // Chặn gõ thẳng địa chỉ trang của phân hệ không có quyền → đưa về Tổng quan (chỉ ở giao diện web).
   useEffect(() => {
@@ -508,7 +509,7 @@ export default function HousesLayout({ children }: { children: React.ReactNode }
                     </NavLink>
                   </NavItem>
                 )}
-                {hasPermission(PERMISSIONS.ADDRESS_WRITE) && (
+                {canSeeAddresses && (
                   <NavItem index={5}>
                     <NavLink href="/houses/addresses" icon="addresses" block touch onNavigate={closeNav}>
                       Quản lý tuyến đường
@@ -592,7 +593,7 @@ export default function HousesLayout({ children }: { children: React.ReactNode }
             </NavLink>
           )}
           {canSeeHouses && <LocateButton block />}
-          {hasPermission(PERMISSIONS.ADDRESS_WRITE) && (
+          {canSeeAddresses && (
             <>
               <NavGroup label="Danh mục" />
               <NavLink href="/houses/addresses" icon="addresses" block>

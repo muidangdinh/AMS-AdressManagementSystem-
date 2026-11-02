@@ -106,6 +106,8 @@ export default function RoutePickerMapLeaflet({
       routingAbortRef.current?.abort();
       map.remove();
       mapRef.current = null;
+      // Bản đồ tạo lại (StrictMode) thì phải canh khung lại theo tuyến.
+      fittedRef.current = false;
     };
   }, []);
 
@@ -135,6 +137,8 @@ export default function RoutePickerMapLeaflet({
       })
         .bindTooltip(hovered ? `Thả để giao: ${r.name}` : r.name, { sticky: true, permanent: hovered })
         .on('click', (e) => {
+          // Đang chấm tuyến: để sự kiện lên bản đồ để đặt điểm, kể cả ngay trên tuyến có sẵn.
+          if (drawingRef.current) return;
           L.DomEvent.stopPropagation(e);
           onSelectRouteRef.current(r.id);
         })

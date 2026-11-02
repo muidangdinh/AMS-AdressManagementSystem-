@@ -22,6 +22,21 @@ export interface MapDot {
 
 export const EMPTY_DRAFT: RouteDraft = { start: null, end: null, result: null, computing: false };
 
+/** Nạp tuyến đã lưu vào bản nháp để sửa trên bản đồ. */
+export function draftFromRoute(route: SurveyRoute): RouteDraft {
+  return {
+    start: [route.startLat, route.startLng],
+    end: [route.endLat, route.endLng],
+    result: { path: route.path, lengthM: route.lengthM ?? 0, snapped: route.snapped },
+    computing: false,
+  };
+}
+
+/** Đường đi bị khóa khi tuyến đã từng được giao khảo sát hoặc thi công (API cũng chặn). */
+export function isRouteGeometryLocked(route: SurveyRoute): boolean {
+  return (route._count?.assignments ?? 0) + (route._count?.installAssignments ?? 0) > 0;
+}
+
 /** Kiểu dữ liệu HTML5 drag mang id cán bộ — chip cán bộ ở `SurveyRoutesPanel` đặt giá trị này. */
 export const SURVEYOR_DRAG_TYPE = 'application/x-surveyor-id';
 

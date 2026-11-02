@@ -299,7 +299,10 @@ export class InstallAssignmentsService {
         select: { id: true, path: true },
       });
       if (!route) throw new NotFoundException('Không tìm thấy tuyến đường');
-      const taken = await this.prisma.installAssignment.count({ where: { routeId: dto.routeId } });
+      // Tuyến dùng lại được ở đợt thi công khác, nên chỉ tính nhiệm vụ trong đợt này.
+      const taken = await this.prisma.installAssignment.count({
+        where: { routeId: dto.routeId, zone: { campaignId: zone.campaignId } },
+      });
       if (taken > 0) throw new ConflictException('Tuyến này đã được giao thi công — dùng chức năng giao lại để đổi người');
     }
     await this.assertAssignable(dto.assigneeId);

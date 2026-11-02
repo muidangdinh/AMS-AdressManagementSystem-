@@ -293,15 +293,15 @@ export class AssignmentsService {
     if (!zone) throw new NotFoundException('Không tìm thấy phân vùng khảo sát');
 
     if (dto.routeId) {
-      const route = await this.prisma.surveyRoute.findUnique({
-        where: { id: dto.routeId },
-        include: { _count: { select: { assignments: true } } },
+      const link = await this.prisma.surveyZoneRoute.findUnique({
+        where: { zoneId_routeId: { zoneId: dto.zoneId, routeId: dto.routeId } },
       });
-      if (!route) throw new NotFoundException('Không tìm thấy tuyến đường khảo sát');
-      if (route.zoneId !== dto.zoneId) {
-        throw new BadRequestException('Tuyến đường không thuộc phân vùng này');
-      }
-      if (route._count.assignments > 0) {
+      if (!link) throw new BadRequestException('Tuyến đường không thuộc phân vùng này');
+      // Tuyến dùng lại được ở đợt khác, nên chỉ tính nhiệm vụ trong phân vùng này.
+      const taken = await this.prisma.surveyAssignment.count({
+        where: { zoneId: dto.zoneId, routeId: dto.routeId },
+      });
+      if (taken > 0) {
         throw new ConflictException('Tuyến này đã được giao — dùng chức năng giao lại để đổi người');
       }
     }

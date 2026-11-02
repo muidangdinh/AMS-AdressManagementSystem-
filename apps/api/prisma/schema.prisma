@@ -446,6 +446,7 @@ model Ward {
   numberingSchemes NumberingScheme[]
   surveyZones      SurveyZone[]
   installZones     InstallZone[]
+  surveyRoutes     SurveyRoute[]
 
   @@unique([name, districtId])
   @@map("address_ward")
@@ -710,23 +711,29 @@ model SurveyZone {
   updatedAt DateTime @updatedAt
 
   assignments SurveyAssignment[]
-  routes      SurveyRoute[]
+  routeLinks  SurveyZoneRoute[]
 
   @@index([campaignId])
   @@map("survey_zone")
 }
 
-/// Tuyến đường khảo sát trong 1 phân vùng — chấm điểm đầu/cuối trên bản đồ web.
+/// Kho tuyến đường dùng chung (quản lý ở phân hệ "Quản lý tuyến đường") — chấm điểm đầu/cuối trên
+/// bản đồ web. Đợt khảo sát không sao chép tuyến mà tham chiếu qua `SurveyZoneRoute`, nên sửa ở một
+/// nơi thì mọi nơi thấy ngay. Đường đi bị khóa khi tuyến đã từng được giao (giữ đúng lịch sử các đợt
+/// cũ và phạm vi gom biển thi công); cần đổi thì nhân bản thành tuyến mới.
 /// `path` lưu sẵn polyline [[lat,lng],...] (bám đường qua OSRM, hoặc đường thẳng khi
 /// định tuyến lỗi — `snapped=false`). Chỉ dùng để hiển thị nên để Json, chưa cần PostGIS.
 model SurveyRoute {
-  id     String     @id @default(uuid())
-  zoneId String
-  zone   SurveyZone @relation(fields: [zoneId], references: [id], onDelete: Cascade)
+  id String @id @default(uuid())
 
   name     String
+  /// Xã/phường của tuyến — lọc danh sách chọn theo xã của phân vùng. Trống = chưa xác định.
+  wardId   String?
+  ward     Ward?   @relation(fields: [wardId], references: [id], onDelete: SetNull)
   streetId String?
   street   Street? @relation(fields: [streetId], references: [id], onDelete: SetNull)
+  /// false = ngừng sử dụng: ẩn khỏi danh sách chọn, các đợt đang dùng vẫn hiển thị bình thường.
+  isActive Boolean @default(true)
 
   startLat Float
   startLng Float
@@ -743,12 +750,28 @@ model SurveyRoute {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  zoneLinks   SurveyZoneRoute[]
   assignments SurveyAssignment[]
   /// Nhiệm vụ THI CÔNG dùng chung tuyến này (xem InstallAssignment.routeId).
   installAssignments InstallAssignment[]
 
-  @@index([zoneId])
+  @@index([wardId])
   @@map("survey_route")
+}
+
+/// Tuyến trong kho được dùng ở phân vùng nào. Một tuyến dùng được ở nhiều đợt, nhưng không nằm ở
+/// 2 phân vùng của cùng 1 đợt (kiểm ở service). Xóa phân vùng chỉ gỡ liên kết, tuyến vẫn còn trong kho.
+model SurveyZoneRoute {
+  zoneId  String
+  zone    SurveyZone  @relation(fields: [zoneId], references: [id], onDelete: Cascade)
+  routeId String
+  route   SurveyRoute @relation(fields: [routeId], references: [id], onDelete: Restrict)
+
+  createdAt DateTime @default(now())
+
+  @@id([zoneId, routeId])
+  @@index([routeId])
+  @@map("survey_zone_route")
 }
 
 enum AssignmentStatus {
@@ -766,7 +789,7 @@ model SurveyAssignment {
   zone   SurveyZone @relation(fields: [zoneId], references: [id], onDelete: Cascade)
 
   /// Tuyến đường được giao (kéo thả cán bộ vào tuyến trên bản đồ web). Trống = giao cả phân vùng.
-  /// Mỗi tuyến tối đa 1 nhiệm vụ (kiểm ở service). Restrict: phải xóa nhiệm vụ trước khi xóa tuyến.
+  /// Mỗi tuyến tối đa 1 nhiệm vụ trong 1 phân vùng (kiểm ở service). Restrict: phải xóa nhiệm vụ trước khi xóa tuyến.
   routeId String?
   route   SurveyRoute? @relation(fields: [routeId], references: [id], onDelete: Restrict)
 
@@ -851,7 +874,7 @@ model InstallZone {
 }
 
 /// Giao 1 phân vùng (tùy chọn kèm 1 tuyến) cho 1 cán bộ thi công. Mỗi tuyến tối đa 1 nhiệm vụ
-/// (kiểm ở service). Danh sách biển của nhiệm vụ = HousePlate.installAssignmentId.
+/// trong 1 đợt thi công (kiểm ở service). Danh sách biển của nhiệm vụ = HousePlate.installAssignmentId.
 model InstallAssignment {
   id     String      @id @default(uuid())
   zoneId String

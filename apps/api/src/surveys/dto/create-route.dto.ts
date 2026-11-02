@@ -16,11 +16,11 @@ import {
 export class CreateRouteDto {
   @IsString()
   @MinLength(1)
-  zoneId: string;
-
-  @IsString()
-  @MinLength(1)
   name: string;
+
+  @IsOptional()
+  @IsString()
+  wardId?: string;
 
   @IsOptional()
   @IsString()

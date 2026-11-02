@@ -293,14 +293,14 @@ export default function RoutePickerMapGoong({
     });
 
     map.on('click', (e: MapMouseEvent) => {
-      // Bấm trúng tuyến = chọn tuyến (không chấm điểm), giống stopPropagation ở bản Leaflet.
-      const hasRouteLayers = ROUTE_LAYERS.every((id) => map.getLayer(id));
-      const hit = hasRouteLayers ? map.queryRenderedFeatures(e.point, { layers: ROUTE_LAYERS })[0] : undefined;
-      if (hit) {
-        onSelectRouteRef.current(hit.properties?.id as string);
+      // Không chấm tuyến: bấm trúng tuyến = chọn tuyến. Đang chấm thì luôn đặt điểm, kể cả ngay trên tuyến
+      // có sẵn (tuyến mới hay nối tiếp tuyến cũ), giống bản Leaflet.
+      if (!latest.current.drawing) {
+        const hasRouteLayers = ROUTE_LAYERS.every((id) => map.getLayer(id));
+        const hit = hasRouteLayers ? map.queryRenderedFeatures(e.point, { layers: ROUTE_LAYERS })[0] : undefined;
+        if (hit) onSelectRouteRef.current(hit.properties?.id as string);
         return;
       }
-      if (!latest.current.drawing) return;
       const p: LatLng = [e.lngLat.lat, e.lngLat.lng];
       const d = latest.current.draft;
       if (!d.start) onDraftChangeRef.current({ ...d, start: p });
@@ -334,6 +334,8 @@ export default function RoutePickerMapGoong({
       map.remove();
       mapRef.current = null;
       hoverPopupRef.current = null;
+      // Bản đồ tạo lại (StrictMode) thì phải canh khung lại theo tuyến.
+      fittedRef.current = false;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);

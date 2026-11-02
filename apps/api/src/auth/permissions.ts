@@ -14,6 +14,7 @@ export const PERMISSIONS = {
   ROLE_MANAGE: 'role:manage',
   SETTING_MANAGE: 'setting:manage',
   ADDRESS_WRITE: 'address:write',
+  ROUTE_MANAGE: 'route:manage',
   HOUSE_CREATE: 'house:create',
   HOUSE_UPDATE: 'house:update',
   HOUSE_RESURVEY: 'house:resurvey',
@@ -50,6 +51,7 @@ export const PERMISSION_CATALOG: PermissionDef[] = [
   { code: PERMISSIONS.ROLE_MANAGE, name: 'Quản lý vai trò & phân quyền', group: 'Người dùng & phân quyền' },
   { code: PERMISSIONS.SETTING_MANAGE, name: 'Quản lý cấu hình & logo', group: 'Hệ thống' },
   { code: PERMISSIONS.ADDRESS_WRITE, name: 'Thêm/sửa/xóa danh mục địa chỉ', group: 'Danh mục địa chỉ' },
+  { code: PERMISSIONS.ROUTE_MANAGE, name: 'Thêm/sửa/xóa tuyến đường trên bản đồ', group: 'Danh mục địa chỉ' },
   { code: PERMISSIONS.HOUSE_CREATE, name: 'Tạo mới hồ sơ số nhà', group: 'Hồ sơ nhà' },
   { code: PERMISSIONS.HOUSE_UPDATE, name: 'Sửa hồ sơ số nhà', group: 'Hồ sơ nhà' },
   { code: PERMISSIONS.HOUSE_RESURVEY, name: 'Khảo sát lại hồ sơ bị đánh dấu', group: 'Hồ sơ nhà' },
@@ -96,6 +98,7 @@ export const DEFAULT_ROLES: DefaultRoleDef[] = [
     name: 'Cán bộ địa chính',
     description: 'Nghiệp vụ tại trụ sở: hồ sơ, phương án, biển số, khảo sát, hồ sơ hành chính',
     permissions: [
+      PERMISSIONS.ROUTE_MANAGE,
       PERMISSIONS.HOUSE_CREATE,
       PERMISSIONS.HOUSE_UPDATE,
       PERMISSIONS.HOUSE_PHOTO_ADD,

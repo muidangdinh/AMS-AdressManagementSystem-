@@ -39,20 +39,36 @@ export const zonesApi = {
   update: (id: string, dto: UpdateZoneRequest) =>
     apiFetch<SurveyZone>(`/api/survey-zones/${id}`, { method: 'PATCH', body: JSON.stringify(dto) }),
   remove: (id: string) => apiFetch<void>(`/api/survey-zones/${id}`, { method: 'DELETE' }),
+  /** Tạo tuyến mới: vào kho tuyến chung và gắn luôn vào phân vùng. */
+  createRoute: (zoneId: string, dto: CreateSurveyRouteRequest) =>
+    apiFetch<SurveyRoute>(`/api/survey-zones/${zoneId}/routes`, { method: 'POST', body: JSON.stringify(dto) }),
+  /** Chọn tuyến có sẵn trong kho vào phân vùng. */
+  linkRoutes: (zoneId: string, routeIds: string[]) =>
+    apiFetch<SurveyRoute[]>(`/api/survey-zones/${zoneId}/routes/link`, {
+      method: 'POST',
+      body: JSON.stringify({ routeIds }),
+    }),
+  /** Gỡ tuyến khỏi phân vùng; tuyến vẫn còn trong kho. */
+  unlinkRoute: (zoneId: string, routeId: string) =>
+    apiFetch<void>(`/api/survey-zones/${zoneId}/routes/${routeId}`, { method: 'DELETE' }),
 };
 
-/** Tuyến đường khảo sát (chấm 2 điểm trên bản đồ) — thuộc phân vùng. */
+/** Kho tuyến đường dùng chung (phân hệ "Quản lý tuyến đường"). */
 export const routesApi = {
-  list: (params: { zoneId?: string; campaignId?: string }) => {
+  list: (params: { zoneId?: string; campaignId?: string; wardId?: string; includeNoWard?: boolean; activeOnly?: boolean } = {}) => {
     const qs = new URLSearchParams();
     if (params.zoneId) qs.set('zoneId', params.zoneId);
     if (params.campaignId) qs.set('campaignId', params.campaignId);
+    if (params.wardId) qs.set('wardId', params.wardId);
+    if (params.includeNoWard) qs.set('includeNoWard', 'true');
+    if (params.activeOnly) qs.set('activeOnly', 'true');
     return apiFetch<SurveyRoute[]>(`/api/survey-routes?${qs.toString()}`);
   },
   create: (dto: CreateSurveyRouteRequest) =>
     apiFetch<SurveyRoute>('/api/survey-routes', { method: 'POST', body: JSON.stringify(dto) }),
   update: (id: string, dto: UpdateSurveyRouteRequest) =>
     apiFetch<SurveyRoute>(`/api/survey-routes/${id}`, { method: 'PATCH', body: JSON.stringify(dto) }),
+  duplicate: (id: string) => apiFetch<SurveyRoute>(`/api/survey-routes/${id}/duplicate`, { method: 'POST' }),
   remove: (id: string) => apiFetch<void>(`/api/survey-routes/${id}`, { method: 'DELETE' }),
 };
 

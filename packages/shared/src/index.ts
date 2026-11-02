@@ -132,6 +132,7 @@ export const PERMISSIONS = {
   ROLE_MANAGE: 'role:manage',
   SETTING_MANAGE: 'setting:manage',
   ADDRESS_WRITE: 'address:write',
+  ROUTE_MANAGE: 'route:manage',
   HOUSE_CREATE: 'house:create',
   HOUSE_UPDATE: 'house:update',
   HOUSE_RESURVEY: 'house:resurvey',
@@ -825,10 +826,15 @@ export interface SurveyZone {
 /** Tuyến đường khảo sát trong 1 phân vùng — chấm điểm đầu/cuối trên bản đồ web. */
 export interface SurveyRoute {
   id: string;
-  zoneId: string;
+  /** Phân vùng đang chứa tuyến — chỉ có khi đọc tuyến theo phân vùng/đợt, không có ở danh sách kho tuyến. */
+  zoneId?: string;
   name: string;
+  wardId?: string | null;
+  ward?: AddressRef | null;
   streetId?: string | null;
   street?: AddressRef | null;
+  /** false = ngừng sử dụng: ẩn khỏi danh sách chọn. */
+  isActive: boolean;
   startLat: number;
   startLng: number;
   endLat: number;
@@ -842,6 +848,8 @@ export interface SurveyRoute {
   note?: string | null;
   createdAt: string;
   updatedAt: string;
+  /** Mức độ sử dụng — có đường đi đã khóa nếu assignments + installAssignments > 0. */
+  _count?: { zoneLinks: number; assignments: number; installAssignments: number };
 }
 
 export interface SurveyAssignment {
@@ -929,8 +937,8 @@ export function distanceToPathM(lat: number, lng: number, path: [number, number]
 }
 
 export interface CreateSurveyRouteRequest {
-  zoneId: string;
   name: string;
+  wardId?: string;
   streetId?: string;
   startLat: number;
   startLng: number;
@@ -944,9 +952,12 @@ export interface CreateSurveyRouteRequest {
 
 export interface UpdateSurveyRouteRequest {
   name?: string;
+  /** Chuỗi rỗng = bỏ gán xã/phường. */
+  wardId?: string;
   /** Chuỗi rỗng = bỏ liên kết đường. */
   streetId?: string;
   note?: string;
+  isActive?: boolean;
   startLat?: number;
   startLng?: number;
   endLat?: number;

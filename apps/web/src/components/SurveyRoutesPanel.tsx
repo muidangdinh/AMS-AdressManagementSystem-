@@ -3,12 +3,21 @@
 import { useEffect, useMemo, useState } from 'react';
 import dynamic from 'next/dynamic';
 import type { Street, SurveyAssignment, SurveyCampaign, SurveyRoute } from '@tayninh/shared';
-import { ASSIGNMENT_STATUS_LABELS, AssignmentStatus } from '@tayninh/shared';
+import { ASSIGNMENT_STATUS_LABELS, AssignmentStatus, PERMISSIONS } from '@tayninh/shared';
 import { ApiError } from '@/lib/api';
-import { assignmentsApi, routesApi } from '@/lib/surveys-api';
+import { useAuth } from '@/lib/auth-context';
+import { assignmentsApi, routesApi, zonesApi } from '@/lib/surveys-api';
 import { streetsApi } from '@/lib/addresses-api';
 import { formatLength } from '@/lib/routing';
-import { EMPTY_DRAFT, SURVEYOR_DRAG_TYPE, type RouteDraft } from '@/components/route-map-types';
+import {
+  DRAFT_COLOR,
+  EMPTY_DRAFT,
+  SURVEYOR_DRAG_TYPE,
+  draftFromRoute,
+  isRouteGeometryLocked,
+  type RouteDraft,
+} from '@/components/route-map-types';
+import RouteDraftBar from '@/components/RouteDraftBar';
 import { ButtonSpinner, EmptyState, FIELD_CLASS } from '@/components/ui';
 
 // Leaflet cần `window` nên chỉ render phía client.
@@ -25,10 +34,12 @@ const UNASSIGNED_COLOR = '#94a3b8';
 const EMPTY_FORM = { zoneId: '', name: '', streetId: '', note: '' };
 
 type Surveyor = { id: string; fullName: string; username: string };
+/** Tuyến đọc theo đợt luôn có phân vùng chứa nó. */
+type ZoneRoute = SurveyRoute & { zoneId: string };
 
 /** Hộp thoại giao tuyến mở ra sau khi thả cán bộ lên tuyến chưa giao. */
 interface PendingAssign {
-  route: SurveyRoute;
+  route: ZoneRoute;
   surveyor: Surveyor;
   dueDate: string;
   targetCount: string;
@@ -36,9 +47,9 @@ interface PendingAssign {
 }
 
 /**
- * Tuyến đường khảo sát của 1 đợt: bản đồ + danh sách tuyến theo phân vùng. Người có quyền
- * `survey:manage`:
- *   - thêm tuyến bằng cách chấm điểm đầu/cuối trên bản đồ (bám đường qua OSRM);
+ * Tuyến đường khảo sát của 1 đợt: bản đồ + danh sách tuyến theo phân vùng. Tuyến nằm trong kho dùng chung
+ * với phân hệ "Quản lý tuyến đường", ở đây chỉ gắn/gỡ với phân vùng. Người có quyền `survey:manage`:
+ *   - chọn tuyến có sẵn trong kho, hoặc tạo tuyến mới bằng cách chấm điểm đầu/cuối (bám đường qua OSRM);
  *   - kéo chip cán bộ thả lên tuyến để giao nhiệm vụ theo tuyến (hoặc chọn ở ô "Giao cho…").
  * Danh sách tuyến giữ ở state riêng để thêm/xóa không phải tải lại cả trang; nhiệm vụ lấy từ
  * dữ liệu đợt (`campaign.zones[].assignments`) mà trang tải lại êm sau mỗi lần giao.
@@ -56,7 +67,11 @@ export default function SurveyRoutesPanel({
   onAssignmentsChanged: () => Promise<void> | void;
 }) {
   const zones = useMemo(() => campaign.zones ?? [], [campaign.zones]);
-  const [routes, setRoutes] = useState<SurveyRoute[]>(() => zones.flatMap((z) => z.routes ?? []));
+  const { hasPermission } = useAuth();
+  const canEditCatalog = hasPermission(PERMISSIONS.ROUTE_MANAGE);
+  const [routes, setRoutes] = useState<ZoneRoute[]>(() =>
+    zones.flatMap((z) => (z.routes ?? []).map((r) => ({ ...r, zoneId: z.id }))),
+  );
   const zoneColors = useMemo(
     () => Object.fromEntries(zones.map((z, i) => [z.id, PALETTE[i % PALETTE.length]])),
     [zones],
@@ -72,6 +87,49 @@ export default function SurveyRoutesPanel({
   const [streets, setStreets] = useState<Street[]>([]);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // ---- Chọn tuyến có sẵn trong kho ----
+  const [picking, setPicking] = useState(false);
+  const [pickZoneId, setPickZoneId] = useState('');
+  const [catalogRoutes, setCatalogRoutes] = useState<SurveyRoute[]>([]);
+  const [catalogLoading, setCatalogLoading] = useState(false);
+  const [pickedIds, setPickedIds] = useState<Set<string>>(new Set());
+  const [pickSearch, setPickSearch] = useState('');
+
+  const pickZone = zones.find((z) => z.id === pickZoneId);
+  useEffect(() => {
+    if (!picking || !pickZoneId) {
+      setCatalogRoutes([]);
+      return;
+    }
+    let cancelled = false;
+    setCatalogLoading(true);
+    routesApi
+      .list({ activeOnly: true, wardId: pickZone?.wardId ?? undefined, includeNoWard: true })
+      .then((list) => {
+        if (!cancelled) setCatalogRoutes(list);
+      })
+      .catch((err) => {
+        if (!cancelled) setError(err instanceof ApiError ? err.message : 'Không tải được kho tuyến');
+      })
+      .finally(() => {
+        if (!cancelled) setCatalogLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [picking, pickZoneId, pickZone?.wardId]);
+
+  /** Tuyến chọn được: bỏ tuyến đã có trong đợt (1 tuyến không nằm ở 2 phân vùng của cùng đợt). */
+  const candidates = useMemo(() => {
+    const inCampaign = new Set(routes.map((r) => r.id));
+    return catalogRoutes.filter((r) => !inCampaign.has(r.id));
+  }, [catalogRoutes, routes]);
+  const visibleCandidates = useMemo(() => {
+    const term = pickSearch.trim().toLowerCase();
+    return term ? candidates.filter((r) => r.name.toLowerCase().includes(term)) : candidates;
+  }, [candidates, pickSearch]);
+  const candidateIds = useMemo(() => new Set(candidates.map((r) => r.id)), [candidates]);
 
   // ---- Giao tuyến (kéo thả cán bộ) ----
   /** Nhiệm vụ gắn tuyến — mỗi tuyến tối đa 1 (API kiểm tra). */
@@ -106,22 +164,26 @@ export default function SurveyRoutesPanel({
   const [colorBy, setColorBy] = useState<'assignee' | 'zone'>('assignee');
   const routeColors = useMemo(
     () =>
-      Object.fromEntries(
-        routes.map((r) => {
+      Object.fromEntries([
+        ...routes.map((r) => {
           if (colorBy === 'zone') return [r.id, zoneColors[r.zoneId] ?? UNASSIGNED_COLOR];
           const a = assignmentByRoute.get(r.id);
           return [r.id, a ? surveyorColors[a.assigneeId] ?? '#475569' : UNASSIGNED_COLOR];
         }),
-      ),
-    [routes, colorBy, zoneColors, assignmentByRoute, surveyorColors],
+        ...visibleCandidates.map((r) => [r.id, pickedIds.has(r.id) ? DRAFT_COLOR : UNASSIGNED_COLOR]),
+      ]),
+    [routes, colorBy, zoneColors, assignmentByRoute, surveyorColors, visibleCandidates, pickedIds],
   );
   const mutedRouteIds = useMemo(
     () =>
-      colorBy === 'assignee'
-        ? new Set(routes.filter((r) => !assignmentByRoute.has(r.id)).map((r) => r.id))
-        : undefined,
-    [routes, colorBy, assignmentByRoute],
+      new Set([
+        ...(colorBy === 'assignee' ? routes.filter((r) => !assignmentByRoute.has(r.id)).map((r) => r.id) : []),
+        ...visibleCandidates.filter((r) => !pickedIds.has(r.id)).map((r) => r.id),
+      ]),
+    [routes, colorBy, assignmentByRoute, visibleCandidates, pickedIds],
   );
+  /** Bản đồ hiện thêm tuyến chọn được để xem trước khi đang chọn từ kho. */
+  const mapRoutes = useMemo<SurveyRoute[]>(() => [...routes, ...visibleCandidates], [routes, visibleCandidates]);
 
   const [pendingAssign, setPendingAssign] = useState<PendingAssign | null>(null);
   const [assigning, setAssigning] = useState(false);
@@ -140,13 +202,47 @@ export default function SurveyRoutesPanel({
       .catch(() => setStreets([]));
   }, [drawing, form.zoneId, selectedZone?.wardId]);
 
-  // Esc = huỷ chấm tuyến.
-  useEffect(() => {
-    if (!drawing) return;
-    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && cancelDrawing();
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [drawing]);
+  function startPicking() {
+    setError(null);
+    setPendingAssign(null);
+    setPickedIds(new Set());
+    setPickSearch('');
+    setPickZoneId(zones.length === 1 ? zones[0].id : '');
+    setSelectedRouteId(null);
+    setPicking(true);
+  }
+
+  function cancelPicking() {
+    setPicking(false);
+    setCatalogRoutes([]);
+    setPickedIds(new Set());
+    setSelectedRouteId(null);
+  }
+
+  function togglePicked(id: string) {
+    setPickedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+    selectRoute(id);
+  }
+
+  async function confirmPicking() {
+    if (!pickZoneId || pickedIds.size === 0) return;
+    setSaving(true);
+    setError(null);
+    try {
+      const linked = await zonesApi.linkRoutes(pickZoneId, [...pickedIds]);
+      setRoutes((prev) => [...prev, ...linked.map((r) => ({ ...r, zoneId: pickZoneId }))]);
+      cancelPicking();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Không thêm được tuyến vào phân vùng');
+    } finally {
+      setSaving(false);
+    }
+  }
 
   function startDrawing() {
     setError(null);
@@ -158,8 +254,8 @@ export default function SurveyRoutesPanel({
     setDrawing(true);
   }
 
-  function startEditing(route: SurveyRoute) {
-    if (assignmentByRoute.has(route.id)) return;
+  function startEditing(route: ZoneRoute) {
+    if (isRouteGeometryLocked(route)) return;
     setError(null);
     setPendingAssign(null);
     setEditingRouteId(route.id);
@@ -169,16 +265,7 @@ export default function SurveyRoutesPanel({
       streetId: route.streetId ?? '',
       note: route.note ?? '',
     });
-    setDraft({
-      start: [route.startLat, route.startLng],
-      end: [route.endLat, route.endLng],
-      result: {
-        path: route.path,
-        lengthM: route.lengthM ?? 0,
-        snapped: route.snapped,
-      },
-      computing: false,
-    });
+    setDraft(draftFromRoute(route));
     setSelectedRouteId(route.id);
     setFocusNonce(Date.now());
     setDrawing(true);
@@ -219,16 +306,17 @@ export default function SurveyRoutesPanel({
           streetId: form.streetId,
           note: form.note.trim(),
         });
-        setRoutes((prev) => prev.map((route) => (route.id === updated.id ? updated : route)));
+        setRoutes((prev) =>
+          prev.map((route) => (route.id === updated.id ? { ...updated, zoneId: route.zoneId } : route)),
+        );
         setSelectedRouteId(updated.id);
       } else {
-        const created = await routesApi.create({
-          zoneId: form.zoneId,
+        const created = await zonesApi.createRoute(form.zoneId, {
           ...routeData,
           streetId: form.streetId || undefined,
           note: form.note.trim() || undefined,
         });
-        setRoutes((prev) => [...prev, created]);
+        setRoutes((prev) => [...prev, { ...created, zoneId: form.zoneId }]);
         setSelectedRouteId(created.id);
       }
       setDrawing(false);
@@ -298,15 +386,15 @@ export default function SurveyRoutesPanel({
     }
   }
 
-  async function handleRemove(route: SurveyRoute) {
-    if (!confirm(`Xóa tuyến "${route.name}"?`)) return;
+  async function handleUnlink(route: ZoneRoute) {
+    if (!confirm(`Gỡ tuyến "${route.name}" khỏi phân vùng? Tuyến vẫn còn trong kho tuyến đường.`)) return;
     setError(null);
     try {
-      await routesApi.remove(route.id);
+      await zonesApi.unlinkRoute(route.zoneId, route.id);
       setRoutes((prev) => prev.filter((r) => r.id !== route.id));
       if (selectedRouteId === route.id) setSelectedRouteId(null);
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Không xóa được tuyến đường');
+      setError(err instanceof ApiError ? err.message : 'Không gỡ được tuyến khỏi phân vùng');
     }
   }
 
@@ -336,16 +424,27 @@ export default function SurveyRoutesPanel({
             </button>
           ))}
         </div>
-        {canManage && !drawing && (
-          <button
-            type="button"
-            onClick={startDrawing}
-            disabled={zones.length === 0}
-            title={zones.length === 0 ? 'Cần tạo phân vùng trước' : undefined}
-            className="bg-brand hover:bg-brand/90 disabled:opacity-50 text-white text-xs font-semibold px-3 py-1.5 rounded-lg transition"
-          >
-            + Thêm tuyến
-          </button>
+        {canManage && !drawing && !picking && (
+          <>
+            <button
+              type="button"
+              onClick={startPicking}
+              disabled={zones.length === 0}
+              title={zones.length === 0 ? 'Cần tạo phân vùng trước' : 'Chọn từ kho "Quản lý tuyến đường"'}
+              className="border border-line bg-surface hover:bg-surface-2 disabled:opacity-50 text-fg text-xs font-semibold px-3 py-1.5 rounded-lg transition"
+            >
+              Chọn tuyến có sẵn
+            </button>
+            <button
+              type="button"
+              onClick={startDrawing}
+              disabled={zones.length === 0}
+              title={zones.length === 0 ? 'Cần tạo phân vùng trước' : undefined}
+              className="bg-brand hover:bg-brand/90 disabled:opacity-50 text-white text-xs font-semibold px-3 py-1.5 rounded-lg transition"
+            >
+              + Tạo tuyến mới
+            </button>
+          </>
         )}
       </div>
 
@@ -412,46 +511,106 @@ export default function SurveyRoutesPanel({
               className={FIELD_CLASS}
             />
           </div>
-          <div className="sm:col-span-2 lg:col-span-4 flex items-center gap-2 flex-wrap">
+          <div className="sm:col-span-2 lg:col-span-4">
+            <RouteDraftBar
+              draft={draft}
+              saving={saving}
+              canSave={canSave}
+              saveLabel={editingRouteId ? 'Cập nhật tuyến' : 'Lưu tuyến'}
+              onReset={() => setDraft(EMPTY_DRAFT)}
+              onCancel={cancelDrawing}
+            />
+          </div>
+        </form>
+      )}
+
+      {picking && (
+        <div className="p-4 border-b border-line space-y-3">
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div>
+              <label className="block text-[11px] font-bold text-fg-muted uppercase mb-1">Thêm vào phân vùng *</label>
+              <select
+                value={pickZoneId}
+                onChange={(e) => {
+                  setPickZoneId(e.target.value);
+                  setPickedIds(new Set());
+                }}
+                className={FIELD_CLASS}
+              >
+                <option value="">-- Chọn phân vùng --</option>
+                {zones.map((z) => (
+                  <option key={z.id} value={z.id}>
+                    {z.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="block text-[11px] font-bold text-fg-muted uppercase mb-1">Tìm tuyến</label>
+              <input
+                value={pickSearch}
+                onChange={(e) => setPickSearch(e.target.value)}
+                placeholder="Tên tuyến…"
+                className={FIELD_CLASS}
+              />
+            </div>
+          </div>
+          {!pickZoneId ? (
+            <p className="text-xs text-fg-muted">Chọn phân vùng để xem các tuyến trong kho.</p>
+          ) : catalogLoading ? (
+            <p className="text-xs text-fg-muted inline-flex items-center gap-1.5">
+              <ButtonSpinner /> Đang tải kho tuyến…
+            </p>
+          ) : visibleCandidates.length === 0 ? (
+            <p className="text-xs text-fg-muted">
+              Không có tuyến phù hợp{pickZone?.ward ? ` thuộc ${pickZone.ward.name}` : ''}. Bạn có thể tạo tuyến mới.
+            </p>
+          ) : (
+            <ul className="max-h-48 overflow-auto rounded-lg border border-line divide-y divide-line">
+              {visibleCandidates.map((r) => (
+                <li key={r.id}>
+                  <label className="flex items-start gap-2 px-3 py-2 cursor-pointer hover:bg-surface-2">
+                    <input
+                      type="checkbox"
+                      checked={pickedIds.has(r.id)}
+                      onChange={() => togglePicked(r.id)}
+                      className="mt-0.5"
+                    />
+                    <span className="min-w-0">
+                      <span className="block text-sm font-semibold text-fg truncate">{r.name}</span>
+                      <span className="block text-[11px] text-fg-muted">
+                        {formatLength(r.lengthM)}
+                        {r.ward ? ` • ${r.ward.name}` : ' • chưa gán xã'}
+                        {r.street ? ` • ${r.street.name}` : ''}
+                      </span>
+                    </span>
+                  </label>
+                </li>
+              ))}
+            </ul>
+          )}
+          <div className="flex items-center gap-2 flex-wrap">
             <p className="text-xs text-fg-muted mr-auto">
-              {!draft.start || !draft.end ? (
-                'Chấm điểm đầu (A) rồi điểm cuối (B) trên bản đồ.'
-              ) : draft.computing ? (
-                'Đang tìm tuyến bám đường…'
-              ) : draft.result ? (
-                <>
-                  Độ dài <b className="text-fg">{formatLength(draft.result.lengthM)}</b>
-                  {!draft.result.snapped && (
-                    <span className="text-warn"> • Không tìm được đường thực tế — dùng đường thẳng</span>
-                  )}
-                </>
-              ) : null}
+              Bấm tuyến trên bản đồ hoặc trong danh sách để chọn. Đã chọn <b className="text-fg">{pickedIds.size}</b> tuyến.
             </p>
             <button
               type="button"
-              onClick={() => setDraft(EMPTY_DRAFT)}
-              disabled={!draft.start}
-              className="text-xs font-semibold text-fg-muted hover:bg-surface-2 disabled:opacity-40 px-3 py-1.5 rounded-lg"
-            >
-              Chấm lại
-            </button>
-            <button
-              type="button"
-              onClick={cancelDrawing}
+              onClick={cancelPicking}
               className="text-xs font-semibold text-fg-muted hover:bg-surface-2 px-3 py-1.5 rounded-lg"
             >
               Hủy
             </button>
             <button
-              type="submit"
-              disabled={!canSave}
+              type="button"
+              onClick={confirmPicking}
+              disabled={saving || !pickZoneId || pickedIds.size === 0}
               className="bg-brand hover:bg-brand/90 disabled:opacity-50 text-white text-xs font-semibold px-4 py-1.5 rounded-lg transition inline-flex items-center gap-1.5"
             >
               {saving && <ButtonSpinner light />}
-              {editingRouteId ? 'Cập nhật tuyến' : 'Lưu tuyến'}
+              Thêm vào phân vùng
             </button>
           </div>
-        </form>
+        </div>
       )}
 
       {pendingAssign && (
@@ -513,15 +672,15 @@ export default function SurveyRoutesPanel({
       <div className="relative mt-3 border-t border-line">
         <div className={`h-[480px] relative ${draggingSurveyor ? 'ring-2 ring-inset ring-accent' : ''}`}>
           <RoutePickerMap
-            routes={routes}
+            routes={mapRoutes}
             routeColors={routeColors}
             mutedRouteIds={mutedRouteIds}
-            onDropAssignee={canManage ? assignRoute : undefined}
+            onDropAssignee={canManage && !picking ? assignRoute : undefined}
             drawing={drawing}
             draft={draft}
             onDraftChange={setDraft}
             selectedRouteId={selectedRouteId}
-            onSelectRoute={selectRoute}
+            onSelectRoute={(id) => (picking && candidateIds.has(id) ? togglePicked(id) : selectRoute(id))}
             focusNonce={focusNonce}
           />
         </div>
@@ -594,25 +753,27 @@ export default function SurveyRoutesPanel({
                             </div>
                             {canManage && !a && (
                               <div className="flex shrink-0 items-center gap-2">
+                                {canEditCatalog && !isRouteGeometryLocked(r) && (
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      startEditing(r);
+                                    }}
+                                    className="text-accent hover:underline text-xs font-semibold"
+                                  >
+                                    Sửa
+                                  </button>
+                                )}
                                 <button
                                   type="button"
                                   onClick={(e) => {
                                     e.stopPropagation();
-                                    startEditing(r);
-                                  }}
-                                  className="text-accent hover:underline text-xs font-semibold"
-                                >
-                                  Sửa
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    handleRemove(r);
+                                    handleUnlink(r);
                                   }}
                                   className="text-danger hover:underline text-xs font-semibold"
                                 >
-                                  Xóa
+                                  Gỡ
                                 </button>
                               </div>
                             )}
@@ -631,7 +792,7 @@ export default function SurveyRoutesPanel({
         <div className="border-t border-line px-4 py-3">
           <div className="flex items-center justify-between gap-2 mb-2">
             <p className="text-[11px] font-bold uppercase tracking-wider text-fg-subtle">
-              Cán bộ khảo sát{canManage && !drawing && routes.length > 0 ? ' — kéo thả vào tuyến để giao' : ''}
+              Cán bộ khảo sát{canManage && !drawing && !picking && routes.length > 0 ? ' — kéo thả vào tuyến để giao' : ''}
             </p>
             {assigning && <ButtonSpinner />}
           </div>
@@ -639,7 +800,7 @@ export default function SurveyRoutesPanel({
             {surveyors.map((u) => {
               const st = statsBySurveyor.get(u.id);
               const pct = st && st.target > 0 ? Math.min(100, Math.round((st.houses / st.target) * 100)) : null;
-              const draggable = canManage && !drawing && routes.length > 0;
+              const draggable = canManage && !drawing && !picking && routes.length > 0;
               return (
                 <div
                   key={u.id}

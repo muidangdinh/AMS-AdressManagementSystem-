@@ -9,8 +9,9 @@ import { useAuth } from '@/lib/auth-context';
 import { ApiError } from '@/lib/api';
 import { alleysApi, districtsApi, hamletsApi, streetsApi, wardsApi } from '@/lib/addresses-api';
 import { FIELD_CLASS, PageHeader, EmptyState, ButtonSpinner, SegmentedControl } from '@/components/ui';
+import RouteCatalogPanel from '@/components/RouteCatalogPanel';
 
-type TabKey = 'district' | 'ward' | 'hamlet' | 'street' | 'alley';
+type TabKey = 'district' | 'ward' | 'hamlet' | 'street' | 'alley' | 'route';
 
 const TABS: { key: TabKey; label: string }[] = [
   // { key: 'district', label: 'Quận/Huyện' },
@@ -19,23 +20,29 @@ const TABS: { key: TabKey; label: string }[] = [
   { key: 'street', label: 'Đường/Phố' },
   { key: 'alley', label: 'Hẻm/Ngõ' },
 ];
+const ROUTE_TAB: { key: TabKey; label: string } = { key: 'route', label: 'Tuyến trên bản đồ' };
 
 /**
  * Quản lý danh mục địa chỉ chuẩn hoá (Phase 6 — IV. Quản lý dữ liệu địa chỉ).
  * Chỉ ADMIN được vào — GET danh mục mở cho mọi vai trò (dùng cho dropdown ở
  * form House) nhưng thêm/sửa/xóa chỉ ADMIN mới gọi được ở backend, nên UI
  * quản trị này cũng chỉ hiện cho ADMIN để tránh gây hiểu nhầm cho vai trò khác.
+ *
+ * Tab "Tuyến trên bản đồ" là kho tuyến dùng chung với phân hệ Khảo sát, cần quyền `route:manage`
+ * riêng (vai trò địa chính có quyền này nhưng không có `address:write`).
  */
 export default function AddressesAdminPage() {
   const { user, hasPermission } = useAuth();
   const router = useRouter();
   const canManage = hasPermission(PERMISSIONS.ADDRESS_WRITE);
+  const canManageRoutes = hasPermission(PERMISSIONS.ROUTE_MANAGE);
 
   useEffect(() => {
-    if (user && !canManage) router.replace('/houses');
-  }, [user, canManage, router]);
+    if (user && !canManage && !canManageRoutes) router.replace('/houses');
+  }, [user, canManage, canManageRoutes, router]);
 
-  const [tab, setTab] = useState<TabKey>('ward');
+  const tabs = [...(canManage ? TABS : []), ...(canManageRoutes ? [ROUTE_TAB] : [])];
+  const [tab, setTab] = useState<TabKey>(canManage ? 'ward' : 'route');
 
   const [districts, setDistricts] = useState<District[]>([]);
   const [wards, setWards] = useState<Ward[]>([]);
@@ -237,7 +244,7 @@ export default function AddressesAdminPage() {
     }
   }
 
-  if (!user || !canManage) {
+  if (!user || (!canManage && !canManageRoutes)) {
     return <div className="p-6 text-sm text-fg-subtle">Đang chuyển hướng…</div>;
   }
 
@@ -247,9 +254,9 @@ export default function AddressesAdminPage() {
 
   return (
     <div className="h-full overflow-auto p-6 bg-app-shell">
-      <div className="max-w-3xl mx-auto w-full">
+      <div className={`${tab === 'route' ? 'max-w-7xl' : 'max-w-3xl'} mx-auto w-full`}>
       <PageHeader
-        title="Danh mục địa chỉ"
+        title="Quản lý tuyến đường"
         subtitle="Xã/phường → Thôn/ấp/Tổ dân phố, và Đường/phố → Hẻm/ngõ. Dùng để chọn trong dropdown khi tạo/sửa hồ sơ số nhà."
         actions={
           <Link
@@ -269,11 +276,13 @@ export default function AddressesAdminPage() {
 
       <div className="mt-4 mb-4 flex flex-wrap">
         <div className="max-w-full overflow-x-auto">
-          <SegmentedControl value={tab} onChange={setTab} options={TABS.map((t) => ({ value: t.key, label: t.label }))} />
+          <SegmentedControl value={tab} onChange={setTab} options={tabs.map((t) => ({ value: t.key, label: t.label }))} />
         </div>
       </div>
 
-      {loading ? (
+      {tab === 'route' ? (
+        <RouteCatalogPanel />
+      ) : loading ? (
         <div className="flex items-center justify-center gap-2 text-fg-subtle text-sm py-10">
           <ButtonSpinner /> Đang tải…
         </div>

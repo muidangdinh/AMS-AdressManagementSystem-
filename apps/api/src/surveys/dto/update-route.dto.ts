@@ -13,12 +13,21 @@ import {
   MinLength,
 } from 'class-validator';
 
-/** Cập nhật thông tin hoặc hình tuyến khi tuyến chưa được giao nhiệm vụ. */
+/** Thông tin tuyến sửa được bất cứ lúc nào; đường đi chỉ sửa được khi tuyến chưa từng được giao. */
 export class UpdateRouteDto {
   @IsOptional()
   @IsString()
   @MinLength(1)
   name?: string;
+
+  /** Chuỗi rỗng = bỏ gán xã/phường. */
+  @IsOptional()
+  @IsString()
+  wardId?: string;
+
+  @IsOptional()
+  @IsBoolean()
+  isActive?: boolean;
 
   /** Chuỗi rỗng = bỏ liên kết đường. */
   @IsOptional()

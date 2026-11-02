@@ -119,7 +119,7 @@ export default function SurveyCampaignDetailPage() {
   }
 
   async function handleRemoveZone(zoneId: string) {
-    if (!confirm('Xóa phân vùng này? Các tuyến đường của phân vùng cũng bị xóa. (chỉ xóa được khi chưa giao nhiệm vụ nào)')) return;
+    if (!confirm('Xóa phân vùng này? Các tuyến đường vẫn còn trong kho tuyến. (chỉ xóa được khi chưa giao nhiệm vụ nào)')) return;
     try {
       await zonesApi.remove(zoneId);
       await load();

@@ -38,10 +38,9 @@ export class CampaignsService {
         zones: {
           include: {
             ward: { select: { id: true, name: true } },
-            routes: {
-              where: restricted ? { assignments: { some: { assigneeId: user!.id } } } : undefined,
-              include: ROUTE_INCLUDE,
-              orderBy: { createdAt: 'asc' },
+            routeLinks: {
+              include: { route: { include: ROUTE_INCLUDE } },
+              orderBy: { route: { createdAt: 'asc' } },
             },
             assignments: {
               where: restricted ? { assigneeId: user!.id } : undefined,
@@ -74,8 +73,13 @@ export class CampaignsService {
     const pending = new Map(groups.map((g) => [g.surveyAssignmentId, g._count._all]));
     return {
       ...campaign,
-      zones: campaign.zones.map((z) => ({
+      zones: campaign.zones.map(({ routeLinks, ...z }) => ({
         ...z,
+        // Giữ dạng `zones[].routes[]` cho web. Cán bộ khảo sát chỉ thấy tuyến được giao cho mình TRONG phân
+        // vùng này (`z.assignments` đã lọc theo họ), vì 1 tuyến có thể dùng lại ở nhiều đợt.
+        routes: routeLinks
+          .filter((link) => !restricted || z.assignments.some((a) => a.routeId === link.routeId))
+          .map((link) => ({ ...link.route, zoneId: z.id })),
         assignments: z.assignments.map((a) => ({ ...a, revisitPending: pending.get(a.id) ?? 0 })),
       })),
     };
