@@ -77,7 +77,8 @@ services:
       CORS_ORIGIN: ${CORS_ORIGIN:-http://localhost:3000}
       UPLOAD_DIR: /app/uploads
       JWT_SECRET: ${JWT_SECRET:?Phải đặt JWT_SECRET trong .env trước khi chạy}
-      JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-8h}
+      JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-15m}
+      REFRESH_TOKEN_EXPIRES_DAYS: ${REFRESH_TOKEN_EXPIRES_DAYS:-30}
 
     volumes:
       - ./uploads:/app/uploads

@@ -126,9 +126,13 @@ model User {
   /// khách hàng 11/09/2026, dùng trong lời chào ở dashboard mobile.
   position     String?
   isActive     Boolean  @default(true)
+  /// Tăng khi đổi/đặt lại mật khẩu hoặc khóa tài khoản: mọi access/refresh token phát hành
+  /// với phiên bản cũ lập tức mất hiệu lực (xem JwtStrategy, AuthService.refresh).
+  tokenVersion Int      @default(0)
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
+  refreshTokens  RefreshToken[]
   auditLogs      AuditLog[]
   housesCreated  House[]        @relation("HouseCreatedBy")
   houseHistories HouseHistory[] @relation("HouseChangedBy")
@@ -157,6 +161,30 @@ model User {
   installEvents           InstallAssignmentEvent[] @relation("InstallEventActor")
 
   @@map("app_user")
+}
+
+/// Refresh token duy trì phiên đăng nhập. Chỉ lưu SHA-256, không lưu token gốc.
+/// Mỗi lần làm mới phát hành 1 dòng mới cùng `familyId` (xoay vòng); 1 lần đăng nhập = 1 family.
+/// Dùng lại token đã xoay sau thời gian ân hạn ⇒ coi như bị lộ, thu hồi cả family.
+model RefreshToken {
+  id           String    @id @default(uuid())
+  userId       String
+  user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  familyId     String
+  tokenHash    String    @unique
+  /// `User.tokenVersion` lúc phát hành — lệch với hiện tại ⇒ token không còn hiệu lực.
+  tokenVersion Int
+  expiresAt    DateTime
+  /// Đã đổi lấy token mới (xoay vòng bình thường).
+  rotatedAt    DateTime?
+  /// Bị thu hồi (đăng xuất hoặc phát hiện dùng lại).
+  revokedAt    DateTime?
+  createdAt    DateTime  @default(now())
+
+  @@index([userId])
+  @@index([familyId])
+  @@index([expiresAt])
+  @@map("refresh_token")
 }
 
 /// Nhật ký thao tác hệ thống (Phase 1 — XI. Bảo mật).

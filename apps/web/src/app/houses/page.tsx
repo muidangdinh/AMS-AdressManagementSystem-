@@ -39,7 +39,7 @@ import {
   Ward,
 } from '@tayninh/shared';
 import { useAuth } from '@/lib/auth-context';
-import { ApiError, apiFetch, getApiUrl, getToken } from '@/lib/api';
+import { ApiError, apiFetch, apiFetchBlob, getApiUrl } from '@/lib/api';
 import { districtsApi, hamletsApi, streetsApi, usageStatusesApi, wardsApi } from '@/lib/addresses-api';
 import { platesApi } from '@/lib/plates-api';
 import { useWorkingWard } from '@/lib/working-ward';
@@ -588,13 +588,7 @@ export default function HousesPage() {
       if (hamletId) params.set('hamletId', hamletId);
       if (status) params.set('status', status);
 
-      const token = getToken();
-      const res = await fetch(`${apiUrl}/api/houses/export.xlsx?${params.toString()}`, {
-        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
-      });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-
-      const blob = await res.blob();
+      const blob = await apiFetchBlob(`/api/houses/export.xlsx?${params.toString()}`);
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;

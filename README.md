@@ -55,10 +55,15 @@ và hiển thị trạng thái **API + Database + PostGIS**.
 3 vai trò MVP: **ADMIN**, **CADASTRAL** (Cán bộ địa chính), **SURVEYOR** (Cán bộ khảo sát).
 
 ```bash
-# Đăng nhập, lấy accessToken (JWT, hết hạn sau 8h)
+# Đăng nhập, lấy accessToken (JWT, mặc định hết hạn sau 15 phút) và refreshToken
 curl -X POST http://localhost:3001/api/auth/login \
   -H "Content-Type: application/json" \
   -d '{"username":"admin","password":"Admin@123456"}'
+
+# Đổi refreshToken lấy cặp token mới khi accessToken hết hạn (web/mobile tự làm khi gặp 401)
+curl -X POST http://localhost:3001/api/auth/refresh \
+  -H "Content-Type: application/json" \
+  -d '{"refreshToken":"<refreshToken>"}'
 
 # Gọi API cần xác thực — đính token vào header
 curl http://localhost:3001/api/auth/me \
@@ -69,11 +74,20 @@ curl http://localhost:3001/api/users -H "Authorization: Bearer <accessToken_admi
 ```
 
 - `/api/health` là route công khai (`@Public()`), không cần token.
-- JWT là stateless nên không có API "logout" — client tự xóa token đã lưu.
+- **Duy trì phiên:** refresh token dùng 1 lần, mỗi lần làm mới được cấp token mới và gia hạn
+  `REFRESH_TOKEN_EXPIRES_DAYS` ngày (mặc định 30). DB chỉ lưu SHA-256 của token. Dùng lại token đã đổi
+  sau 60 giây bị coi là lộ token: cả phiên đó bị thu hồi và ghi `REFRESH_TOKEN_REUSED` vào `audit_log`.
+- `POST /api/auth/logout` (body `{refreshToken}`) thu hồi phiên trên server. Access token đã cấp vẫn
+  dùng được đến khi hết hạn.
+- Đổi/đặt lại mật khẩu hoặc khóa tài khoản làm **mọi phiên** của người đó mất hiệu lực ngay
+  (`User.tokenVersion`). Người tự đổi mật khẩu nhận cặp token mới để không bị đăng xuất ở thiết bị đang dùng.
+- Sai mật khẩu 5 lần trong 15 phút: tên đăng nhập đó bị chặn 15 phút (trả 429). Mỗi lần sai được ghi
+  `LOGIN_FAILED` vào `audit_log`.
+- API từ chối khởi động nếu `JWT_SECRET` thiếu hoặc còn là giá trị mẫu.
 - Tài khoản bị vô hiệu hóa (`isActive=false`) sẽ bị từ chối **ngay lập tức**
   ở lần gọi API tiếp theo, kể cả khi JWT chưa hết hạn (JwtStrategy tra lại DB mỗi request).
-- Mọi thao tác `POST/PATCH/PUT/DELETE` được ghi vào bảng `audit_log`
-  (ai, khi nào, endpoint nào, nội dung — mật khẩu luôn được ẩn thành `***`).
+- Mọi thao tác `POST/PATCH/PUT/DELETE` được ghi vào bảng `audit_log` (ai, khi nào, endpoint nào, nội
+  dung — trường có tên chứa password/token/secret và `ownerIdNumber` luôn được ẩn thành `***`).
 
 ## Chạy toàn bộ bằng Docker (triển khai server tỉnh, đứng sau reverse proxy dùng chung)
 

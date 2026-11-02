@@ -3,13 +3,22 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import type {
+  AuthTokens,
   ChangePasswordRequest,
   LoginRequest,
   LoginResponse,
   UpdateUnitRequest,
   UserSummary,
 } from '@tayninh/shared';
-import { ApiError, apiFetch, clearToken, getToken, setToken, setUnauthorizedHandler } from './api';
+import {
+  ApiError,
+  apiFetch,
+  clearToken,
+  getRefreshToken,
+  getToken,
+  setTokens,
+  setUnauthorizedHandler,
+} from './api';
 
 type CurrentUser = Pick<
   UserSummary,
@@ -93,7 +102,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         method: 'POST',
         body: JSON.stringify(credentials),
       });
-      setToken(res.accessToken);
+      setTokens(res);
       window.localStorage.setItem(USER_KEY, JSON.stringify(res.user));
       sessionExpiredNotified.current = false;
       setUser(res.user);
@@ -104,6 +113,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const logout = useCallback(() => {
     sessionExpiredNotified.current = true;
+    const refreshToken = getRefreshToken();
+    if (refreshToken) {
+      // Thu hồi phiên trên server; lỗi mạng không được cản việc đăng xuất ở máy này.
+      apiFetch<void>('/api/auth/logout', {
+        method: 'POST',
+        body: JSON.stringify({ refreshToken }),
+      }).catch(() => undefined);
+    }
     clearToken();
     window.localStorage.removeItem(USER_KEY);
     setUser(null);
@@ -111,7 +128,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [router]);
 
   const changePassword = useCallback(async (dto: ChangePasswordRequest) => {
-    await apiFetch<void>('/api/auth/me/password', { method: 'PATCH', body: JSON.stringify(dto) });
+    const tokens = await apiFetch<AuthTokens>('/api/auth/me/password', {
+      method: 'PATCH',
+      body: JSON.stringify(dto),
+    });
+    setTokens(tokens);
   }, []);
 
   const updateUnit = useCallback(

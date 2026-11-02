@@ -3,11 +3,14 @@ import { PassportStrategy } from '@nestjs/passport';
 import { ExtractJwt, Strategy } from 'passport-jwt';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuthenticatedUser } from '../types/authenticated-user';
+import { getJwtSecret } from '../auth.config';
 
 interface JwtPayload {
   sub: string;
   username: string;
   role: string;
+  /** `User.tokenVersion` lúc ký. Token phát hành trước khi có claim này được coi là phiên bản 0. */
+  tv?: number;
 }
 
 @Injectable()
@@ -16,7 +19,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     super({
       jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
       ignoreExpiration: false,
-      secretOrKey: process.env.JWT_SECRET ?? 'dev_only_change_me',
+      secretOrKey: getJwtSecret(),
     });
   }
 
@@ -43,6 +46,10 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     });
     if (!user || !user.isActive) {
       throw new UnauthorizedException('Tài khoản không tồn tại hoặc đã bị khóa');
+    }
+    // Mật khẩu đã đổi sau khi token này được phát hành.
+    if ((payload.tv ?? 0) !== user.tokenVersion) {
+      throw new UnauthorizedException('Phiên đăng nhập không còn hiệu lực');
     }
 
     const activeRoles = user.roleLinks

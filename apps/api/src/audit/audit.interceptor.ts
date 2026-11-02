@@ -9,17 +9,25 @@ import { Observable, tap } from 'rxjs';
 import { AuditService } from './audit.service';
 
 const MUTATING_METHODS = new Set(['POST', 'PATCH', 'PUT', 'DELETE']);
-/** Đánh dấu đã đọc thông báo rất thường xuyên và không có giá trị truy vết — bỏ qua khỏi nhật ký. */
-const SKIP_AUDIT_PATH = /^\/api\/notifications\/(read-all|[^/]+\/read)\/?(\?.*)?$/;
-const SENSITIVE_FIELDS = ['password', 'passwordHash', 'accessToken', 'ownerIdNumber'];
+/**
+ * Đánh dấu đã đọc thông báo và làm mới token diễn ra rất thường xuyên, không có giá trị truy vết —
+ * bỏ qua khỏi nhật ký (refresh token dùng lại được ghi riêng ở AuthService).
+ */
+const SKIP_AUDIT_PATH = /^\/api\/(notifications\/(read-all|[^/]+\/read)|auth\/refresh)\/?(\?.*)?$/;
+/** So theo mẫu (không theo tên chính xác) để trường mới như `newPassword` không bị lọt. */
+const SENSITIVE_FIELD = /passw(or)?d|token|secret|ownerIdNumber/i;
+
+function maskSensitive(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(maskSensitive);
+  if (value === null || typeof value !== 'object') return value;
+  return Object.fromEntries(
+    Object.entries(value).map(([key, inner]) => [key, SENSITIVE_FIELD.test(key) ? '***' : maskSensitive(inner)]),
+  );
+}
 
 function sanitize(body: Record<string, unknown> | undefined) {
   if (!body || Object.keys(body).length === 0) return undefined;
-  const clone: Record<string, unknown> = { ...body };
-  for (const field of SENSITIVE_FIELDS) {
-    if (field in clone) clone[field] = '***';
-  }
-  return clone;
+  return maskSensitive(body) as Record<string, unknown>;
 }
 
 /**

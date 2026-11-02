@@ -270,9 +270,16 @@ export interface UpdateUnitRequest {
   unit: string;
 }
 
-/** Kết quả trả về của POST /api/auth/login. */
-export interface LoginResponse {
+/** Cặp token: kết quả của POST /api/auth/refresh và PATCH /api/auth/me/password. */
+export interface AuthTokens {
+  /** Ngắn hạn, gửi trong header Authorization. */
   accessToken: string;
+  /** Dài hạn, dùng đúng 1 lần để đổi lấy cặp token mới. */
+  refreshToken: string;
+}
+
+/** Kết quả trả về của POST /api/auth/login. */
+export interface LoginResponse extends AuthTokens {
   /** unit/position kèm theo để dashboard mobile dựng lời chào (TN-13) mà không cần gọi thêm /auth/me. */
   user: Pick<
     UserSummary,

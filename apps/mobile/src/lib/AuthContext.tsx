@@ -9,6 +9,7 @@ import React, {
 } from 'react';
 import { Alert, AppState } from 'react-native';
 import type {
+  AuthTokens,
   ChangePasswordRequest,
   LoginRequest,
   LoginResponse,
@@ -19,10 +20,11 @@ import {
   ApiError,
   apiFetch,
   clearToken,
+  getRefreshToken,
   getStoredUser,
   getToken,
   setStoredUser,
-  setToken,
+  setTokens,
   setUnauthorizedHandler,
 } from './api';
 import { availableModes as computeModes } from './appMode';
@@ -105,7 +107,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       method: 'POST',
       body: JSON.stringify(credentials),
     });
-    await setToken(res.accessToken);
+    await setTokens(res);
     await setStoredUser(res.user);
     sessionExpiredNotified.current = false;
     setUser(res.user);
@@ -113,12 +115,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const logout = useCallback(async () => {
     sessionExpiredNotified.current = true;
+    const refreshToken = await getRefreshToken();
+    if (refreshToken) {
+      // Thu hồi phiên trên server; mất mạng không được cản việc đăng xuất ở máy này.
+      apiFetch<void>('/api/auth/logout', {
+        method: 'POST',
+        body: JSON.stringify({ refreshToken }),
+      }).catch(() => undefined);
+    }
     await clearToken();
     setUser(null);
   }, []);
 
   const changePassword = useCallback(async (dto: ChangePasswordRequest) => {
-    await apiFetch<void>('/api/auth/me/password', { method: 'PATCH', body: JSON.stringify(dto) });
+    const tokens = await apiFetch<AuthTokens>('/api/auth/me/password', {
+      method: 'PATCH',
+      body: JSON.stringify(dto),
+    });
+    await setTokens(tokens);
   }, []);
 
   const updateUnit = useCallback(

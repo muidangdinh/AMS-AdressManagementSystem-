@@ -119,6 +119,11 @@ export class UsersService {
     if (dto.password) {
       data.passwordHash = await bcrypt.hash(dto.password, SALT_ROUNDS);
     }
+    // Đặt lại mật khẩu hoặc khóa tài khoản: mọi phiên đang mở của người này mất hiệu lực,
+    // kể cả khi tài khoản được mở khóa lại sau đó.
+    if (dto.password || dto.isActive === false) {
+      data.tokenVersion = { increment: 1 };
+    }
     if (dto.roleIds) {
       // Đặt lại toàn bộ vai trò: xóa link cũ, tạo link mới trong 1 transaction.
       data.roleLinks = {
@@ -137,7 +142,7 @@ export class UsersService {
     await this.findOne(id);
     const user = await this.prisma.user.update({
       where: { id },
-      data: { isActive: false },
+      data: { isActive: false, tokenVersion: { increment: 1 } },
       include: USER_INCLUDE,
     });
     return toSafeUser(user as unknown as UserWithRoles);
