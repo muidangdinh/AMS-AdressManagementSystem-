@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   KeyboardAvoidingView,
@@ -26,6 +26,13 @@ export default function LoginScreen() {
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const scrollRef = useRef<ScrollView>(null);
+  const passwordFocused = useRef(false);
+
+  // Ô mật khẩu và nút Đăng nhập nằm cuối thẻ nên cuộn về cuối sẽ hiện cả hai trên bàn phím.
+  function revealPasswordField() {
+    scrollRef.current?.scrollToEnd({ animated: true });
+  }
 
   // TN-11 — thương hiệu AMS + tên tỉnh (góp ý khách hàng 11/09/2026). KHÔNG
   // hiện tên xã ở đây — chưa đăng nhập thì chưa biết ngữ cảnh xã (xem TN-14).
@@ -58,10 +65,15 @@ export default function LoginScreen() {
   return (
     <KeyboardAvoidingView style={styles.container} behavior="padding">
       <ScrollView
+        ref={scrollRef}
         style={styles.scroll}
         contentContainerStyle={styles.scrollContent}
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
+        // Vùng hiển thị chỉ co lại SAU khi ô đã focus (bàn phím mở xong), nên phải cuộn lại ở đây.
+        onLayout={() => {
+          if (passwordFocused.current) revealPasswordField();
+        }}
       >
         <View style={styles.card}>
           <View style={styles.header}>
@@ -97,6 +109,14 @@ export default function LoginScreen() {
                 onChangeText={setPassword}
                 secureTextEntry={!showPassword}
                 autoCapitalize="none"
+                onFocus={() => {
+                  passwordFocused.current = true;
+                  // Bàn phím đang mở sẵn (chuyển từ ô tên đăng nhập) thì onLayout không chạy.
+                  revealPasswordField();
+                }}
+                onBlur={() => {
+                  passwordFocused.current = false;
+                }}
               />
               <TouchableOpacity
                 style={styles.eyeBtn}
