@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import dynamic from 'next/dynamic';
 import { useRouter } from 'next/navigation';
@@ -48,14 +48,96 @@ import { dashboardApi } from '@/lib/dashboard-api';
 import { hamletsApi } from '@/lib/addresses-api';
 import { useAuth } from '@/lib/auth-context';
 import { EmptyState, ButtonSpinner } from '@/components/ui';
+import {
+  CheckCircle2,
+  Clock,
+  ClipboardList,
+  Copy,
+  FileText,
+  Hammer,
+  Home,
+  ListOrdered,
+  MapPin,
+  Route,
+  Signpost,
+  Tag,
+  TriangleAlert,
+  Undo2,
+  XCircle,
+} from 'lucide-react';
+import {
+  METRO_BACKGROUND,
+  METRO_FONT,
+  MiniBars,
+  MiniList,
+  MiniProgress,
+  Tile,
+  TileGroup,
+  TileSkeleton,
+  type MetroColor,
+} from '@/components/metro/MetroTiles';
+import { DetailDrawer } from '@/components/metro/DetailDrawer';
 import type { ChartBar } from '@/components/DashboardCharts';
 
 // Import động — Chart.js vẽ bằng canvas nên cần `window`, không chạy được khi SSR.
-const ChartSection = dynamic(() => import('@/components/DashboardCharts').then((m) => m.ChartSection), { ssr: false });
 const ColumnChart = dynamic(() => import('@/components/DashboardCharts').then((m) => m.ColumnChart), { ssr: false });
 const BarChartH = dynamic(() => import('@/components/DashboardCharts').then((m) => m.BarChartH), { ssr: false });
 const ProgressStat = dynamic(() => import('@/components/DashboardCharts').then((m) => m.ProgressStat), { ssr: false });
 const StackedBarChart = dynamic(() => import('@/components/DashboardCharts').then((m) => m.StackedBarChart), { ssr: false });
+
+/** 10 khối số liệu chi tiết — mỗi khối mở trong ngăn chi tiết khi bấm tile tương ứng. */
+type SectionId =
+  | 'houses'
+  | 'reviewStages'
+  | 'hamlets'
+  | 'wards'
+  | 'streets'
+  | 'duplicates'
+  | 'plates'
+  | 'surveys'
+  | 'numbering'
+  | 'cases';
+
+const SECTION_META: Record<SectionId, { title: string; color: MetroColor }> = {
+  houses: { title: 'Báo cáo số lượng nhà', color: 'blue' },
+  reviewStages: { title: 'Phân loại số nhà', color: 'blue' },
+  duplicates: { title: 'Báo cáo số nhà trùng', color: 'danger' },
+  plates: { title: 'Báo cáo biển số nhà', color: 'teal' },
+  surveys: { title: 'Báo cáo tiến độ khảo sát', color: 'orange' },
+  numbering: { title: 'Báo cáo tiến độ đánh số', color: 'purple' },
+  cases: { title: 'Hồ sơ – quy trình', color: 'crimson' },
+  wards: { title: 'Theo xã/phường', color: 'green' },
+  hamlets: { title: 'Ấp/thôn', color: 'green' },
+  streets: { title: 'Báo cáo theo tuyến đường', color: 'green' },
+};
+
+/** Khối đang mở trong ngăn chi tiết — mỗi `DrawerSection` chỉ hiện khi đúng là khối đang mở. */
+const OpenSectionContext = createContext<SectionId | null>(null);
+
+/** Nội dung 1 khối trong ngăn chi tiết: phụ đề, biểu đồ và số liệu chi tiết (luôn mở sẵn). */
+function DrawerSection({
+  id,
+  subtitle,
+  chart,
+  details,
+}: {
+  id: SectionId;
+  subtitle?: string;
+  chart: React.ReactNode;
+  details: React.ReactNode;
+}) {
+  if (useContext(OpenSectionContext) !== id) return null;
+  return (
+    <div className="space-y-4">
+      {subtitle && <p className="text-xs text-fg-subtle">{subtitle}</p>}
+      <div className="bg-surface border border-line p-4">
+        {chart}
+        <p className="text-[11px] text-fg-subtle text-center mt-2">Bấm vào cột để xem danh sách</p>
+      </div>
+      <div>{details}</div>
+    </div>
+  );
+}
 
 /** Nhãn phụ (badge) dùng chung cho các loại trạng thái khác nhau trong modal xem nhanh. */
 const NEUTRAL_BADGE = 'bg-surface-2 text-fg';
@@ -99,6 +181,8 @@ const SCHEME_STATUS_BADGE: Record<NumberingSchemeStatus, string> = {
 };
 
 const MODAL_ROW_LIMIT = 15;
+
+const fmt = (n: number) => n.toLocaleString('vi-VN');
 
 /** 1 dòng hiển thị trong modal xem nhanh — đủ chung để dùng cho mọi loại dữ liệu. */
 interface ModalRow {
@@ -164,19 +248,21 @@ function StatCard({
   return (
     <Wrapper
       onClick={onClick}
-      className={`group glass p-4 flex items-center gap-3.5 text-left w-full ${
-        onClick ? 'hover:border-accent/30 hover:shadow-soft transition cursor-pointer' : ''
+      className={`group bg-surface border border-line p-4 flex items-center gap-3.5 text-left w-full ${
+        onClick ? 'hover:border-accent/50 transition cursor-pointer' : ''
       }`}
     >
       <div
-        className={`w-11 h-11 shrink-0 rounded-xl flex items-center justify-center text-lg ${c.bg} ${
+        className={`w-11 h-11 shrink-0 flex items-center justify-center text-lg ${c.bg} ${
           onClick ? 'group-hover:scale-105 transition-transform' : ''
         }`}
       >
         {icon}
       </div>
       <div className="min-w-0">
-        <p className="text-2xl font-extrabold text-fg leading-tight tabular-nums">{value}</p>
+        <p className="text-2xl font-extrabold text-fg leading-tight tabular-nums">
+          {typeof value === 'number' ? fmt(value) : value}
+        </p>
         <p className="text-xs text-fg-muted font-medium truncate">{label}</p>
       </div>
     </Wrapper>
@@ -188,7 +274,7 @@ function Section({
   subtitle,
   children,
 }: {
-  /** Bỏ trống khi dùng làm phần chi tiết bên trong `ChartSection` — tiêu đề đã hiện ở đó. */
+  /** Bỏ trống khi dùng làm phần chi tiết trong ngăn chi tiết — tiêu đề đã hiện ở đầu ngăn. */
   title?: string;
   subtitle?: string;
   children: React.ReactNode;
@@ -201,7 +287,8 @@ function Section({
           {subtitle && <p className="text-xs text-fg-subtle">{subtitle}</p>}
         </div>
       )}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3.5">{children}</div>
+      {/* Chỉ còn dùng trong ngăn chi tiết (rộng tối đa 560px) — luôn 2 cột. */}
+      <div className="grid grid-cols-2 gap-2">{children}</div>
     </section>
   );
 }
@@ -214,7 +301,7 @@ function RankedList<T>({
   renderItem,
   danger,
 }: {
-  /** Bỏ trống khi dùng làm phần chi tiết bên trong `ChartSection` — tiêu đề đã hiện ở đó. */
+  /** Bỏ trống khi dùng làm phần chi tiết trong ngăn chi tiết — tiêu đề đã hiện ở đầu ngăn. */
   title?: string;
   subtitle?: string;
   items: T[];
@@ -232,7 +319,7 @@ function RankedList<T>({
         </div>
       )}
       <div
-        className={`bg-surface/60 backdrop-blur-md rounded-xl border shadow-lg overflow-hidden ${
+        className={`bg-surface border overflow-hidden ${
           danger ? 'border-danger/30' : 'border-line'
         }`}
       >
@@ -643,11 +730,213 @@ export default function DashboardPage() {
   // (kể cả xã 0 nhà) — nên phải cắt top 10 theo tổng số nhà, không vẽ hết được.
   const topWardBreakdown = toStackedBreakdown(data?.byWard, 10);
 
+  // ---- Ngăn chi tiết: bấm tile mở khối tương ứng; đóng thì trả focus về tile đã bấm.
+  const [openSection, setOpenSection] = useState<SectionId | null>(null);
+  const lastTileRef = useRef<HTMLElement | null>(null);
+  const openDrawer = (id: SectionId) => (e: React.MouseEvent<HTMLButtonElement>) => {
+    lastTileRef.current = e.currentTarget;
+    setOpenSection(id);
+  };
+  const closeDrawer = useCallback(() => {
+    setOpenSection(null);
+    requestAnimationFrame(() => lastTileRef.current?.focus());
+  }, []);
+  // Esc: đóng popup danh sách trước (nếu đang mở đè lên ngăn), rồi mới tới ngăn chi tiết.
+  useEffect(() => {
+    if (modalTitle === null && !openSection) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return;
+      if (modalTitle !== null) closeModal();
+      else closeDrawer();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [modalTitle, openSection, closeDrawer]);
+
+  // ---- Màn hình Start kiểu Metro: các nhóm tile theo nghiệp vụ.
+  const tiles = data
+    ? (() => {
+        const h = data.houses;
+        const p = data.plates;
+        const a = data.surveys.assignments;
+        const n = data.numberingSchemes;
+        const c = data.cases;
+        const assignmentTotal = a.assigned + a.inProgress + a.submitted + a.completed + a.needsRevisit;
+        const stages = Object.values(HouseReviewStage).map((st) => ({
+          name: HOUSE_REVIEW_STAGE_LABELS[st],
+          // Optional chaining — backend cũ chưa có reviewStages.
+          value: data.reviewStages?.byStage?.[st]?.count ?? 0,
+        }));
+        const dupGroups = data.duplicates.totalGroups;
+        return (
+          <>
+            <TileGroup title="Số nhà">
+              <Tile
+                size="medium"
+                color="blue"
+                label="Tổng số nhà"
+                value={h.total}
+                sub={`${fmt(h.approved)} đã có số / QR`}
+                icon={Home}
+                onClick={openDrawer('houses')}
+              />
+              <Tile color="ok" label="Đã có số / QR" value={h.approved} icon={CheckCircle2} onClick={openDrawer('houses')} />
+              <Tile color="warn" label="Chờ duyệt" value={h.pending} icon={Clock} onClick={openDrawer('houses')} />
+              <Tile color="danger" label="Cần điều chỉnh" value={h.needsAdjust} icon={TriangleAlert} onClick={openDrawer('houses')} />
+              <Tile
+                color={dupGroups > 0 ? 'danger' : 'ok'}
+                label={dupGroups > 0 ? 'Nhóm trùng số' : 'Không trùng số'}
+                ariaLabel={
+                  dupGroups > 0
+                    ? `Nhóm số nhà trùng: ${fmt(dupGroups)} — xem chi tiết`
+                    : 'Không có số nhà trùng — xem chi tiết'
+                }
+                value={dupGroups}
+                icon={Copy}
+                onClick={openDrawer('duplicates')}
+              />
+              <Tile
+                size="wide"
+                color="blue"
+                label="Phân loại số nhà"
+                value={data.reviewStages?.total ?? 0}
+                icon={ClipboardList}
+                onClick={openDrawer('reviewStages')}
+              
+                content={<MiniBars items={stages} />}
+              />
+            </TileGroup>
+
+            <TileGroup title="Biển số">
+              <Tile
+                size="wide"
+                color="teal"
+                label="Tiến độ gắn biển"
+                value={`${p.installedPct}%`}
+                sub={`${fmt(p.installed)} / ${fmt(p.total)} biển đã gắn`}
+                icon={Signpost}
+                onClick={openDrawer('plates')}
+              
+                footer={<MiniProgress pct={p.installedPct} />}
+              />
+              <Tile color="teal" label="Biển đã cấp" value={p.total} icon={Tag} onClick={openDrawer('plates')} />
+              <Tile color="ok" label="Đã gắn" value={p.installed} icon={CheckCircle2} onClick={openDrawer('plates')} />
+              <Tile color="warn" label="Chưa gắn" value={p.issued} icon={Clock} onClick={openDrawer('plates')} />
+              <Tile color="slate" label="Đã thu hồi" value={p.revoked} icon={Undo2} onClick={openDrawer('plates')} />
+            </TileGroup>
+
+            <TileGroup title="Khảo sát">
+              <Tile
+                size="medium"
+                color="orange"
+                label="Hoàn tất nhiệm vụ"
+                value={`${data.surveys.completedPct}%`}
+                sub={`${fmt(a.completed)} / ${fmt(assignmentTotal)} nhiệm vụ`}
+                icon={Route}
+                onClick={openDrawer('surveys')}
+              
+                footer={<MiniProgress pct={data.surveys.completedPct} />}
+              />
+              <Tile
+                color="orange"
+                label="Đợt triển khai"
+                value={campaignCounts?.[CampaignStatus.ACTIVE] ?? data.surveys.campaignsActive}
+                icon={Hammer}
+                onClick={openDrawer('surveys')}
+              />
+              <Tile color="warn" label="Đang khảo sát" value={a.assigned + a.inProgress} icon={Clock} onClick={openDrawer('surveys')} />
+              <Tile color="orange" label="Chờ duyệt" value={a.submitted} icon={ClipboardList} onClick={openDrawer('surveys')} />
+              <Tile color="danger" label="Khảo sát lại" value={a.needsRevisit} icon={Undo2} onClick={openDrawer('surveys')} />
+            </TileGroup>
+
+            {/* Nhân sự ấp/thôn không xem được phương án đánh số (API trả 0) — ẩn cả nhóm. */}
+            {!hamletScoped && (
+              <TileGroup title="Đánh số">
+                <Tile
+                  size="medium"
+                  color="purple"
+                  label="Phương án đã duyệt"
+                  value={`${n.approvedPct}%`}
+                  sub={`${fmt(n.approved)} / ${fmt(n.total)} phương án`}
+                  icon={ListOrdered}
+                  onClick={openDrawer('numbering')}
+                
+                  footer={<MiniProgress pct={n.approvedPct} />}
+                />
+                <Tile color="purple" label="Phương án" value={n.total} icon={ListOrdered} onClick={openDrawer('numbering')} />
+                <Tile color="warn" label="Soạn / trình" value={n.draft + n.submitted} icon={Clock} onClick={openDrawer('numbering')} />
+                <Tile color="ok" label="Đã duyệt" value={n.approved} icon={CheckCircle2} onClick={openDrawer('numbering')} />
+                <Tile color="danger" label="Bị từ chối" value={n.rejected} icon={XCircle} onClick={openDrawer('numbering')} />
+              </TileGroup>
+            )}
+
+            <TileGroup title="Hồ sơ hành chính">
+              <Tile
+                size="medium"
+                color="crimson"
+                label="Hồ sơ đang xử lý"
+                value={c.open}
+                sub={`Tổng ${fmt(c.total)} hồ sơ`}
+                icon={FileText}
+                onClick={openDrawer('cases')}
+              />
+              <Tile color="crimson" label="Tổng hồ sơ" value={c.total} icon={FileText} onClick={openDrawer('cases')} />
+              <Tile color="ok" label="Đã hoàn tất" value={c.completed} icon={CheckCircle2} onClick={openDrawer('cases')} />
+              <Tile color="danger" label="Bị từ chối" value={c.rejected} icon={XCircle} onClick={openDrawer('cases')} />
+            </TileGroup>
+
+            <TileGroup title="Địa bàn">
+              {topWardBreakdown.length > 0 && (
+                <Tile
+                  size="wide"
+                  color="green"
+                  label="Theo xã/phường — nhiều nhà nhất"
+                  icon={MapPin}
+                  onClick={openDrawer('wards')}
+                  content={
+                    <MiniList
+                      items={topWardBreakdown.slice(0, 3).map((w) => ({ name: w.name, value: w.approved + w.withoutNumber }))}
+                    />
+                  }
+                />
+              )}
+              <Tile
+                size="wide"
+                color="green"
+                label="Ấp/thôn — nhiều nhà nhất"
+                icon={MapPin}
+                onClick={openDrawer('hamlets')}
+                content={<MiniList items={data.topWards.slice(0, 3).map((w) => ({ name: w.ward, value: w.houseCount }))} />}
+              />
+              <Tile
+                size="wide"
+                color="green"
+                label="Tuyến đường — nhiều nhà nhất"
+                icon={Route}
+                onClick={openDrawer('streets')}
+                content={
+                  <MiniList items={data.topStreets.slice(0, 3).map((st) => ({ name: st.street, value: st.houseCount }))} />
+                }
+              />
+            </TileGroup>
+          </>
+        );
+      })()
+    : null;
+
   return (
-    <div className="h-full overflow-auto p-6">
-      <section className="mb-6">
-        <div className="glass p-3 flex flex-wrap gap-3 items-end">
-          <div className="w-80">
+    <div className="h-full overflow-auto p-4 sm:p-6" style={{ fontFamily: METRO_FONT, background: METRO_BACKGROUND }}>
+      <header className="mb-5">
+        <h1 className="text-4xl sm:text-5xl font-light text-white">Tổng quan</h1>
+        <p className="mt-1 text-sm text-white">
+          {hamletScoped ? `Phạm vi: ${user?.hamlet?.name ?? 'chưa được gán ấp/thôn'}` : 'Toàn tỉnh'} · bấm vào ô để xem chi tiết
+        </p>
+      </header>
+
+      <section className="mb-8">
+        <div className="bg-surface border border-line p-3 flex flex-wrap gap-3 items-end">
+          <div className="w-full sm:w-80">
             <label className="block text-[11px] font-bold text-fg-muted uppercase mb-1">
               Tìm kiếm
             </label>
@@ -655,10 +944,10 @@ export default function DashboardPage() {
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Tên đường, tên chủ hộ, SĐT, CCCD/CMND…"
-              className="w-full border border-line rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent"
+              className="w-full border border-line bg-canvas px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent"
             />
           </div>
-          <div className="w-56">
+          <div className="w-full sm:w-56">
             <label className="block text-[11px] font-bold text-fg-muted uppercase mb-1">
               Ấp/Thôn/Tổ dân phố
             </label>
@@ -667,7 +956,7 @@ export default function DashboardPage() {
                 disabled
                 value=""
                 title="Tài khoản ấp/thôn chỉ xem được dữ liệu của ấp mình"
-                className="w-full border border-line rounded-lg px-3 py-2 text-sm bg-surface-2 text-fg"
+                className="w-full border border-line px-3 py-2 text-sm bg-surface-2 text-fg"
               >
                 <option value="">{user?.hamlet?.name ?? 'Chưa được gán ấp/thôn'}</option>
               </select>
@@ -675,7 +964,7 @@ export default function DashboardPage() {
               <select
                 value={hamletId}
                 onChange={(e) => setHamletId(e.target.value)}
-                className="w-full border border-line rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent"
+                className="w-full border border-line bg-canvas px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent"
               >
                 <option value="">Tất cả</option>
                 {hamlets.map((h) => (
@@ -691,7 +980,7 @@ export default function DashboardPage() {
             disabled={loading}
             title="Làm mới"
             aria-label="Làm mới"
-            className="ml-auto bg-brand hover:bg-brand/90 disabled:opacity-50 text-white px-4 py-2 rounded-xl text-sm font-semibold shadow-soft transition flex items-center gap-2"
+            className="ml-auto bg-brand hover:bg-brand/90 disabled:opacity-50 text-white px-4 py-2 text-sm font-semibold transition flex items-center gap-2"
           >
             {loading ? (
               <>
@@ -710,13 +999,13 @@ export default function DashboardPage() {
         </div>
 
         {searchError && (
-          <div className="bg-danger/10 border border-danger/30 text-danger rounded-lg p-3 text-sm mt-3">
+          <div className="bg-surface border-l-4 border-danger text-danger p-3 text-sm mt-3">
             {searchError}
           </div>
         )}
 
         {(searching || results !== null) && (
-          <div className="glass mt-3 overflow-hidden">
+          <div className="bg-surface border border-line mt-3 overflow-hidden">
             {searching && (
               <div className="flex items-center justify-center gap-2 py-6 text-sm text-fg-subtle">
                 <ButtonSpinner /> Đang tìm…
@@ -757,17 +1046,70 @@ export default function DashboardPage() {
       </section>
 
       {error && (
-        <div className="bg-danger/10 border border-danger/30 text-danger rounded-lg p-3 text-sm mb-4">
+        <div className="bg-surface border-l-4 border-danger text-danger p-3 text-sm mb-4">
           {error}
         </div>
       )}
 
-      {!data && loading && <p className="text-fg-subtle text-sm">Đang tải số liệu…</p>}
+      {data ? (
+        <div className="flex flex-wrap gap-x-12 gap-y-8">{tiles}</div>
+      ) : (
+        loading && (
+          <div className="flex flex-wrap gap-x-12 gap-y-8" aria-busy="true" aria-label="Đang tải số liệu">
+            {[0, 1, 2].map((g) => (
+              <TileGroup key={g} title="Đang tải…">
+                <TileSkeleton size="medium" />
+                <TileSkeleton />
+                <TileSkeleton />
+                <TileSkeleton />
+                <TileSkeleton />
+                <TileSkeleton size="wide" />
+              </TileGroup>
+            ))}
+          </div>
+        )
+      )}
 
       {data && (
-        <>
-          <ChartSection
-            title="Báo cáo số lượng nhà"
+          <div className="flex flex-wrap gap-2 mt-10">
+            <Link
+              href="/houses"
+              className="bg-surface border border-line hover:bg-surface-2 px-3 py-1.5 text-xs font-semibold text-fg"
+            >
+              Xem danh sách/bản đồ →
+            </Link>
+            <Link
+              href="/houses/cases"
+              className="bg-surface border border-line hover:bg-surface-2 px-3 py-1.5 text-xs font-semibold text-fg"
+            >
+              Xem hồ sơ →
+            </Link>
+            <Link
+              href="/houses/surveys"
+              className="bg-surface border border-line hover:bg-surface-2 px-3 py-1.5 text-xs font-semibold text-fg"
+            >
+              Xem khảo sát →
+            </Link>
+            {!hamletScoped && (
+            <Link
+              href="/houses/numbering"
+              className="bg-surface border border-line hover:bg-surface-2 px-3 py-1.5 text-xs font-semibold text-fg"
+            >
+              Xem phương án đánh số →
+            </Link>
+            )}
+          </div>
+      )}
+
+      {data && openSection && (
+        <OpenSectionContext.Provider value={openSection}>
+          <DetailDrawer
+            title={SECTION_META[openSection].title}
+            color={SECTION_META[openSection].color}
+            onClose={closeDrawer}
+          >
+          <DrawerSection
+            id="houses"
             subtitle={`10.1 — tổng số nhà ${
               hamletScoped ? `trong phạm vi ${user?.hamlet?.name ?? 'ấp/thôn'}` : 'toàn tỉnh'
             }, theo trạng thái phê duyệt`}
@@ -819,9 +1161,9 @@ export default function DashboardPage() {
             }
           />
 
-          <ChartSection
-            title="Phân loại số nhà"
-            subtitle="5 giai đoạn phân loại — độc lập với trạng thái phê duyệt ở trên"
+          <DrawerSection
+            id="reviewStages"
+            subtitle="5 giai đoạn phân loại — độc lập với trạng thái phê duyệt (Báo cáo số lượng nhà)"
             chart={
               <ColumnChart
                 totalLabel="Tổng đã phân loại"
@@ -868,8 +1210,8 @@ export default function DashboardPage() {
             }
           />
 
-          <ChartSection
-            title="Ấp/thôn"
+          <DrawerSection
+            id="hamlets"
             subtitle="10.2 — top 5 ấp/thôn nhiều nhà nhất"
             chart={
               <BarChartH
@@ -908,8 +1250,8 @@ export default function DashboardPage() {
           />
 
           {topWardBreakdown.length > 0 && (
-            <ChartSection
-              title="Theo xã/phường"
+            <DrawerSection
+              id="wards"
               subtitle="Top 10 xã/phường nhiều nhà nhất — tách rõ đã có số / chưa có số"
               chart={
                 <StackedBarChart
@@ -947,8 +1289,8 @@ export default function DashboardPage() {
             />
           )}
 
-          <ChartSection
-            title="Báo cáo theo tuyến đường"
+          <DrawerSection
+            id="streets"
             subtitle="10.3 — top 5 tuyến đường nhiều nhà nhất"
             chart={
               <BarChartH
@@ -986,8 +1328,8 @@ export default function DashboardPage() {
             }
           />
 
-          <ChartSection
-            title="Báo cáo số nhà trùng"
+          <DrawerSection
+            id="duplicates"
             subtitle={`10.5 — cùng phường/xã + đường + số nhà (${data.duplicates.totalGroups} nhóm trùng${
               data.duplicates.totalGroups > data.duplicates.groups.length ? `, hiển thị ${data.duplicates.groups.length} nhóm nhiều nhất` : ''
             })`}
@@ -1041,8 +1383,8 @@ export default function DashboardPage() {
             }
           />
 
-          <ChartSection
-            title="Báo cáo biển số nhà"
+          <DrawerSection
+            id="plates"
             subtitle="10.7-10.9 — đã cấp / đã gắn / chưa gắn"
             chart={
               <div className="flex flex-col sm:flex-row sm:items-center gap-4">
@@ -1103,8 +1445,8 @@ export default function DashboardPage() {
             }
           />
 
-          <ChartSection
-            title="Báo cáo tiến độ khảo sát"
+          <DrawerSection
+            id="surveys"
             subtitle="10.10 — theo trạng thái đợt khảo sát và nhiệm vụ"
             chart={
               <div className="grid grid-cols-1 md:grid-cols-[1fr_1fr_12rem] gap-4 md:items-center">
@@ -1238,8 +1580,8 @@ export default function DashboardPage() {
             }
           />
 
-          <ChartSection
-            title="Báo cáo tiến độ đánh số"
+          <DrawerSection
+            id="numbering"
             subtitle="10.11 — theo trạng thái phương án đánh số"
             chart={
               <div className="flex flex-col sm:flex-row sm:items-center gap-4">
@@ -1310,8 +1652,8 @@ export default function DashboardPage() {
             }
           />
 
-          <ChartSection
-            title="Hồ sơ – quy trình"
+          <DrawerSection
+            id="cases"
             subtitle="Hồ sơ xin cấp số nhà đang xử lý (nhóm 9)"
             chart={
               <ColumnChart
@@ -1363,33 +1705,8 @@ export default function DashboardPage() {
             }
           />
 
-          <div className="flex flex-wrap gap-2 mt-6">
-            <Link
-              href="/houses"
-              className="bg-surface border border-line hover:bg-surface-2 px-3 py-1.5 rounded-lg text-xs font-semibold text-fg"
-            >
-              Xem danh sách/bản đồ →
-            </Link>
-            <Link
-              href="/houses/cases"
-              className="bg-surface border border-line hover:bg-surface-2 px-3 py-1.5 rounded-lg text-xs font-semibold text-fg"
-            >
-              Xem hồ sơ →
-            </Link>
-            <Link
-              href="/houses/surveys"
-              className="bg-surface border border-line hover:bg-surface-2 px-3 py-1.5 rounded-lg text-xs font-semibold text-fg"
-            >
-              Xem khảo sát →
-            </Link>
-            <Link
-              href="/houses/numbering"
-              className="bg-surface border border-line hover:bg-surface-2 px-3 py-1.5 rounded-lg text-xs font-semibold text-fg"
-            >
-              Xem phương án đánh số →
-            </Link>
-          </div>
-        </>
+          </DetailDrawer>
+        </OpenSectionContext.Provider>
       )}
 
       {modalTitle !== null && (

@@ -1,6 +1,5 @@
 'use client';
 
-import { createContext, useContext, useState } from 'react';
 import { useTheme } from '@/lib/theme';
 import {
   BarElement,
@@ -48,54 +47,6 @@ export interface ChartBar {
   key: string;
   name: string;
   value: number;
-}
-
-/** Cho phép biểu đồ (do trang cha dựng sẵn) gọi mở/thu gọn khối chi tiết của `ChartSection`. */
-const ToggleDetailsContext = createContext<() => void>(() => {});
-
-/**
- * Khung dùng chung cho mọi mục trên Dashboard: mặc định chỉ hiện biểu đồ, bấm vào
- * nền biểu đồ mới bung khối số liệu cũ (thẻ số/danh sách xếp hạng) ra bên dưới.
- * Bấm trúng 1 cột thì mở popup danh sách thay vì bung khối chi tiết.
- */
-export function ChartSection({
-  title,
-  subtitle,
-  chart,
-  details,
-}: {
-  title: string;
-  subtitle?: string;
-  chart: React.ReactNode;
-  details: React.ReactNode;
-}) {
-  const [expanded, setExpanded] = useState(false);
-  const toggle = () => setExpanded((v) => !v);
-
-  return (
-    <section className="mb-6">
-      <div className="mb-2.5">
-        <h3 className="text-sm font-bold text-fg">{title}</h3>
-        {subtitle && <p className="text-xs text-fg-subtle">{subtitle}</p>}
-      </div>
-
-      <div
-        onClick={toggle}
-        className="glass p-4 cursor-pointer hover:border-accent/30 transition"
-      >
-        {/* Canvas tự xử lý click (cột → popup, nền → toggle) nên chặn nổi bọt để không toggle 2 lần. */}
-        <div onClick={(e) => e.stopPropagation()}>
-          <ToggleDetailsContext.Provider value={toggle}>{chart}</ToggleDetailsContext.Provider>
-        </div>
-        <p className="text-[11px] text-fg-subtle text-center mt-2">
-          Bấm vào cột để xem danh sách · bấm nền biểu đồ để{' '}
-          {expanded ? 'thu gọn' : 'xem'} số liệu chi tiết
-        </p>
-      </div>
-
-      {expanded && <div className="mt-3">{details}</div>}
-    </section>
-  );
 }
 
 const TOOLTIP_STYLE = {
@@ -152,7 +103,7 @@ function wrapLabel(name: string, maxLen = 10): string[] {
 
 /**
  * Cột đứng cho các mục "tổng + chia theo trạng thái": mỗi trạng thái 1 cột, giữ màu theo trạng thái,
- * số tổng hiện ở dòng trên biểu đồ. Bấm cột → `onBarClick(key)`, bấm nền → mở/thu số liệu chi tiết.
+ * số tổng hiện ở dòng trên biểu đồ. Bấm cột → `onBarClick(key)` (mở danh sách bản ghi).
  */
 export function ColumnChart({
   data,
@@ -166,7 +117,6 @@ export function ColumnChart({
   onBarClick?: (key: string) => void;
 }) {
   const chartTheme = useChartTheme();
-  const toggleDetails = useContext(ToggleDetailsContext);
   const sum = data.reduce((s, d) => s + d.value, 0);
 
   if (sum === 0) return <EmptyState icon="📭" text="Chưa có dữ liệu" />;
@@ -178,8 +128,7 @@ export function ColumnChart({
     layout: { padding: { top: 20 } },
     onClick: (_evt, elements) => {
       const index = elements[0]?.index;
-      if (index === undefined) toggleDetails();
-      else onBarClick?.(data[index].key);
+      if (index !== undefined) onBarClick?.(data[index].key);
     },
     onHover: (evt, elements) => {
       const target = evt.native?.target as HTMLElement | undefined;
@@ -230,7 +179,7 @@ export function ColumnChart({
                 data: data.map((d) => d.value),
                 backgroundColor: data.map((d) => d.color),
                 hoverBackgroundColor: data.map((d) => d.color),
-                borderRadius: 6,
+                borderRadius: 0, // phẳng, góc vuông — khớp phong cách Metro của dashboard
                 maxBarThickness: 56,
               },
             ],
@@ -243,20 +192,12 @@ export function ColumnChart({
   );
 }
 
-/**
- * Ô số phần trăm kèm thanh tiến độ (tiến độ gắn biển, hoàn tất khảo sát…) — thay cho đồng hồ
- * bán nguyệt. Bấm vào để mở/thu số liệu chi tiết như bấm nền biểu đồ.
- */
+/** Ô số phần trăm kèm thanh tiến độ (tiến độ gắn biển, hoàn tất khảo sát…) — thay cho đồng hồ bán nguyệt. */
 export function ProgressStat({ value, label, color }: { value: number; label: string; color: string }) {
-  const toggleDetails = useContext(ToggleDetailsContext);
   const pct = Math.max(0, Math.min(100, Math.round(value)));
 
   return (
-    <button
-      type="button"
-      onClick={toggleDetails}
-      className="w-full text-left rounded-xl border border-line bg-surface-2/50 p-4 hover:border-accent/30 transition"
-    >
+    <div className="w-full border border-line bg-surface-2/50 p-4">
       <p className="text-3xl font-extrabold tabular-nums leading-tight" style={{ color }}>
         {pct}%
       </p>
@@ -264,7 +205,7 @@ export function ProgressStat({ value, label, color }: { value: number; label: st
       <div className="mt-3 h-2 rounded-full bg-fg-subtle/25 overflow-hidden">
         <div className="h-full rounded-full" style={{ width: `${pct}%`, background: color }} />
       </div>
-    </button>
+    </div>
   );
 }
 
@@ -279,7 +220,6 @@ export function BarChartH({
   barColor?: string;
 }) {
   const chartTheme = useChartTheme();
-  const toggleDetails = useContext(ToggleDetailsContext);
 
   if (data.length === 0) return <EmptyState icon="📭" text="Chưa có dữ liệu" />;
 
@@ -290,8 +230,7 @@ export function BarChartH({
     layout: { padding: { right: 32 } },
     onClick: (_evt, elements) => {
       const index = elements[0]?.index;
-      if (index === undefined) toggleDetails();
-      else onBarClick?.(data[index].key);
+      if (index !== undefined) onBarClick?.(data[index].key);
     },
     onHover: (evt, elements) => {
       const target = evt.native?.target as HTMLElement | undefined;
@@ -341,7 +280,7 @@ export function BarChartH({
               data: data.map((d) => d.value),
               backgroundColor: barColor,
               hoverBackgroundColor: barColor,
-              borderRadius: 6,
+              borderRadius: 0,
               barThickness: 20,
               maxBarThickness: 24,
             },
@@ -363,7 +302,6 @@ export function StackedBarChart({
   onBarClick?: (key: string) => void;
 }) {
   const chartTheme = useChartTheme();
-  const toggleDetails = useContext(ToggleDetailsContext);
 
   if (data.length === 0) return <EmptyState icon="📭" text="Chưa có dữ liệu" />;
 
@@ -374,8 +312,7 @@ export function StackedBarChart({
     layout: { padding: { right: 16 } },
     onClick: (_evt, elements) => {
       const index = elements[0]?.index;
-      if (index === undefined) toggleDetails();
-      else onBarClick?.(data[index].key);
+      if (index !== undefined) onBarClick?.(data[index].key);
     },
     onHover: (evt, elements) => {
       const target = evt.native?.target as HTMLElement | undefined;
@@ -441,7 +378,7 @@ export function StackedBarChart({
               label: 'Đã có số',
               data: data.map((d) => d.approved),
               backgroundColor: '#10b981',
-              borderRadius: 4,
+              borderRadius: 0,
               barThickness: 20,
               maxBarThickness: 24,
             },
@@ -449,7 +386,7 @@ export function StackedBarChart({
               label: 'Chưa có số',
               data: data.map((d) => d.withoutNumber),
               backgroundColor: '#f59e0b',
-              borderRadius: 4,
+              borderRadius: 0,
               barThickness: 20,
               maxBarThickness: 24,
             },

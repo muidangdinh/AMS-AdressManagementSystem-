@@ -46,6 +46,11 @@ const config: Config = {
         'brand-gradient': 'linear-gradient(135deg, rgb(var(--brand)) 0%, rgb(var(--accent)) 100%)',
       },
       keyframes: {
+        // Ngăn chi tiết dashboard (Metro) trượt từ phải vào — components/metro/DetailDrawer.tsx.
+        'drawer-in': {
+          from: { transform: 'translateX(100%)' },
+          to: { transform: 'translateX(0)' },
+        },
         // Từng mục của menu điều hướng trượt nhẹ từ trái vào, lệch thời gian nhau (xem NavItem ở
         // houses/layout.tsx). Phần chiều cao/nền của menu dùng transition CSS, không cần keyframe.
         'item-in': {
@@ -55,6 +60,7 @@ const config: Config = {
       },
       animation: {
         'item-in': 'item-in 300ms cubic-bezier(0.22, 1, 0.36, 1) backwards',
+        'drawer-in': 'drawer-in 200ms cubic-bezier(0.22, 1, 0.36, 1)',
       },
     },
   },
