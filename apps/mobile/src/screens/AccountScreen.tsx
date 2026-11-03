@@ -125,7 +125,12 @@ export default function AccountScreen() {
             </View>
           </View>
         ) : (
-          <Row label="Đơn vị" value={user.unit ?? '—'} onEdit={startEditingUnit} />
+          <Row
+            label={user.department ? 'Phòng ban' : 'Đơn vị'}
+            value={user.department?.name ?? user.unit ?? '—'}
+            // Đã gán phòng ban: do quản trị viên quản lý theo danh mục, không tự sửa.
+            onEdit={user.department ? undefined : startEditingUnit}
+          />
         )}
         <Row label="Chức vụ" value={user.position ?? '—'} />
         {unitError && <Text style={styles.errorText}>{unitError}</Text>}

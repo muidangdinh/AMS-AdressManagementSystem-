@@ -4,6 +4,7 @@ import { ExtractJwt, Strategy } from 'passport-jwt';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuthenticatedUser } from '../types/authenticated-user';
 import { getJwtSecret } from '../auth.config';
+import { AUTH_USER_INCLUDE, toAuthenticatedUser } from '../auth-user';
 
 interface JwtPayload {
   sub: string;
@@ -34,15 +35,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
   async validate(payload: JwtPayload): Promise<AuthenticatedUser> {
     const user = await this.prisma.user.findUnique({
       where: { id: payload.sub },
-      include: {
-        roleLinks: {
-          include: {
-            role: {
-              include: { permissions: { include: { permission: true } } },
-            },
-          },
-        },
-      },
+      include: AUTH_USER_INCLUDE,
     });
     if (!user || !user.isActive) {
       throw new UnauthorizedException('Tài khoản không tồn tại hoặc đã bị khóa');
@@ -52,25 +45,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       throw new UnauthorizedException('Phiên đăng nhập không còn hiệu lực');
     }
 
-    const activeRoles = user.roleLinks
-      .map((link) => link.role)
-      .filter((role) => role.isActive);
-    const roles = activeRoles.map((role) => ({ id: role.id, code: role.code, name: role.name }));
-    const permissions = [
-      ...new Set(
-        activeRoles.flatMap((role) => role.permissions.map((rp) => rp.permission.code)),
-      ),
-    ];
-
-    return {
-      id: user.id,
-      username: user.username,
-      fullName: user.fullName,
-      role: user.role,
-      roles,
-      permissions,
-      unit: user.unit,
-      position: user.position,
-    };
+    // Quyền thực tế đã trừ quyền bị bỏ theo cấp tài khoản (vd ấp/thôn không quản lý đợt khảo sát).
+    return toAuthenticatedUser(user);
   }
 }

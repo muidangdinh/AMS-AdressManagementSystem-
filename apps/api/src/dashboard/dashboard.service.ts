@@ -7,8 +7,11 @@ import {
   HouseReviewStage,
   NumberingSchemeStatus,
   PlateStatus,
+  Prisma,
 } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { caseScopeWhere, houseScopeWhere, isHamletScoped, plateScopeWhere } from '../auth/data-scope';
+import type { AuthenticatedUser } from '../auth/types/authenticated-user';
 import { DashboardSummaryQueryDto } from './dto/dashboard-summary-query.dto';
 
 const TOP_WARDS_LIMIT = 5;
@@ -40,9 +43,16 @@ export interface AddressBreakdownItem {
 export class DashboardService {
   constructor(private readonly prisma: PrismaService) {}
 
-  /** Tổng quan toàn hệ thống — dùng cho web `/houses/dashboard` (mọi vai trò đã đăng nhập). */
-  async getSummary(query: DashboardSummaryQueryDto = {}) {
-    const { wardId } = query;
+  /**
+   * Tổng quan toàn hệ thống — dùng cho web `/houses/dashboard` (mọi vai trò đã đăng nhập).
+   * Nhân sự ấp/thôn: mọi số liệu chỉ trong phạm vi của mình (nhà/biển/hồ sơ trong ấp, nhiệm vụ được giao),
+   * phương án đánh số bằng 0, và luôn xem theo xã của mình (bỏ qua `wardId` gửi lên).
+   */
+  async getSummary(query: DashboardSummaryQueryDto = {}, user?: AuthenticatedUser) {
+    const hamletScoped = isHamletScoped(user);
+    const wardId = hamletScoped ? user!.wardId : query.wardId;
+    const hw = houseScopeWhere(user);
+    const assignmentWhere: Prisma.SurveyAssignmentWhereInput = hamletScoped ? { assigneeId: user!.id } : {};
 
     const [
       housesByStatus,
@@ -56,15 +66,23 @@ export class DashboardService {
       streetGroups,
       duplicateGroups,
     ] = await Promise.all([
-      this.prisma.house.groupBy({ by: ['status'], _count: { _all: true } }),
-      this.prisma.house.groupBy({ by: ['reviewStage'], _count: { _all: true } }),
-      this.prisma.housePlate.groupBy({ by: ['status'], _count: { _all: true } }),
-      this.prisma.houseCase.groupBy({ by: ['status'], _count: { _all: true } }),
-      this.prisma.surveyCampaign.count({ where: { status: CampaignStatus.ACTIVE } }),
-      this.prisma.surveyAssignment.groupBy({ by: ['status'], _count: { _all: true } }),
-      this.prisma.numberingScheme.groupBy({ by: ['status'], _count: { _all: true } }),
+      this.prisma.house.groupBy({ by: ['status'], where: hw, _count: { _all: true } }),
+      this.prisma.house.groupBy({ by: ['reviewStage'], where: hw, _count: { _all: true } }),
+      this.prisma.housePlate.groupBy({ by: ['status'], where: plateScopeWhere(user), _count: { _all: true } }),
+      this.prisma.houseCase.groupBy({ by: ['status'], where: caseScopeWhere(user), _count: { _all: true } }),
+      this.prisma.surveyCampaign.count({
+        where: {
+          status: CampaignStatus.ACTIVE,
+          ...(hamletScoped && { zones: { some: { assignments: { some: assignmentWhere } } } }),
+        },
+      }),
+      this.prisma.surveyAssignment.groupBy({ by: ['status'], where: assignmentWhere, _count: { _all: true } }),
+      hamletScoped
+        ? Promise.resolve([] as { status: NumberingSchemeStatus; _count: { _all: number } }[])
+        : this.prisma.numberingScheme.groupBy({ by: ['status'], _count: { _all: true } }),
       this.prisma.house.groupBy({
         by: ['ward'],
+        where: hw,
         _count: { _all: true },
         orderBy: { _count: { ward: 'desc' } },
         take: TOP_WARDS_LIMIT,
@@ -73,6 +91,7 @@ export class DashboardService {
       // không nhóm theo streetId vì nhiều nhà cũ chưa gán danh mục chuẩn hoá.
       this.prisma.house.groupBy({
         by: ['street'],
+        where: hw,
         _count: { _all: true },
         orderBy: { _count: { street: 'desc' } },
         take: TOP_STREETS_LIMIT,
@@ -82,6 +101,7 @@ export class DashboardService {
       // tỉnh, đã có tiền lệ quét hết bảng house ở export/geojson với cap riêng).
       this.prisma.house.groupBy({
         by: ['ward', 'street', 'houseNumber'],
+        where: hw,
         _count: { _all: true },
       }),
     ]);
@@ -109,9 +129,11 @@ export class DashboardService {
     // wardId thì trả byHamlet/byStreet (đủ danh mục của xã đó); không có
     // thì trả byWard (gộp theo xã toàn tỉnh) — topWards/topStreets phía
     // trên GIỮ NGUYÊN hành vi cũ (top 5, dạng chữ) cho tương thích ngược.
-    const wardBreakdown = wardId
-      ? await this.getWardScopedBreakdown(wardId)
-      : await this.getWardLevelBreakdown();
+    const wardBreakdown = hamletScoped
+      ? await this.getHamletScopedBreakdown(user!)
+      : wardId
+        ? await this.getWardScopedBreakdown(wardId)
+        : await this.getWardLevelBreakdown();
 
     return {
       houses: {
@@ -194,6 +216,35 @@ export class DashboardService {
   }
 
   /**
+   * Nhân sự ấp/thôn: chỉ ấp của mình, và chỉ các đường có nhà trong phạm vi
+   * (không liệt kê cả danh mục đường của xã với toàn số 0).
+   */
+  private async getHamletScopedBreakdown(
+    user: AuthenticatedUser,
+  ): Promise<{ byHamlet: AddressBreakdownItem[]; byStreet: AddressBreakdownItem[] }> {
+    const hw = houseScopeWhere(user);
+    const [houseByHamlet, houseByStreet] = await Promise.all([
+      this.prisma.house.groupBy({ by: ['hamletId', 'status'], where: hw, _count: { _all: true } }),
+      this.prisma.house.groupBy({ by: ['streetId', 'status'], where: hw, _count: { _all: true } }),
+    ]);
+    const streetIds = [...new Set(houseByStreet.map((g) => g.streetId).filter((id): id is string => !!id))];
+    const [hamlets, streets] = await Promise.all([
+      user.hamletId
+        ? this.prisma.hamlet.findMany({ where: { id: user.hamletId }, select: { id: true, name: true } })
+        : Promise.resolve([]),
+      this.prisma.street.findMany({
+        where: { id: { in: streetIds } },
+        select: { id: true, name: true },
+        orderBy: { name: 'asc' },
+      }),
+    ]);
+    return {
+      byHamlet: buildAddressBreakdown(hamlets, houseByHamlet, (g) => g.hamletId),
+      byStreet: buildAddressBreakdown(streets, houseByStreet, (g) => g.streetId),
+    };
+  }
+
+  /**
    * TN-10 — khi gọi KHÔNG kèm `wardId`: đủ danh mục xã/phường toàn tỉnh, kể
    * cả xã 0 nhà, thay cho `topWards` (top 5) ở khối "Theo xã/phường" trên
    * mobile khi đang xem toàn tỉnh.
@@ -212,7 +263,8 @@ export class DashboardService {
    * đã đồng bộ lên server (`House.createdById`) — số bản nháp chưa đồng bộ
    * (10.8) lấy từ `AsyncStorage` trên máy, không đi qua API này.
    */
-  async getMine(userId: string) {
+  async getMine(user: AuthenticatedUser) {
+    const userId = user.id;
     const [housesByStatus, myReviewStageGroups, myAssignmentsByStatus, platesIssued] = await Promise.all([
       this.prisma.house.groupBy({
         by: ['status'],
@@ -229,7 +281,7 @@ export class DashboardService {
         where: { assigneeId: userId },
         _count: { _all: true },
       }),
-      this.prisma.housePlate.count({ where: { status: PlateStatus.ISSUED } }),
+      this.prisma.housePlate.count({ where: { status: PlateStatus.ISSUED, ...plateScopeWhere(user) } }),
     ]);
 
     const houses = countByKey(housesByStatus, Object.values(HouseStatus));
@@ -253,7 +305,7 @@ export class DashboardService {
         completed: assignments.byStatus[AssignmentStatus.COMPLETED] ?? 0,
         needsRevisit: assignments.byStatus[AssignmentStatus.NEEDS_REVISIT] ?? 0,
       },
-      /** Toàn hệ thống (không riêng của tôi) — biển đang chờ gắn ở bất kỳ nhà nào. */
+      /** Toàn hệ thống (không riêng của tôi) — biển đang chờ gắn ở bất kỳ nhà nào; nhân sự ấp: trong phạm vi. */
       platesPendingInstall: platesIssued,
       reviewStages,
     };

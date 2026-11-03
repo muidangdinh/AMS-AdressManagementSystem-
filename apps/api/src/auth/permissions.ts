@@ -141,3 +141,35 @@ export const LEGACY_ROLE_TO_CODE: Record<string, string> = {
   CADASTRAL: 'cadastral',
   SURVEYOR: 'surveyor',
 };
+
+/**
+ * Quyền bị bỏ theo cấp tài khoản, kể cả khi vai trò có gán (xem `effectivePermissions`).
+ * - WARD (nhân sự UBND xã): thấy toàn hệ thống nhưng không quản lý tài khoản/vai trò.
+ * - HAMLET (nhân sự ấp/thôn): chỉ làm việc trong ấp mình, nên bỏ mọi quyền quản lý cấp xã.
+ * Danh sách này được nhân bản sang `packages/shared` (`PERMISSIONS_DENIED_BY_LEVEL`) để UI ghi chú.
+ */
+export const PERMISSIONS_DENIED_BY_LEVEL: Record<'SYSTEM' | 'WARD' | 'HAMLET', PermissionCode[]> = {
+  SYSTEM: [],
+  WARD: [PERMISSIONS.USER_MANAGE, PERMISSIONS.ROLE_MANAGE],
+  HAMLET: [
+    PERMISSIONS.USER_MANAGE,
+    PERMISSIONS.ROLE_MANAGE,
+    PERMISSIONS.SETTING_MANAGE,
+    PERMISSIONS.ADDRESS_WRITE,
+    PERMISSIONS.ROUTE_MANAGE,
+    PERMISSIONS.SCHEME_MANAGE,
+    PERMISSIONS.SCHEME_APPROVE,
+    PERMISSIONS.SURVEY_MANAGE,
+    PERMISSIONS.ASSIGNMENT_REVIEW,
+    PERMISSIONS.INSTALL_MANAGE,
+    PERMISSIONS.INSTALL_REVIEW,
+    PERMISSIONS.NOTIFICATION_REMIND,
+    PERMISSIONS.NOTIFICATION_RUN_REMINDERS,
+  ],
+};
+
+/** Quyền thực tế của tài khoản = hợp quyền các vai trò, trừ đi các quyền bị bỏ theo cấp. */
+export function effectivePermissions(level: 'SYSTEM' | 'WARD' | 'HAMLET', permissions: string[]): string[] {
+  const denied = new Set<string>(PERMISSIONS_DENIED_BY_LEVEL[level] ?? []);
+  return [...new Set(permissions)].filter((p) => !denied.has(p));
+}

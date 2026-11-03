@@ -39,38 +39,38 @@ export class CasesController {
   constructor(private readonly casesService: CasesService) {}
 
   @Get()
-  findAll(@Query() query: ListCasesQueryDto) {
-    return this.casesService.findAll(query);
+  findAll(@Query() query: ListCasesQueryDto, @CurrentUser() user: AuthenticatedUser) {
+    return this.casesService.findAll(query, user);
   }
 
   /** Đặt trước ':id' — không thì Nest khớp "staff" vào tham số :id. */
   @RequirePermissions(PERMISSIONS.CASE_MANAGE)
   @Get('staff')
-  listStaff() {
-    return this.casesService.listStaff();
+  listStaff(@CurrentUser() user: AuthenticatedUser) {
+    return this.casesService.listStaff(user);
   }
 
   @Get(':id')
-  findOne(@Param('id') id: string) {
-    return this.casesService.findOne(id);
+  findOne(@Param('id') id: string, @CurrentUser() user: AuthenticatedUser) {
+    return this.casesService.findOne(id, user);
   }
 
   @RequirePermissions(PERMISSIONS.CASE_MANAGE)
   @Post()
   create(@Body() dto: CreateCaseDto, @CurrentUser() user: AuthenticatedUser) {
-    return this.casesService.create(dto, user.id);
+    return this.casesService.create(dto, user);
   }
 
   @RequirePermissions(PERMISSIONS.CASE_MANAGE)
   @Patch(':id')
-  update(@Param('id') id: string, @Body() dto: UpdateCaseDto) {
-    return this.casesService.update(id, dto);
+  update(@Param('id') id: string, @Body() dto: UpdateCaseDto, @CurrentUser() user: AuthenticatedUser) {
+    return this.casesService.update(id, dto, user);
   }
 
   @RequirePermissions(PERMISSIONS.CASE_MANAGE)
   @Post(':id/assign')
   assign(@Param('id') id: string, @Body() dto: AssignCaseDto, @CurrentUser() user: AuthenticatedUser) {
-    return this.casesService.assign(id, dto, user.id);
+    return this.casesService.assign(id, dto, user);
   }
 
   @RequirePermissions(PERMISSIONS.CASE_MANAGE)
@@ -80,31 +80,31 @@ export class CasesController {
     @Body() dto: LinkHouseDto,
     @CurrentUser() user: AuthenticatedUser,
   ) {
-    return this.casesService.linkHouse(id, dto, user.id);
+    return this.casesService.linkHouse(id, dto, user);
   }
 
   @RequirePermissions(PERMISSIONS.CASE_MANAGE)
   @Post(':id/advance')
   advance(@Param('id') id: string, @CurrentUser() user: AuthenticatedUser) {
-    return this.casesService.advance(id, user.id);
+    return this.casesService.advance(id, user);
   }
 
   @RequirePermissions(PERMISSIONS.CASE_MANAGE)
   @Post(':id/reject')
   reject(@Param('id') id: string, @Body() dto: RejectCaseDto, @CurrentUser() user: AuthenticatedUser) {
-    return this.casesService.reject(id, dto, user.id);
+    return this.casesService.reject(id, dto, user);
   }
 
   @RequirePermissions(PERMISSIONS.CASE_MANAGE)
   @Post(':id/reopen')
   reopen(@Param('id') id: string, @CurrentUser() user: AuthenticatedUser) {
-    return this.casesService.reopen(id, user.id);
+    return this.casesService.reopen(id, user);
   }
 
   @RequirePermissions(PERMISSIONS.CASE_MANAGE)
   @Post(':id/notes')
   addNote(@Param('id') id: string, @Body() dto: AddNoteDto, @CurrentUser() user: AuthenticatedUser) {
-    return this.casesService.addNote(id, dto, user.id);
+    return this.casesService.addNote(id, dto, user);
   }
 
   /** Tải tệp đính kèm lên — giấy tờ công dân, chỉ ADMIN/CADASTRAL (case:manage). */
@@ -117,7 +117,7 @@ export class CasesController {
     @CurrentUser() user: AuthenticatedUser,
   ) {
     if (!file) throw new BadRequestException('Thiếu tệp đính kèm');
-    return this.casesService.addAttachment(id, file, user.id);
+    return this.casesService.addAttachment(id, file, user);
   }
 
   /**
@@ -129,8 +129,9 @@ export class CasesController {
     @Param('id') id: string,
     @Param('attachmentId') attachmentId: string,
     @Res() res: Response,
+    @CurrentUser() user: AuthenticatedUser,
   ) {
-    const file = await this.casesService.getAttachmentFile(id, attachmentId);
+    const file = await this.casesService.getAttachmentFile(id, attachmentId, user);
     res.setHeader('Content-Type', file.mimeType);
     res.setHeader(
       'Content-Disposition',
@@ -146,6 +147,6 @@ export class CasesController {
     @Param('attachmentId') attachmentId: string,
     @CurrentUser() user: AuthenticatedUser,
   ) {
-    return this.casesService.removeAttachment(id, attachmentId, user.id);
+    return this.casesService.removeAttachment(id, attachmentId, user);
   }
 }

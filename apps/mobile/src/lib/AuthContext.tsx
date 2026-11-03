@@ -31,7 +31,22 @@ import { availableModes as computeModes } from './appMode';
 import type { AppMode } from './appMode';
 
 /** `permissions` có sẵn trong phản hồi đăng nhập — dùng để ẩn/hiện tab theo quyền (vd Thi Công). */
-type CurrentUser = Pick<UserSummary, 'id' | 'username' | 'fullName' | 'role' | 'unit' | 'position'> & {
+type CurrentUser = Pick<
+  UserSummary,
+  | 'id'
+  | 'username'
+  | 'fullName'
+  | 'role'
+  | 'unit'
+  | 'position'
+  | 'level'
+  | 'wardId'
+  | 'hamletId'
+  | 'ward'
+  | 'hamlet'
+  | 'departmentId'
+  | 'department'
+> & {
   permissions?: string[];
 };
 

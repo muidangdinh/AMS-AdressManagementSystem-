@@ -41,18 +41,20 @@ import {
   CHART_COLORS,
   SLICE_KEY,
   toStackedBreakdown,
+  UserLevel,
 } from '@tayninh/shared';
 import { ApiError, apiFetch } from '@/lib/api';
 import { dashboardApi } from '@/lib/dashboard-api';
 import { hamletsApi } from '@/lib/addresses-api';
+import { useAuth } from '@/lib/auth-context';
 import { EmptyState, ButtonSpinner } from '@/components/ui';
 import type { ChartBar } from '@/components/DashboardCharts';
 
 // Import động — Chart.js vẽ bằng canvas nên cần `window`, không chạy được khi SSR.
 const ChartSection = dynamic(() => import('@/components/DashboardCharts').then((m) => m.ChartSection), { ssr: false });
-const DonutChart = dynamic(() => import('@/components/DashboardCharts').then((m) => m.DonutChart), { ssr: false });
+const ColumnChart = dynamic(() => import('@/components/DashboardCharts').then((m) => m.ColumnChart), { ssr: false });
 const BarChartH = dynamic(() => import('@/components/DashboardCharts').then((m) => m.BarChartH), { ssr: false });
-const GaugeChart = dynamic(() => import('@/components/DashboardCharts').then((m) => m.GaugeChart), { ssr: false });
+const ProgressStat = dynamic(() => import('@/components/DashboardCharts').then((m) => m.ProgressStat), { ssr: false });
 const StackedBarChart = dynamic(() => import('@/components/DashboardCharts').then((m) => m.StackedBarChart), { ssr: false });
 
 /** Nhãn phụ (badge) dùng chung cho các loại trạng thái khác nhau trong modal xem nhanh. */
@@ -128,7 +130,7 @@ const CARD_COLOR: Record<CardColor, { bg: string; text: string }> = {
   slate: { bg: 'bg-surface-2', text: 'text-fg-muted' },
 };
 
-/** Lát donut "Đợt khảo sát" (mục Báo cáo tiến độ khảo sát) — đếm ở frontend từ danh sách đợt (API tổng quan không trả). */
+/** Các cột "Đợt khảo sát" (mục Báo cáo tiến độ khảo sát) — đếm ở frontend từ danh sách đợt (API tổng quan không trả). */
 function buildCampaignSlices(c: Record<CampaignStatus, number>): ChartSlice[] {
   const color: Record<CampaignStatus, string> = {
     [CampaignStatus.DRAFT]: CHART_COLORS.slate,
@@ -398,6 +400,10 @@ export default function DashboardPage() {
     load();
   }, [load]);
 
+  // Nhân sự ấp/thôn: API đã giới hạn mọi số liệu trong ấp của họ — bộ lọc ấp chỉ hiển thị, không đổi được.
+  const { user } = useAuth();
+  const hamletScoped = user?.level === UserLevel.HAMLET;
+
   // Tìm kiếm nhanh: lọc theo ấp/thôn + gõ tìm theo tên đường/chủ hộ/SĐT/CCCD.
   const [hamlets, setHamlets] = useState<Hamlet[]>([]);
   const [hamletId, setHamletId] = useState('');
@@ -656,18 +662,29 @@ export default function DashboardPage() {
             <label className="block text-[11px] font-bold text-fg-muted uppercase mb-1">
               Ấp/Thôn/Tổ dân phố
             </label>
-            <select
-              value={hamletId}
-              onChange={(e) => setHamletId(e.target.value)}
-              className="w-full border border-line rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent"
-            >
-              <option value="">Tất cả</option>
-              {hamlets.map((h) => (
-                <option key={h.id} value={h.id}>
-                  {h.name}
-                </option>
-              ))}
-            </select>
+            {hamletScoped ? (
+              <select
+                disabled
+                value=""
+                title="Tài khoản ấp/thôn chỉ xem được dữ liệu của ấp mình"
+                className="w-full border border-line rounded-lg px-3 py-2 text-sm bg-surface-2 text-fg"
+              >
+                <option value="">{user?.hamlet?.name ?? 'Chưa được gán ấp/thôn'}</option>
+              </select>
+            ) : (
+              <select
+                value={hamletId}
+                onChange={(e) => setHamletId(e.target.value)}
+                className="w-full border border-line rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent"
+              >
+                <option value="">Tất cả</option>
+                {hamlets.map((h) => (
+                  <option key={h.id} value={h.id}>
+                    {h.name}
+                  </option>
+                ))}
+              </select>
+            )}
           </div>
           <button
             onClick={load}
@@ -751,13 +768,15 @@ export default function DashboardPage() {
         <>
           <ChartSection
             title="Báo cáo số lượng nhà"
-            subtitle="10.1 — tổng số nhà toàn tỉnh, theo trạng thái phê duyệt"
+            subtitle={`10.1 — tổng số nhà ${
+              hamletScoped ? `trong phạm vi ${user?.hamlet?.name ?? 'ấp/thôn'}` : 'toàn tỉnh'
+            }, theo trạng thái phê duyệt`}
             chart={
-              <DonutChart
-                centerLabel="Tổng số nhà"
-                centerValue={data.houses.total}
+              <ColumnChart
+                totalLabel="Tổng số nhà"
+                totalValue={data.houses.total}
                 data={buildHouseStatusSlices(data)}
-                onSliceClick={(key) =>
+                onBarClick={(key) =>
                   openHouses(`Nhà — ${HOUSE_STATUS_LABELS[key as HouseStatus]}`, undefined, {
                     status: key as HouseStatus,
                   })
@@ -804,11 +823,11 @@ export default function DashboardPage() {
             title="Phân loại số nhà"
             subtitle="5 giai đoạn phân loại — độc lập với trạng thái phê duyệt ở trên"
             chart={
-              <DonutChart
-                centerLabel="Tổng đã phân loại"
-                centerValue={data.reviewStages?.total ?? 0}
+              <ColumnChart
+                totalLabel="Tổng đã phân loại"
+                totalValue={data.reviewStages?.total ?? 0}
                 data={buildReviewStageSlices(data)}
-                onSliceClick={(key) =>
+                onBarClick={(key) =>
                   openHouses(
                     `Số nhà — ${HOUSE_REVIEW_STAGE_LABELS[key as HouseReviewStage]}`,
                     undefined,
@@ -1026,13 +1045,13 @@ export default function DashboardPage() {
             title="Báo cáo biển số nhà"
             subtitle="10.7-10.9 — đã cấp / đã gắn / chưa gắn"
             chart={
-              <div className="flex flex-col sm:flex-row items-center gap-4">
+              <div className="flex flex-col sm:flex-row sm:items-center gap-4">
                 <div className="flex-1 w-full min-w-0">
-              <DonutChart
-                centerLabel="Biển đã cấp"
-                centerValue={data.plates.total}
+              <ColumnChart
+                totalLabel="Biển đã cấp"
+                totalValue={data.plates.total}
                 data={buildPlateSlices(data)}
-                onSliceClick={(key) =>
+                onBarClick={(key) =>
                   openPlates(
                     `Biển số nhà — ${PLATE_STATUS_LABELS[key as PlateStatus]}`,
                     undefined,
@@ -1041,8 +1060,8 @@ export default function DashboardPage() {
                 }
               />
                 </div>
-                <div className="w-full sm:w-44 shrink-0">
-                  <GaugeChart
+                <div className="w-full sm:w-48 shrink-0">
+                  <ProgressStat
                     value={data.plates.installedPct}
                     label="Tiến độ gắn biển"
                     color={CHART_COLORS.green}
@@ -1088,16 +1107,16 @@ export default function DashboardPage() {
             title="Báo cáo tiến độ khảo sát"
             subtitle="10.10 — theo trạng thái đợt khảo sát và nhiệm vụ"
             chart={
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-center">
+              <div className="grid grid-cols-1 md:grid-cols-[1fr_1fr_12rem] gap-4 md:items-center">
                 {/* Đợt khảo sát — đếm từ danh sách đợt (API tổng quan chỉ trả số đợt đang triển khai). */}
                 {campaignCounts && (
                   <div className="min-w-0">
-                    <p className="text-xs font-semibold text-fg-muted text-center mb-1">Đợt khảo sát</p>
-                    <DonutChart
-                      centerLabel="Tổng đợt"
-                      centerValue={Object.values(campaignCounts).reduce((a, b) => a + b, 0)}
+                    <p className="text-xs font-semibold text-fg-muted mb-1">Đợt khảo sát</p>
+                    <ColumnChart
+                      totalLabel="Tổng đợt"
+                      totalValue={Object.values(campaignCounts).reduce((a, b) => a + b, 0)}
                       data={buildCampaignSlices(campaignCounts)}
-                      onSliceClick={(key) =>
+                      onBarClick={(key) =>
                         openCampaigns(
                           `Đợt khảo sát — ${CAMPAIGN_STATUS_LABELS[key as CampaignStatus]}`,
                           undefined,
@@ -1108,10 +1127,10 @@ export default function DashboardPage() {
                   </div>
                 )}
                 <div className="min-w-0">
-                  <p className="text-xs font-semibold text-fg-muted text-center mb-1">Nhiệm vụ khảo sát</p>
-                  <DonutChart
-                    centerLabel="Tổng nhiệm vụ"
-                    centerValue={
+                  <p className="text-xs font-semibold text-fg-muted mb-1">Nhiệm vụ khảo sát</p>
+                  <ColumnChart
+                    totalLabel="Tổng nhiệm vụ"
+                    totalValue={
                       data.surveys.assignments.assigned +
                       data.surveys.assignments.inProgress +
                       data.surveys.assignments.submitted +
@@ -1119,7 +1138,7 @@ export default function DashboardPage() {
                       data.surveys.assignments.needsRevisit
                     }
                     data={buildSurveySlices(data)}
-                    onSliceClick={(key) =>
+                    onBarClick={(key) =>
                       key === SLICE_KEY.IN_SURVEY
                         ? openAssignments('Nhiệm vụ đang khảo sát', undefined, [
                             AssignmentStatus.ASSIGNED,
@@ -1133,8 +1152,8 @@ export default function DashboardPage() {
                     }
                   />
                 </div>
-                <div className="w-full max-w-44 mx-auto">
-                  <GaugeChart
+                <div className="w-full">
+                  <ProgressStat
                     value={data.surveys.completedPct}
                     label="Hoàn tất nhiệm vụ"
                     color={CHART_COLORS.green}
@@ -1223,13 +1242,13 @@ export default function DashboardPage() {
             title="Báo cáo tiến độ đánh số"
             subtitle="10.11 — theo trạng thái phương án đánh số"
             chart={
-              <div className="flex flex-col sm:flex-row items-center gap-4">
+              <div className="flex flex-col sm:flex-row sm:items-center gap-4">
                 <div className="flex-1 w-full min-w-0">
-              <DonutChart
-                centerLabel="Tổng phương án"
-                centerValue={data.numberingSchemes.total}
+              <ColumnChart
+                totalLabel="Tổng phương án"
+                totalValue={data.numberingSchemes.total}
                 data={buildSchemeSlices(data)}
-                onSliceClick={(key) =>
+                onBarClick={(key) =>
                   key === SLICE_KEY.DRAFT_SUBMITTED
                     ? openSchemes('Phương án đang soạn / trình duyệt', undefined, [
                         NumberingSchemeStatus.DRAFT,
@@ -1243,8 +1262,8 @@ export default function DashboardPage() {
                 }
               />
                 </div>
-                <div className="w-full sm:w-44 shrink-0">
-                  <GaugeChart
+                <div className="w-full sm:w-48 shrink-0">
+                  <ProgressStat
                     value={data.numberingSchemes.approvedPct}
                     label="Phương án đã duyệt"
                     color={CHART_COLORS.green}
@@ -1295,11 +1314,11 @@ export default function DashboardPage() {
             title="Hồ sơ – quy trình"
             subtitle="Hồ sơ xin cấp số nhà đang xử lý (nhóm 9)"
             chart={
-              <DonutChart
-                centerLabel="Tổng hồ sơ"
-                centerValue={data.cases.total}
+              <ColumnChart
+                totalLabel="Tổng hồ sơ"
+                totalValue={data.cases.total}
                 data={buildCaseSlices(data)}
-                onSliceClick={(key) =>
+                onBarClick={(key) =>
                   key === SLICE_KEY.OPEN
                     ? openCases('Hồ sơ đang xử lý', undefined, 'OPEN')
                     : openCases(

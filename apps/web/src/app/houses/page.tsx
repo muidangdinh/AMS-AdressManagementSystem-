@@ -36,6 +36,7 @@ import {
   PlateStatus,
   Street,
   USER_ROLE_LABELS,
+  UserLevel,
   Ward,
 } from '@tayninh/shared';
 import { useAuth } from '@/lib/auth-context';
@@ -61,6 +62,7 @@ function AddressComboField({
   options,
   onSelect,
   onManualText,
+  disabled,
 }: {
   label: string;
   required?: boolean;
@@ -69,6 +71,8 @@ function AddressComboField({
   options: { id: string; name: string }[];
   onSelect: (option: { id: string; name: string } | null) => void;
   onManualText: (text: string) => void;
+  /** Khóa ô (vd nhân sự ấp/thôn: xã cố định theo tài khoản). */
+  disabled?: boolean;
 }) {
   const [manualMode, setManualMode] = useState(
     () => options.length === 0 || (!idValue && textValue !== ''),
@@ -85,9 +89,10 @@ function AddressComboField({
             required={required}
             value={textValue}
             onChange={(e) => onManualText(e.target.value)}
-            className={`flex-1 min-w-0 ${FIELD_CLASS}`}
+            disabled={disabled}
+            className={`flex-1 min-w-0 ${FIELD_CLASS} disabled:bg-surface-2`}
           />
-          {options.length > 0 && (
+          {options.length > 0 && !disabled && (
             <button
               type="button"
               onClick={() => setManualMode(false)}
@@ -110,7 +115,8 @@ function AddressComboField({
             const opt = options.find((o) => o.id === e.target.value) ?? null;
             onSelect(opt);
           }}
-          className={FIELD_CLASS}
+          disabled={disabled}
+          className={`${FIELD_CLASS} disabled:bg-surface-2`}
         >
           <option value="" disabled={required}>
             -- Chọn --
@@ -361,6 +367,9 @@ function ResetToTableFromQuery({ onReset }: { onReset: () => void }) {
 
 export default function HousesPage() {
   const { user, hasPermission } = useAuth();
+  // Nhân sự ấp/thôn: API chỉ trả nhà trong ấp của họ (cộng nhà thuộc nhiệm vụ được giao), nên bộ lọc
+  // ấp chỉ hiển thị; hồ sơ mới mặc định thuộc ấp của họ.
+  const hamletScoped = user?.level === UserLevel.HAMLET;
   const canEdit = hasPermission(PERMISSIONS.HOUSE_UPDATE);
   const apiUrl = getApiUrl();
 
@@ -783,10 +792,17 @@ export default function HousesPage() {
 
   function openCreateModal(preset?: { lat: number; lng: number }) {
     setEditingId(null);
+    const base: FormState =
+      hamletScoped && user?.hamletId
+        ? {
+            ...emptyForm,
+            hamletId: user.hamletId,
+            wardId: user.wardId ?? '',
+            ward: wards.find((w) => w.id === user.wardId)?.name ?? user.ward?.name ?? '',
+          }
+        : emptyForm;
     setForm(
-      preset
-        ? { ...emptyForm, latitude: preset.lat.toFixed(6), longitude: preset.lng.toFixed(6) }
-        : emptyForm,
+      preset ? { ...base, latitude: preset.lat.toFixed(6), longitude: preset.lng.toFixed(6) } : base,
     );
     setFormError(null);
     setModalOpen(true);
@@ -1032,9 +1048,11 @@ export default function HousesPage() {
               setPage(1);
               setHamletId(e.target.value);
             }}
-            className={FILTER_FIELD}
+            disabled={hamletScoped}
+            title={hamletScoped ? 'Tài khoản ấp/thôn chỉ xem được dữ liệu của ấp mình' : undefined}
+            className={`${FILTER_FIELD} disabled:bg-surface-2`}
           >
-            <option value="">-- Tất cả --</option>
+            <option value="">{hamletScoped ? (user?.hamlet?.name ?? 'Chưa gán ấp/thôn') : '-- Tất cả --'}</option>
             {hamlets
               .filter((h) => !wardId || h.wardId === wardId)
               .map((h) => (
@@ -2007,6 +2025,7 @@ export default function HousesPage() {
                   <AddressComboField
                     label="Phường/Xã"
                     required
+                    disabled={hamletScoped}
                     textValue={form.ward}
                     idValue={form.wardId}
                     options={wards.map((w) => ({ id: w.id, name: w.name }))}
@@ -2022,7 +2041,9 @@ export default function HousesPage() {
                     <select
                       value={form.hamletId}
                       onChange={(e) => setForm((f) => ({ ...f, hamletId: e.target.value }))}
-                      className={FIELD_CLASS}
+                      disabled={hamletScoped}
+                      title={hamletScoped ? 'Nhân sự ấp/thôn chỉ ghi nhận nhà trong ấp của mình' : undefined}
+                      className={`${FIELD_CLASS} disabled:bg-surface-2`}
                     >
                       <option value="">-- Chọn --</option>
                       {hamlets

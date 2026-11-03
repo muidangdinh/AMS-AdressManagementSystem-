@@ -157,6 +157,12 @@ export default function RolesAdminPage() {
         }
       />
 
+      <p className="text-xs text-fg-muted bg-surface-2/60 border border-line rounded-lg px-3 py-2 leading-relaxed">
+        Quyền thực tế còn phụ thuộc cấp tài khoản: nhân sự UBND xã không quản lý được tài khoản và vai trò;
+        nhân sự ấp/thôn không dùng được các quyền quản lý cấp xã (cấu hình, danh mục địa chỉ, tuyến đường, phương
+        án đánh số, giao việc và nghiệm thu khảo sát/thi công, nhắc việc) dù vai trò có gán.
+      </p>
+
       {loadError && (
         <div className="bg-danger/10 border border-danger/30 text-danger rounded-lg p-3 text-sm">
           {loadError}

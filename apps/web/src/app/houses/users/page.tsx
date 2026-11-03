@@ -1,39 +1,97 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { PERMISSIONS } from '@tayninh/shared';
-import type { RoleSummary, UserSummary } from '@tayninh/shared';
+import { PERMISSIONS, USER_LEVEL_LABELS, UserLevel } from '@tayninh/shared';
+import type { Department, Hamlet, RoleSummary, UserSummary, Ward } from '@tayninh/shared';
 import { useAuth } from '@/lib/auth-context';
 import { ApiError } from '@/lib/api';
 import { usersApi } from '@/lib/users-api';
 import { rolesApi } from '@/lib/roles-api';
-import { ButtonSpinner, EmptyState, FIELD_CLASS, FormField, PageHeader, StatusBadge, ToggleSwitch, type StatusTone } from '@/components/ui';
+import { hamletsApi, wardsApi } from '@/lib/addresses-api';
+import { departmentsApi } from '@/lib/departments-api';
+import {
+  ButtonSpinner,
+  EmptyState,
+  FIELD_CLASS,
+  FormField,
+  PageHeader,
+  SegmentedControl,
+  StatusBadge,
+  ToggleSwitch,
+  type StatusTone,
+} from '@/components/ui';
 
 interface FormState {
   username: string;
   password: string;
   fullName: string;
   roleIds: string[];
-  unit: string;
+  /** '' = không thuộc phòng ban. */
+  departmentId: string;
   position: string;
   isActive: boolean;
+  level: UserLevel;
+  wardId: string;
+  hamletId: string;
 }
 
-const EMPTY_FORM: FormState = {
+/** Mỗi tab là 1 phân hệ con, ứng với 1 cấp tài khoản. Khóa tab nằm trên URL (`?tab=`) để gửi link được. */
+type TabKey = 'xa' | 'ap' | 'he-thong';
+
+const TABS: { key: TabKey; level: UserLevel; label: string; subtitle: string }[] = [
+  {
+    key: 'xa',
+    level: UserLevel.WARD,
+    label: 'Nhân sự UBND xã',
+    subtitle: 'Cán bộ UBND xã/phường — xem được dữ liệu toàn hệ thống',
+  },
+  {
+    key: 'ap',
+    level: UserLevel.HAMLET,
+    label: 'Nhân sự ấp/thôn',
+    subtitle: 'Cán bộ ấp/thôn — chỉ xem được dữ liệu của ấp mình và nhiệm vụ được giao',
+  },
+  {
+    key: 'he-thong',
+    level: UserLevel.SYSTEM,
+    label: 'Tài khoản hệ thống',
+    subtitle: 'Quản trị viên và tài khoản cấp tỉnh — xem toàn bộ, quản lý được người dùng',
+  },
+];
+
+const TAB_BY_LEVEL = Object.fromEntries(TABS.map((t) => [t.level, t.key])) as Record<UserLevel, TabKey>;
+
+function readTabFromUrl(): TabKey {
+  if (typeof window === 'undefined') return 'xa';
+  const t = new URLSearchParams(window.location.search).get('tab');
+  return TABS.some((x) => x.key === t) ? (t as TabKey) : 'xa';
+}
+
+/** Bộ lọc phòng ban: '' = tất cả, '__none__' = chưa gán phòng ban, còn lại = id phòng ban. */
+const NO_DEPARTMENT = '__none__';
+
+function readUrlParam(name: string): string {
+  if (typeof window === 'undefined') return '';
+  return new URLSearchParams(window.location.search).get(name) ?? '';
+}
+
+/** Bản API cũ chưa trả `level` → coi như tài khoản hệ thống (đúng với giá trị mặc định khi migrate). */
+const levelOf = (u: UserSummary): UserLevel => u.level ?? UserLevel.SYSTEM;
+
+const emptyForm = (level: UserLevel): FormState => ({
   username: '',
   password: '',
   fullName: '',
   roleIds: [],
-  unit: '',
+  departmentId: '',
   position: '',
   isActive: true,
-};
+  level,
+  wardId: '',
+  hamletId: '',
+});
 
-/**
- * Quản lý người dùng — cần quyền user:manage. PHASE 17: gán NHIỀU vai trò động
- * (chọn từ danh sách vai trò do admin quản trị ở /houses/roles).
- */
 /** Màu tag vai trò hệ thống (UI.md). Vai trò tự tạo dùng màu trung tính. */
 const ROLE_TONE: Record<string, StatusTone> = {
   admin: 'danger',
@@ -41,6 +99,10 @@ const ROLE_TONE: Record<string, StatusTone> = {
   surveyor: 'ok',
 };
 
+/**
+ * Quản lý người dùng — chỉ tài khoản hệ thống có quyền user:manage. Chia 3 phân hệ con theo cấp tài khoản
+ * (UBND xã / ấp, thôn / hệ thống); mỗi phân hệ có đủ chức năng thêm, sửa, khóa, đặt lại mật khẩu, gán vai trò.
+ */
 export default function UsersAdminPage() {
   const { user, hasPermission } = useAuth();
   const router = useRouter();
@@ -50,8 +112,23 @@ export default function UsersAdminPage() {
     if (user && !canManage) router.replace('/houses');
   }, [user, canManage, router]);
 
+  const [tab, setTabState] = useState<TabKey>('xa');
+  useEffect(() => setTabState(readTabFromUrl()), []);
+  const setTab = (next: TabKey) => {
+    setTabState(next);
+    setWardFilter('');
+    setHamletFilter('');
+    const url = new URL(window.location.href);
+    url.searchParams.set('tab', next);
+    window.history.replaceState(null, '', url);
+  };
+  const current = TABS.find((t) => t.key === tab)!;
+
   const [users, setUsers] = useState<UserSummary[]>([]);
   const [roles, setRoles] = useState<RoleSummary[]>([]);
+  const [wards, setWards] = useState<Ward[]>([]);
+  const [hamlets, setHamlets] = useState<Hamlet[]>([]);
+  const [departments, setDepartments] = useState<Department[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
 
@@ -59,9 +136,18 @@ export default function UsersAdminPage() {
     setLoading(true);
     setLoadError(null);
     try {
-      const [userList, roleList] = await Promise.all([usersApi.list(), rolesApi.list()]);
+      const [userList, roleList, wardList, hamletList, departmentList] = await Promise.all([
+        usersApi.list(),
+        rolesApi.list(),
+        wardsApi.list(),
+        hamletsApi.list(),
+        departmentsApi.list(),
+      ]);
       setUsers(userList);
+      setDepartments(departmentList);
       setRoles(roleList.filter((r) => r.isActive));
+      setWards(wardList);
+      setHamlets(hamletList);
     } catch (err) {
       setLoadError(err instanceof ApiError ? err.message : 'Không tải được danh sách người dùng');
     } finally {
@@ -70,17 +156,75 @@ export default function UsersAdminPage() {
   }, []);
 
   useEffect(() => {
-    load();
-  }, [load]);
+    // Không gọi API khi không có quyền (trang đang chuyển hướng) — tránh 403 vô ích.
+    if (canManage) load();
+  }, [load, canManage]);
+
+  const wardName = useMemo(() => new Map(wards.map((w) => [w.id, w.name])), [wards]);
+
+  // Bộ lọc của tab đang xem.
+  const [search, setSearch] = useState('');
+  const [wardFilter, setWardFilter] = useState('');
+  const [hamletFilter, setHamletFilter] = useState('');
+  // Lọc phòng ban áp dụng cho mọi tab (mở từ trang Phòng ban qua `?departmentId=`).
+  const [departmentFilter, setDepartmentFilterState] = useState('');
+  const setDepartmentFilter = (next: string) => {
+    setDepartmentFilterState(next);
+    const url = new URL(window.location.href);
+    if (next) url.searchParams.set('departmentId', next);
+    else url.searchParams.delete('departmentId');
+    window.history.replaceState(null, '', url);
+  };
+  useEffect(() => setDepartmentFilterState(readUrlParam('departmentId')), []);
+
+  const matchesDepartment = useCallback(
+    (u: UserSummary) =>
+      !departmentFilter ||
+      (departmentFilter === NO_DEPARTMENT ? !u.departmentId : u.departmentId === departmentFilter),
+    [departmentFilter],
+  );
+
+  const countByLevel = useMemo(() => {
+    const c: Record<UserLevel, number> = { SYSTEM: 0, WARD: 0, HAMLET: 0 };
+    for (const u of users) if (matchesDepartment(u)) c[levelOf(u)]++;
+    return c;
+  }, [users, matchesDepartment]);
+
+  // Mở từ trang Phòng ban (có `departmentId`, không chỉ định tab): tự mở tab đầu tiên có nhân sự của phòng ban đó.
+  const autoTabDone = useRef(false);
+  useEffect(() => {
+    if (autoTabDone.current || loading || !departmentFilter || readUrlParam('tab')) return;
+    autoTabDone.current = true;
+    const first = TABS.find((t) => countByLevel[t.level] > 0);
+    if (first && first.key !== tab) setTabState(first.key);
+  }, [loading, departmentFilter, countByLevel, tab]);
+
+  const visibleUsers = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return users.filter(
+      (u) =>
+        levelOf(u) === current.level &&
+        (!wardFilter || u.wardId === wardFilter) &&
+        (!hamletFilter || u.hamletId === hamletFilter) &&
+        matchesDepartment(u) &&
+        (!q || u.fullName.toLowerCase().includes(q) || u.username.toLowerCase().includes(q)),
+    );
+  }, [users, current.level, wardFilter, hamletFilter, matchesDepartment, search]);
 
   // `editing` = null: đóng; 'new': thêm mới; UserSummary: sửa.
   const [editing, setEditing] = useState<UserSummary | 'new' | null>(null);
-  const [form, setForm] = useState<FormState>(EMPTY_FORM);
+  const [form, setForm] = useState<FormState>(emptyForm(UserLevel.WARD));
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
 
   function openNew() {
-    setForm(EMPTY_FORM);
+    // Thêm mới ở tab nào thì mặc định cấp và xã/ấp theo tab và bộ lọc đang chọn.
+    setForm({
+      ...emptyForm(current.level),
+      wardId: wardFilter,
+      hamletId: hamletFilter,
+      departmentId: departmentFilter && departmentFilter !== NO_DEPARTMENT ? departmentFilter : '',
+    });
     setFormError(null);
     setEditing('new');
   }
@@ -91,9 +235,12 @@ export default function UsersAdminPage() {
       password: '',
       fullName: u.fullName,
       roleIds: u.roles?.map((r) => r.id) ?? [],
-      unit: u.unit ?? '',
+      departmentId: u.departmentId ?? '',
       position: u.position ?? '',
       isActive: u.isActive,
+      level: levelOf(u),
+      wardId: u.wardId ?? '',
+      hamletId: u.hamletId ?? '',
     });
     setFormError(null);
     setEditing(u);
@@ -108,11 +255,26 @@ export default function UsersAdminPage() {
     }));
   }
 
+  /** Xã/ấp gửi lên theo cấp: hệ thống không gắn địa bàn; ấp/thôn chỉ cần ấp (xã API tự lấy). */
+  function locationPayload() {
+    if (form.level === UserLevel.SYSTEM) return { level: form.level, wardId: null, hamletId: null };
+    if (form.level === UserLevel.WARD) return { level: form.level, wardId: form.wardId || null, hamletId: null };
+    return { level: form.level, wardId: form.wardId || null, hamletId: form.hamletId || null };
+  }
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (editing === null) return;
     if (form.roleIds.length === 0) {
       setFormError('Phải chọn ít nhất một vai trò');
+      return;
+    }
+    if (form.level === UserLevel.WARD && !form.wardId) {
+      setFormError('Chọn xã/phường cho nhân sự UBND xã');
+      return;
+    }
+    if (form.level === UserLevel.HAMLET && !form.hamletId) {
+      setFormError('Chọn ấp/thôn cho nhân sự ấp/thôn');
       return;
     }
     setSaving(true);
@@ -124,21 +286,27 @@ export default function UsersAdminPage() {
           password: form.password,
           fullName: form.fullName.trim(),
           roleIds: form.roleIds,
-          unit: form.unit.trim() || undefined,
+          departmentId: form.departmentId || null,
           position: form.position.trim() || undefined,
+          ...locationPayload(),
         });
       } else {
         await usersApi.update(editing.id, {
           fullName: form.fullName.trim(),
           roleIds: form.roleIds,
-          unit: form.unit.trim(),
+          departmentId: form.departmentId || null,
+          // Bỏ gán phòng ban thì xóa luôn đơn vị (đang là tên phòng ban cũ); chưa từng gán thì giữ chữ cũ.
+          ...(!form.departmentId && editing.departmentId ? { unit: '' } : {}),
           position: form.position.trim(),
           isActive: form.isActive,
           // Để trống = giữ nguyên mật khẩu hiện tại.
           password: form.password || undefined,
+          ...locationPayload(),
         });
       }
       setEditing(null);
+      // Vừa chuyển cấp → mở tab của cấp mới để thấy ngay tài khoản vừa sửa.
+      if (form.level !== current.level) setTab(TAB_BY_LEVEL[form.level]);
       await load();
     } catch (err) {
       setFormError(err instanceof ApiError ? err.message : 'Không lưu được');
@@ -148,23 +316,107 @@ export default function UsersAdminPage() {
   }
 
   const isNew = editing === 'new';
-  // Không cho tự khóa chính mình (API cũng chặn) — tránh mất quyền quản trị.
+  // Không cho tự khóa hay tự hạ cấp chính mình (API cũng chặn) — tránh mất quyền quản trị.
   const isSelf = editing !== null && editing !== 'new' && editing.id === user?.id;
+  const formHamlets = hamlets.filter((h) => !form.wardId || h.wardId === form.wardId);
+  // Phòng ban chọn được: cấp tỉnh + phòng ban của xã đang chọn; giữ phòng ban hiện tại kể cả đã ngừng sử dụng.
+  const formWardId = form.level === UserLevel.SYSTEM ? '' : form.wardId;
+  const formDepartments = departments.filter(
+    (d) =>
+      d.id === form.departmentId ||
+      (d.isActive && (d.wardId === null || (!!formWardId && d.wardId === formWardId))),
+  );
+  const selectedDepartment = departments.find((d) => d.id === form.departmentId);
+  const departmentMismatch =
+    !!selectedDepartment?.wardId && selectedDepartment.wardId !== formWardId;
+  const filterHamlets = hamlets.filter((h) => !wardFilter || h.wardId === wardFilter);
 
   return (
     <div className="h-full overflow-auto p-6 space-y-4">
       <PageHeader
         title="Quản lý người dùng"
-        subtitle="Tạo tài khoản cán bộ và gán vai trò (có thể nhiều vai trò)"
+        subtitle={current.subtitle}
         actions={
           <button
             onClick={openNew}
             className="bg-brand hover:bg-brand/90 text-white px-4 py-2 rounded-xl text-sm font-semibold shadow-soft transition"
           >
-            + Thêm người dùng
+            + Thêm {current.label.toLowerCase()}
           </button>
         }
       />
+
+      <div className="flex flex-wrap items-center gap-3">
+        <div className="max-w-full overflow-x-auto">
+          <SegmentedControl
+            value={tab}
+            onChange={setTab}
+            options={TABS.map((t) => ({
+              value: t.key,
+              label: (
+                <span className="whitespace-nowrap">
+                  {t.label} <span className="text-fg-subtle tabular-nums">({countByLevel[t.level]})</span>
+                </span>
+              ),
+            }))}
+          />
+        </div>
+        <input
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="Tìm theo họ tên, tên đăng nhập"
+          className={`${FIELD_CLASS} w-full sm:w-64`}
+        />
+        {current.level !== UserLevel.SYSTEM && (
+          <select
+            value={wardFilter}
+            onChange={(e) => {
+              setWardFilter(e.target.value);
+              setHamletFilter('');
+            }}
+            className={`${FIELD_CLASS} w-full sm:w-52`}
+            aria-label="Lọc theo xã/phường"
+          >
+            <option value="">Tất cả xã/phường</option>
+            {wards.map((w) => (
+              <option key={w.id} value={w.id}>
+                {w.name}
+              </option>
+            ))}
+          </select>
+        )}
+        <select
+          value={departmentFilter}
+          onChange={(e) => setDepartmentFilter(e.target.value)}
+          className={`${FIELD_CLASS} w-full sm:w-56`}
+          aria-label="Lọc theo phòng ban"
+        >
+          <option value="">Tất cả phòng ban</option>
+          <option value={NO_DEPARTMENT}>— Chưa gán phòng ban —</option>
+          {departments.map((d) => (
+            <option key={d.id} value={d.id}>
+              {d.name}
+              {d.ward ? ` — ${d.ward.name}` : ''}
+            </option>
+          ))}
+        </select>
+        {current.level === UserLevel.HAMLET && (
+          <select
+            value={hamletFilter}
+            onChange={(e) => setHamletFilter(e.target.value)}
+            className={`${FIELD_CLASS} w-full sm:w-52`}
+            aria-label="Lọc theo ấp/thôn"
+          >
+            <option value="">Tất cả ấp/thôn</option>
+            {filterHamlets.map((h) => (
+              <option key={h.id} value={h.id}>
+                {h.name}
+                {!wardFilter && wardName.get(h.wardId) ? ` — ${wardName.get(h.wardId)}` : ''}
+              </option>
+            ))}
+          </select>
+        )}
+      </div>
 
       {loadError && (
         <div className="bg-danger/10 border border-danger/30 text-danger rounded-lg p-3 text-sm">
@@ -177,8 +429,14 @@ export default function UsersAdminPage() {
           <div className="flex items-center justify-center gap-2 py-10 text-sm text-fg-subtle">
             <ButtonSpinner /> Đang tải…
           </div>
-        ) : users.length === 0 ? (
-          <EmptyState text="Chưa có người dùng nào" />
+        ) : visibleUsers.length === 0 ? (
+          <EmptyState
+            text={
+              countByLevel[current.level] === 0
+                ? `Chưa có tài khoản nào trong mục "${current.label}"`
+                : 'Không có tài khoản nào khớp bộ lọc'
+            }
+          />
         ) : (
           <table className="w-full text-sm">
             <thead className="bg-surface-2 text-[11px] uppercase text-fg-muted text-left">
@@ -186,14 +444,16 @@ export default function UsersAdminPage() {
                 <th className="px-4 py-2.5">Họ tên</th>
                 <th className="px-4 py-2.5">Tên đăng nhập</th>
                 <th className="px-4 py-2.5">Vai trò</th>
-                <th className="px-4 py-2.5">Đơn vị</th>
+                {current.level !== UserLevel.SYSTEM && <th className="px-4 py-2.5">Xã/phường</th>}
+                {current.level === UserLevel.HAMLET && <th className="px-4 py-2.5">Ấp/thôn</th>}
+                <th className="px-4 py-2.5">Phòng ban</th>
                 <th className="px-4 py-2.5">Chức vụ</th>
                 <th className="px-4 py-2.5">Trạng thái</th>
                 <th className="px-4 py-2.5" />
               </tr>
             </thead>
             <tbody className="divide-y divide-line">
-              {users.map((u) => (
+              {visibleUsers.map((u) => (
                 <tr key={u.id} className={u.isActive ? '' : 'text-fg-subtle'}>
                   <td className="px-4 py-2.5">
                     <div className="flex items-center gap-2.5">
@@ -215,7 +475,7 @@ export default function UsersAdminPage() {
                       <div className="flex flex-wrap gap-1">
                         {u.roles.map((r) => (
                           <StatusBadge key={r.id} tone={ROLE_TONE[r.code] ?? 'neutral'}>
-                            {r.name}
+                            <span className="whitespace-nowrap">{r.name}</span>
                           </StatusBadge>
                         ))}
                       </div>
@@ -223,11 +483,29 @@ export default function UsersAdminPage() {
                       '—'
                     )}
                   </td>
-                  <td className="px-4 py-2.5">{u.unit ?? '—'}</td>
+                  {current.level !== UserLevel.SYSTEM && (
+                    <td className="px-4 py-2.5">{u.ward?.name ?? <span className="text-danger">Chưa gán</span>}</td>
+                  )}
+                  {current.level === UserLevel.HAMLET && (
+                    <td className="px-4 py-2.5">
+                      {u.hamlet?.name ?? <span className="text-danger">Chưa gán — không xem được dữ liệu ấp</span>}
+                    </td>
+                  )}
+                  <td className="px-4 py-2.5">
+                    {u.department?.name ??
+                      (u.unit ? (
+                        <span title="Đơn vị gõ tự do từ trước — sửa tài khoản để chọn phòng ban trong danh mục">
+                          {u.unit}{' '}
+                          <span className="text-[10px] font-semibold text-warn whitespace-nowrap">chưa chuẩn hóa</span>
+                        </span>
+                      ) : (
+                        '—'
+                      ))}
+                  </td>
                   <td className="px-4 py-2.5">{u.position ?? '—'}</td>
                   <td className="px-4 py-2.5">
                     <span
-                      className={`px-2 py-0.5 rounded text-[11px] font-bold ${
+                      className={`px-2 py-0.5 rounded text-[11px] font-bold whitespace-nowrap ${
                         u.isActive ? 'bg-ok/15 text-ok' : 'bg-surface-2 text-fg-muted'
                       }`}
                     >
@@ -260,7 +538,7 @@ export default function UsersAdminPage() {
             className="bg-surface rounded-2xl shadow-soft w-full max-w-md max-h-[90vh] overflow-auto"
           >
             <div className="px-5 py-4 bg-shell text-fg border-b border-line text-sm font-bold rounded-t-2xl">
-              {isNew ? 'Thêm người dùng' : `Sửa: ${form.username}`}
+              {isNew ? `Thêm ${USER_LEVEL_LABELS[form.level].toLowerCase()}` : `Sửa: ${form.username}`}
             </div>
             <div className="p-5 space-y-3">
               <FormField label="Tên đăng nhập" required>
@@ -294,6 +572,71 @@ export default function UsersAdminPage() {
                   className={FIELD_CLASS}
                 />
               </FormField>
+
+              <FormField label="Cấp tài khoản" required>
+                <select
+                  value={form.level}
+                  onChange={(e) => setForm({ ...form, level: e.target.value as UserLevel })}
+                  disabled={isSelf}
+                  className={`${FIELD_CLASS} disabled:bg-surface-2`}
+                >
+                  {TABS.map((t) => (
+                    <option key={t.level} value={t.level}>
+                      {USER_LEVEL_LABELS[t.level]}
+                    </option>
+                  ))}
+                </select>
+                {isSelf && (
+                  <p className="text-[11px] text-fg-subtle mt-1">Không thể tự chuyển tài khoản của chính mình khỏi cấp hệ thống.</p>
+                )}
+              </FormField>
+              {form.level !== UserLevel.SYSTEM && (
+                <FormField label="Xã/phường" required>
+                  <select
+                    value={form.wardId}
+                    onChange={(e) => setForm({ ...form, wardId: e.target.value, hamletId: '' })}
+                    required
+                    className={FIELD_CLASS}
+                  >
+                    <option value="">— Chọn xã/phường —</option>
+                    {wards.map((w) => (
+                      <option key={w.id} value={w.id}>
+                        {w.name}
+                      </option>
+                    ))}
+                  </select>
+                </FormField>
+              )}
+              {form.level === UserLevel.HAMLET && (
+                <FormField label="Ấp/thôn" required>
+                  <select
+                    value={form.hamletId}
+                    onChange={(e) => setForm({ ...form, hamletId: e.target.value })}
+                    required
+                    disabled={!form.wardId}
+                    className={`${FIELD_CLASS} disabled:bg-surface-2`}
+                  >
+                    <option value="">{form.wardId ? '— Chọn ấp/thôn —' : 'Chọn xã/phường trước'}</option>
+                    {formHamlets.map((h) => (
+                      <option key={h.id} value={h.id}>
+                        {h.name}
+                      </option>
+                    ))}
+                  </select>
+                  <p className="text-[11px] text-fg-subtle mt-1 leading-relaxed">
+                    Nhân sự ấp/thôn chỉ xem và ghi nhận dữ liệu trong ấp này, cùng các nhiệm vụ khảo sát/thi công
+                    được giao cho mình. Các quyền quản lý cấp xã không áp dụng dù vai trò có gán: quản lý tài khoản,
+                    vai trò, cấu hình, danh mục địa chỉ, tuyến đường, phương án đánh số, giao việc và nghiệm thu
+                    khảo sát/thi công, nhắc việc.
+                  </p>
+                </FormField>
+              )}
+              {form.level === UserLevel.WARD && (
+                <p className="text-[11px] text-fg-subtle -mt-1 leading-relaxed">
+                  Nhân sự UBND xã xem được dữ liệu toàn hệ thống nhưng không quản lý được tài khoản và vai trò.
+                </p>
+              )}
+
               <FormField label="Vai trò" required>
                 <div className="space-y-1.5 rounded-lg border border-line p-2.5 max-h-44 overflow-auto">
                   {roles.length === 0 ? (
@@ -315,12 +658,37 @@ export default function UsersAdminPage() {
                   )}
                 </div>
               </FormField>
-              <FormField label="Đơn vị">
-                <input
-                  value={form.unit}
-                  onChange={(e) => setForm({ ...form, unit: e.target.value })}
+              <FormField label="Phòng ban">
+                <select
+                  value={form.departmentId}
+                  onChange={(e) => setForm({ ...form, departmentId: e.target.value })}
                   className={FIELD_CLASS}
-                />
+                >
+                  <option value="">— Không thuộc phòng ban —</option>
+                  {formDepartments.map((d) => (
+                    <option key={d.id} value={d.id}>
+                      {d.name}
+                      {d.ward ? ` — ${d.ward.name}` : ' — Cấp tỉnh'}
+                      {d.isActive ? '' : ' (ngừng sử dụng)'}
+                    </option>
+                  ))}
+                </select>
+                {departmentMismatch ? (
+                  <p className="text-[11px] text-danger mt-1">
+                    Phòng ban này thuộc {selectedDepartment?.ward?.name} — chọn phòng ban cấp tỉnh hoặc của xã đang chọn.
+                  </p>
+                ) : (
+                  editing !== 'new' &&
+                  !editing.departmentId &&
+                  editing.unit && (
+                    <p className="text-[11px] text-fg-subtle mt-1">
+                      Đơn vị cũ (gõ tự do): <b>{editing.unit}</b> — chọn phòng ban tương ứng để chuẩn hóa.
+                    </p>
+                  )
+                )}
+                <p className="text-[11px] text-fg-subtle mt-1">
+                  Thêm/sửa danh mục ở mục <a href="/houses/departments" className="text-accent hover:underline">Phòng ban</a>.
+                </p>
               </FormField>
               <FormField label="Chức vụ">
                 <input
@@ -339,6 +707,14 @@ export default function UsersAdminPage() {
                   />
                   Tài khoản đang hoạt động{isSelf && ' (không thể tự khóa chính mình)'}
                 </label>
+              )}
+              {editing !== 'new' &&
+                (form.level !== levelOf(editing) ||
+                  (form.level === UserLevel.WARD && form.wardId !== (editing.wardId ?? '')) ||
+                  (form.level === UserLevel.HAMLET && form.hamletId !== (editing.hamletId ?? ''))) && (
+                <p className="text-[11px] text-warn">
+                  Đổi cấp hoặc địa bàn sẽ đăng xuất người này khỏi mọi thiết bị để áp dụng phạm vi dữ liệu mới.
+                </p>
               )}
               {formError && (
                 <div className="bg-danger/10 border border-danger/30 text-danger rounded-lg p-2.5 text-sm">

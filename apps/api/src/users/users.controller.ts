@@ -1,4 +1,5 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
+import { SystemLevelGuard } from '../auth/guards/system-level.guard';
 import { RequirePermissions } from '../auth/decorators/permissions.decorator';
 import { PERMISSIONS } from '../auth/permissions';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
@@ -6,16 +7,18 @@ import { AuthenticatedUser } from '../auth/types/authenticated-user';
 import { UsersService } from './users.service';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
+import { ListUsersQueryDto } from './dto/list-users-query.dto';
 
-/** Toàn bộ quản lý người dùng yêu cầu quyền user:manage (X. Quản trị hệ thống). */
+/** Toàn bộ quản lý người dùng yêu cầu quyền user:manage và tài khoản cấp hệ thống. */
 @Controller('users')
 @RequirePermissions(PERMISSIONS.USER_MANAGE)
+@UseGuards(SystemLevelGuard)
 export class UsersController {
   constructor(private readonly usersService: UsersService) {}
 
   @Get()
-  findAll() {
-    return this.usersService.findAll();
+  findAll(@Query() query: ListUsersQueryDto) {
+    return this.usersService.findAll(query);
   }
 
   @Get(':id')

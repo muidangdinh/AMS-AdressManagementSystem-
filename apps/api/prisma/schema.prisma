@@ -38,6 +38,14 @@ model AppSetting {
 /// PHASE 17 (RBAC động): enum này trở thành LEGACY — nguồn phân quyền thật là
 /// model `AppRole` + `Permission` (gán động). Cột `User.role` giữ lại tạm để
 /// backfill `user_role` và rollback; sẽ drop ở migration dọn dẹp sau khi ổn định.
+/// Cấp tổ chức của tài khoản. Chỉ HAMLET bị giới hạn dữ liệu theo ấp (xem auth/data-scope.ts);
+/// SYSTEM và WARD thấy toàn hệ thống. Chỉ SYSTEM được quản lý tài khoản.
+enum UserLevel {
+  SYSTEM // Tài khoản hệ thống (admin, cấp tỉnh)
+  WARD // Nhân sự UBND xã
+  HAMLET // Nhân sự ấp/thôn
+}
+
 enum Role {
   ADMIN
   CADASTRAL // Cán bộ địa chính
@@ -126,6 +134,16 @@ model User {
   /// khách hàng 11/09/2026, dùng trong lời chào ở dashboard mobile.
   position     String?
   isActive     Boolean  @default(true)
+  /// Cấp tổ chức: SYSTEM (không xã/ấp), WARD (bắt buộc wardId), HAMLET (bắt buộc hamletId, wardId = xã của ấp).
+  level        UserLevel @default(SYSTEM)
+  wardId       String?
+  ward         Ward?     @relation(fields: [wardId], references: [id], onDelete: SetNull)
+  /// Ấp bị xóa → null: tài khoản HAMLET khi đó không thấy dữ liệu nào (fail-closed).
+  hamletId     String?
+  hamlet       Hamlet?   @relation(fields: [hamletId], references: [id], onDelete: SetNull)
+  /// Phòng ban (danh mục). Khi gán, `unit` được ghi theo tên phòng ban để lời chào/APK cũ vẫn dùng `unit`.
+  departmentId String?
+  department   Department? @relation(fields: [departmentId], references: [id], onDelete: SetNull)
   /// Tăng khi đổi/đặt lại mật khẩu hoặc khóa tài khoản: mọi access/refresh token phát hành
   /// với phiên bản cũ lập tức mất hiệu lực (xem JwtStrategy, AuthService.refresh).
   tokenVersion Int      @default(0)
@@ -160,12 +178,34 @@ model User {
   installReviewed         InstallAssignment[]      @relation("InstallAssignmentReviewedBy")
   installEvents           InstallAssignmentEvent[] @relation("InstallEventActor")
 
+  @@index([level])
+  @@index([wardId])
+  @@index([hamletId])
+  @@index([departmentId])
   @@map("app_user")
 }
 
 /// Refresh token duy trì phiên đăng nhập. Chỉ lưu SHA-256, không lưu token gốc.
 /// Mỗi lần làm mới phát hành 1 dòng mới cùng `familyId` (xoay vòng); 1 lần đăng nhập = 1 family.
 /// Dùng lại token đã xoay sau thời gian ân hạn ⇒ coi như bị lộ, thu hồi cả family.
+/// Danh mục phòng ban — chỉ để chọn/lọc người dùng, không ảnh hưởng quyền hay phạm vi dữ liệu.
+/// `wardId` null = phòng ban cấp tỉnh/hệ thống; có giá trị = phòng ban thuộc UBND xã đó.
+/// Trùng tên trong cùng phạm vi được chặn ở service (unique index không chặn được khi wardId null).
+model Department {
+  id        String   @id @default(uuid())
+  name      String
+  wardId    String?
+  ward      Ward?    @relation(fields: [wardId], references: [id], onDelete: Restrict)
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  users User[]
+
+  @@index([wardId])
+  @@map("department")
+}
+
 model RefreshToken {
   id           String    @id @default(uuid())
   userId       String
@@ -447,6 +487,8 @@ model Ward {
   surveyZones      SurveyZone[]
   installZones     InstallZone[]
   surveyRoutes     SurveyRoute[]
+  users            User[]
+  departments      Department[]
 
   @@unique([name, districtId])
   @@map("address_ward")
@@ -462,6 +504,7 @@ model Hamlet {
   updatedAt DateTime @updatedAt
 
   houses House[]
+  users  User[]
 
   @@unique([name, wardId])
   @@map("address_hamlet")

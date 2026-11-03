@@ -36,8 +36,8 @@ export class HousesController {
   constructor(private readonly housesService: HousesService) {}
 
   @Get()
-  findAll(@Query() query: ListHousesQueryDto) {
-    return this.housesService.findAll(query);
+  findAll(@Query() query: ListHousesQueryDto, @CurrentUser() user: AuthenticatedUser) {
+    return this.housesService.findAll(query, user);
   }
 
   /**
@@ -45,32 +45,36 @@ export class HousesController {
    * route theo thứ tự khai báo — nếu để sau, ':id' sẽ nuốt mất "geojson".
    */
   @Get('geojson')
-  findAllGeoJson(@Query() query: GeoJsonQueryDto) {
-    return this.housesService.findAllGeoJson(query);
+  findAllGeoJson(@Query() query: GeoJsonQueryDto, @CurrentUser() user: AuthenticatedUser) {
+    return this.housesService.findAllGeoJson(query, user);
   }
 
   /** Tra cứu theo tọa độ/bán kính (PostGIS ST_DWithin) — cũng phải đặt trước ':id'. */
   @Get('nearby')
-  findNearby(@Query() query: NearbyQueryDto) {
-    return this.housesService.findNearby(query);
+  findNearby(@Query() query: NearbyQueryDto, @CurrentUser() user: AuthenticatedUser) {
+    return this.housesService.findNearby(query, user);
   }
 
   /** Gợi ý chủ hộ theo tên/SĐT (form khảo sát mobile) — cũng phải đặt trước ':id'. */
   @Get('owners')
-  searchOwners(@Query('q') q?: string) {
-    return this.housesService.searchOwners(q);
+  searchOwners(@CurrentUser() user: AuthenticatedUser, @Query('q') q?: string) {
+    return this.housesService.searchOwners(q, user);
   }
 
   /** Thống kê dashboard (Phase 5 — IX) — cũng phải đặt trước ':id'. */
   @Get('stats')
-  getStats() {
-    return this.housesService.getStats();
+  getStats(@CurrentUser() user: AuthenticatedUser) {
+    return this.housesService.getStats(user);
   }
 
   /** Xuất Excel theo bộ lọc hiện tại (Phase 5 — IX) — cũng phải đặt trước ':id'. */
   @Get('export.xlsx')
-  async exportExcel(@Query() query: GeoJsonQueryDto, @Res() res: Response) {
-    const buffer = await this.housesService.exportToExcel(query);
+  async exportExcel(
+    @Query() query: GeoJsonQueryDto,
+    @Res() res: Response,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    const buffer = await this.housesService.exportToExcel(query, user);
     const filename = `danh-sach-so-nha-${new Date().toISOString().slice(0, 10)}.xlsx`;
     res.setHeader(
       'Content-Type',
@@ -81,13 +85,13 @@ export class HousesController {
   }
 
   @Get(':id')
-  findOne(@Param('id') id: string) {
-    return this.housesService.findOne(id);
+  findOne(@Param('id') id: string, @CurrentUser() user: AuthenticatedUser) {
+    return this.housesService.findOne(id, user);
   }
 
   @Get(':id/history')
-  history(@Param('id') id: string) {
-    return this.housesService.getHistory(id);
+  history(@Param('id') id: string, @CurrentUser() user: AuthenticatedUser) {
+    return this.housesService.getHistory(id, user);
   }
 
   /**
@@ -123,7 +127,7 @@ export class HousesController {
   @RequirePermissions(PERMISSIONS.HOUSE_CREATE)
   @Post()
   create(@Body() dto: CreateHouseDto, @CurrentUser() user: AuthenticatedUser) {
-    return this.housesService.create(dto, user.id);
+    return this.housesService.create(dto, user);
   }
 
   @RequirePermissions(PERMISSIONS.HOUSE_UPDATE)
@@ -133,7 +137,7 @@ export class HousesController {
     @Body() dto: UpdateHouseDto,
     @CurrentUser() user: AuthenticatedUser,
   ) {
-    return this.housesService.update(id, dto, user.id);
+    return this.housesService.update(id, dto, user);
   }
 
   /**
@@ -160,7 +164,7 @@ export class HousesController {
     @Body('type') type: string | undefined,
     @CurrentUser() user: AuthenticatedUser,
   ) {
-    return this.housesService.addPhoto(id, file, type, user.id);
+    return this.housesService.addPhoto(id, file, type, user);
   }
 
   @RequirePermissions(PERMISSIONS.HOUSE_PHOTO_DELETE)
@@ -170,6 +174,6 @@ export class HousesController {
     @Param('photoId') photoId: string,
     @CurrentUser() user: AuthenticatedUser,
   ) {
-    return this.housesService.removePhoto(id, photoId, user.id);
+    return this.housesService.removePhoto(id, photoId, user);
   }
 }

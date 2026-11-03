@@ -7,6 +7,7 @@ import { HealthModule } from './health/health.module';
 import { AppConfigModule } from './app-config/app-config.module';
 import { AuthModule } from './auth/auth.module';
 import { UsersModule } from './users/users.module';
+import { DepartmentsModule } from './departments/departments.module';
 import { AuditModule } from './audit/audit.module';
 import { HousesModule } from './houses/houses.module';
 import { AddressesModule } from './addresses/addresses.module';
@@ -40,6 +41,7 @@ import { AuditInterceptor } from './audit/audit.interceptor';
     AppConfigModule,
     AuthModule,
     UsersModule,
+    DepartmentsModule,
     HousesModule,
     AddressesModule,
     NumberingSchemesModule,

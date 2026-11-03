@@ -63,6 +63,13 @@ export class WardsService {
 
   async remove(id: string) {
     await this.findOne(id);
+    // Phòng ban của xã chặn xóa ở DB (onDelete: Restrict) — báo rõ thay vì lỗi 500.
+    const departments = await this.prisma.department.count({ where: { wardId: id } });
+    if (departments > 0) {
+      throw new ConflictException(
+        `Xã/phường còn ${departments} phòng ban trong danh mục Phòng ban — xóa hoặc chuyển các phòng ban đó trước`,
+      );
+    }
     await this.prisma.ward.delete({ where: { id } });
   }
 }

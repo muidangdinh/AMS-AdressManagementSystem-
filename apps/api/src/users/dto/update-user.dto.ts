@@ -1,4 +1,13 @@
-import { ArrayNotEmpty, IsArray, IsBoolean, IsOptional, IsString, MinLength } from 'class-validator';
+import { UserLevel } from '@prisma/client';
+import {
+  ArrayNotEmpty,
+  IsArray,
+  IsBoolean,
+  IsEnum,
+  IsOptional,
+  IsString,
+  MinLength,
+} from 'class-validator';
 
 export class UpdateUserDto {
   @IsOptional()
@@ -31,4 +40,24 @@ export class UpdateUserDto {
   @IsString()
   @MinLength(6)
   password?: string;
+
+  /** Cấp tổ chức: SYSTEM (tài khoản hệ thống) / WARD (nhân sự UBND xã) / HAMLET (nhân sự ấp, thôn). */
+  @IsOptional()
+  @IsEnum(UserLevel)
+  level?: UserLevel;
+
+  /** Bắt buộc khi level = WARD. Với HAMLET tự lấy theo xã của ấp. */
+  @IsOptional()
+  @IsString()
+  wardId?: string | null;
+
+  /** Bắt buộc khi level = HAMLET. */
+  @IsOptional()
+  @IsString()
+  hamletId?: string | null;
+
+  /** Phòng ban (danh mục): cấp tỉnh, hoặc thuộc đúng xã của tài khoản. null = bỏ gán. */
+  @IsOptional()
+  @IsString()
+  departmentId?: string | null;
 }

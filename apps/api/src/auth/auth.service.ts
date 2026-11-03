@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, Logger, UnauthorizedException } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable, Logger, UnauthorizedException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import * as bcrypt from 'bcryptjs';
@@ -6,6 +6,7 @@ import { createHash, randomBytes, randomUUID } from 'crypto';
 import { AuditService } from '../audit/audit.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { getRefreshTokenTtlMs } from './auth.config';
+import { AUTH_USER_INCLUDE, toAuthenticatedUser } from './auth-user';
 import { LoginThrottleService } from './login-throttle.service';
 
 const SALT_ROUNDS = 10;
@@ -68,9 +69,7 @@ export class AuthService {
 
     const user = await this.prisma.user.findUnique({
       where: { username },
-      include: {
-        roleLinks: { include: { role: { include: { permissions: { include: { permission: true } } } } } },
-      },
+      include: AUTH_USER_INCLUDE,
     });
 
     // Cố tình dùng chung 1 thông báo lỗi cho sai username lẫn sai password
@@ -83,27 +82,9 @@ export class AuthService {
     }
     this.loginThrottle.recordSuccess(username);
 
-    const activeRoles = user.roleLinks.map((l) => l.role).filter((r) => r.isActive);
-    const roles = activeRoles.map((r) => ({ id: r.id, code: r.code, name: r.name }));
-    const permissions = [
-      ...new Set(activeRoles.flatMap((r) => r.permissions.map((rp) => rp.permission.code))),
-    ];
-
     const tokens = await this.issueTokens(user);
-
-    return {
-      ...tokens,
-      user: {
-        id: user.id,
-        username: user.username,
-        fullName: user.fullName,
-        role: user.role,
-        roles,
-        permissions,
-        unit: user.unit,
-        position: user.position,
-      },
-    };
+    // Cùng bộ quyền/phạm vi với JwtStrategy (/auth/me), để client ẩn/hiện chức năng nhất quán.
+    return { ...tokens, user: toAuthenticatedUser(user) };
   }
 
   /** Đổi refresh token còn hiệu lực lấy cặp token mới (xoay vòng). */
@@ -160,6 +141,11 @@ export class AuthService {
 
   /** Tự cập nhật đơn vị — chỉ sửa user hiện tại, không cần quyền `user:manage`. */
   async updateUnit(userId: string, unit: string) {
+    // Đã gán phòng ban: đơn vị do quản trị viên gán theo danh mục, người dùng không tự sửa.
+    const current = await this.prisma.user.findUnique({ where: { id: userId }, select: { departmentId: true } });
+    if (current?.departmentId) {
+      throw new ConflictException('Đơn vị do quản trị viên gán theo phòng ban — liên hệ quản trị viên để đổi');
+    }
     const trimmed = unit.trim();
     await this.prisma.user.update({
       where: { id: userId },

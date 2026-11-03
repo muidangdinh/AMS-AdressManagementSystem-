@@ -1,4 +1,11 @@
-import { BadRequestException, ConflictException, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  ForbiddenException,
+  Injectable,
+  Logger,
+  NotFoundException,
+} from '@nestjs/common';
 import { CaseStatus, NotificationEntity, NotificationType, Prisma } from '@prisma/client';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -7,6 +14,8 @@ import { usersWithPermission } from '../auth/user-access';
 import { getCaseFilesDir } from '../config/upload.config';
 import { NotificationsService } from '../notifications/notifications.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { caseScopeWhere, houseScopeWhere, isHamletScoped, OUT_OF_SCOPE_HOUSE } from '../auth/data-scope';
+import type { AuthenticatedUser } from '../auth/types/authenticated-user';
 import { CreateCaseDto } from './dto/create-case.dto';
 import { UpdateCaseDto } from './dto/update-case.dto';
 import { AssignCaseDto } from './dto/assign-case.dto';
@@ -75,16 +84,21 @@ export class CasesService {
    * Danh sách cán bộ xử lý được (có quyền case:manage, đang hoạt động) cho dropdown "phân công".
    * Endpoint riêng, hẹp, chỉ trả id/tên hiển thị — giống listSurveyors() ở surveys module.
    */
-  listStaff() {
+  listStaff(user: AuthenticatedUser) {
     return this.prisma.user.findMany({
-      where: usersWithPermission(PERMISSIONS.CASE_MANAGE),
+      where: {
+        ...usersWithPermission(PERMISSIONS.CASE_MANAGE),
+        // Cán bộ ấp chỉ giao hồ sơ cho người cùng ấp.
+        ...(isHamletScoped(user) && { hamletId: user.hamletId ?? '' }),
+      },
       select: { id: true, fullName: true, username: true },
       orderBy: { fullName: 'asc' },
     });
   }
 
-  findAll(query: ListCasesQueryDto) {
+  findAll(query: ListCasesQueryDto, user: AuthenticatedUser) {
     const where: Prisma.HouseCaseWhereInput = {
+      AND: [caseScopeWhere(user)],
       status: query.status,
       assignedToId: query.assignedToId,
       ...(query.search && {
@@ -101,9 +115,9 @@ export class CasesService {
     });
   }
 
-  async findOne(id: string) {
-    const c = await this.prisma.houseCase.findUnique({
-      where: { id },
+  async findOne(id: string, user: AuthenticatedUser) {
+    const c = await this.prisma.houseCase.findFirst({
+      where: { id, ...caseScopeWhere(user) },
       include: {
         ...CASE_INCLUDE,
         events: {
@@ -120,8 +134,9 @@ export class CasesService {
     return c;
   }
 
-  private async findOneOrThrow(id: string) {
-    const c = await this.prisma.houseCase.findUnique({ where: { id } });
+  /** Hồ sơ ngoài phạm vi của cán bộ ấp cũng báo "không tìm thấy". */
+  private async findOneOrThrow(id: string, user: AuthenticatedUser) {
+    const c = await this.prisma.houseCase.findFirst({ where: { id, ...caseScopeWhere(user) } });
     if (!c) throw new NotFoundException('Không tìm thấy hồ sơ');
     return c;
   }
@@ -154,7 +169,8 @@ export class CasesService {
     });
   }
 
-  async create(dto: CreateCaseDto, userId: string) {
+  async create(dto: CreateCaseDto, user: AuthenticatedUser) {
+    const userId = user.id;
     const caseNumber = await this.generateCaseNumber();
     return this.prisma.$transaction(async (tx) => {
       const created = await tx.houseCase.create({
@@ -174,8 +190,8 @@ export class CasesService {
     });
   }
 
-  async update(id: string, dto: UpdateCaseDto) {
-    await this.findOneOrThrow(id);
+  async update(id: string, dto: UpdateCaseDto, user: AuthenticatedUser) {
+    await this.findOneOrThrow(id, user);
     const { dueDate, ...rest } = dto;
     return this.prisma.houseCase.update({
       where: { id },
@@ -188,10 +204,14 @@ export class CasesService {
     });
   }
 
-  async assign(id: string, dto: AssignCaseDto, actorId: string) {
-    const c = await this.findOneOrThrow(id);
+  async assign(id: string, dto: AssignCaseDto, user: AuthenticatedUser) {
+    const actorId = user.id;
+    const c = await this.findOneOrThrow(id, user);
     const assignee = await this.prisma.user.findUnique({ where: { id: dto.assignedToId } });
     if (!assignee) throw new NotFoundException('Không tìm thấy cán bộ được giao');
+    if (isHamletScoped(user) && assignee.hamletId !== user.hamletId) {
+      throw new ForbiddenException('Nhân sự ấp/thôn chỉ giao hồ sơ cho cán bộ cùng ấp/thôn');
+    }
 
     return this.prisma.$transaction(async (tx) => {
       const updated = await tx.houseCase.update({
@@ -223,10 +243,11 @@ export class CasesService {
     });
   }
 
-  async linkHouse(id: string, dto: LinkHouseDto, actorId: string) {
-    await this.findOneOrThrow(id);
-    const house = await this.prisma.house.findUnique({ where: { id: dto.houseId } });
-    if (!house) throw new NotFoundException('Không tìm thấy hồ sơ số nhà');
+  async linkHouse(id: string, dto: LinkHouseDto, user: AuthenticatedUser) {
+    const actorId = user.id;
+    await this.findOneOrThrow(id, user);
+    const house = await this.prisma.house.findFirst({ where: { id: dto.houseId, ...houseScopeWhere(user) } });
+    if (!house) throw new NotFoundException(OUT_OF_SCOPE_HOUSE);
 
     return this.prisma.$transaction(async (tx) => {
       const updated = await tx.houseCase.update({
@@ -242,8 +263,9 @@ export class CasesService {
   }
 
   /** Tiến 1 bước theo ORDERED_STATUSES — không tiến được từ COMPLETED/REJECTED. */
-  async advance(id: string, actorId: string) {
-    const c = await this.findOneOrThrow(id);
+  async advance(id: string, user: AuthenticatedUser) {
+    const actorId = user.id;
+    const c = await this.findOneOrThrow(id, user);
     const currentIndex = ORDERED_STATUSES.indexOf(c.status);
     if (currentIndex === -1 || currentIndex === ORDERED_STATUSES.length - 1) {
       throw new ConflictException('Hồ sơ đã ở bước cuối hoặc không ở trạng thái tiến được');
@@ -264,8 +286,9 @@ export class CasesService {
     });
   }
 
-  async reject(id: string, dto: RejectCaseDto, actorId: string) {
-    const c = await this.findOneOrThrow(id);
+  async reject(id: string, dto: RejectCaseDto, user: AuthenticatedUser) {
+    const actorId = user.id;
+    const c = await this.findOneOrThrow(id, user);
     if (c.status === CaseStatus.COMPLETED || c.status === CaseStatus.REJECTED) {
       throw new ConflictException('Không từ chối được hồ sơ đã hoàn tất hoặc đã bị từ chối');
     }
@@ -285,8 +308,9 @@ export class CasesService {
     });
   }
 
-  async reopen(id: string, actorId: string) {
-    const c = await this.findOneOrThrow(id);
+  async reopen(id: string, user: AuthenticatedUser) {
+    const actorId = user.id;
+    const c = await this.findOneOrThrow(id, user);
     if (c.status !== CaseStatus.REJECTED) {
       throw new BadRequestException('Chỉ mở lại được hồ sơ đã bị từ chối');
     }
@@ -305,16 +329,17 @@ export class CasesService {
     });
   }
 
-  async addNote(id: string, dto: AddNoteDto, actorId: string) {
-    await this.findOneOrThrow(id);
+  async addNote(id: string, dto: AddNoteDto, user: AuthenticatedUser) {
+    await this.findOneOrThrow(id, user);
     await this.prisma.caseEvent.create({
-      data: { caseId: id, action: 'NOTE', note: dto.note, actorId },
+      data: { caseId: id, action: 'NOTE', note: dto.note, actorId: user.id },
     });
-    return this.findOne(id);
+    return this.findOne(id, user);
   }
 
-  async addAttachment(caseId: string, file: Express.Multer.File, userId: string) {
-    await this.findOneOrThrow(caseId);
+  async addAttachment(caseId: string, file: Express.Multer.File, user: AuthenticatedUser) {
+    const userId = user.id;
+    await this.findOneOrThrow(caseId, user);
     const fileName = decodeOriginalName(file.originalname);
 
     return this.prisma.$transaction(async (tx) => {
@@ -333,7 +358,9 @@ export class CasesService {
     });
   }
 
-  async removeAttachment(caseId: string, attachmentId: string, userId: string) {
+  async removeAttachment(caseId: string, attachmentId: string, user: AuthenticatedUser) {
+    const userId = user.id;
+    await this.findOneOrThrow(caseId, user);
     const attachment = await this.prisma.houseCaseAttachment.findUnique({ where: { id: attachmentId } });
     if (!attachment || attachment.caseId !== caseId) {
       throw new NotFoundException('Không tìm thấy tệp đính kèm');
@@ -356,7 +383,8 @@ export class CasesService {
     return attachment;
   }
 
-  async getAttachmentFile(caseId: string, attachmentId: string) {
+  async getAttachmentFile(caseId: string, attachmentId: string, user: AuthenticatedUser) {
+    await this.findOneOrThrow(caseId, user);
     const attachment = await this.prisma.houseCaseAttachment.findUnique({ where: { id: attachmentId } });
     if (!attachment || attachment.caseId !== caseId) {
       throw new NotFoundException('Không tìm thấy tệp đính kèm');

@@ -34,13 +34,13 @@ export class HousePlatesController {
   constructor(private readonly platesService: HousePlatesService) {}
 
   @Get()
-  findAll(@Query() query: ListPlatesQueryDto) {
-    return this.platesService.findAll(query);
+  findAll(@Query() query: ListPlatesQueryDto, @CurrentUser() user: AuthenticatedUser) {
+    return this.platesService.findAll(query, user);
   }
 
   @Get(':id')
-  findOne(@Param('id') id: string) {
-    return this.platesService.findOne(id);
+  findOne(@Param('id') id: string, @CurrentUser() user: AuthenticatedUser) {
+    return this.platesService.findOne(id, user);
   }
 
   /** Ảnh QR chỉ mã hóa plateCode (không nhạy cảm) — công khai, giống /houses/:id/qrcode.png. */
@@ -57,7 +57,7 @@ export class HousePlatesController {
   @RequirePermissions(PERMISSIONS.PLATE_ISSUE)
   @Post()
   issue(@Body() dto: IssuePlateDto, @CurrentUser() user: AuthenticatedUser) {
-    return this.platesService.issue(dto, user.id);
+    return this.platesService.issue(dto, user);
   }
 
   @RequirePermissions(PERMISSIONS.PLATE_INSTALL)
@@ -69,7 +69,7 @@ export class HousePlatesController {
     @CurrentUser() user: AuthenticatedUser,
   ) {
     const photoUrl = file ? `/uploads/plates/${file.filename}` : undefined;
-    return this.platesService.install(id, user.id, photoUrl, user.permissions.includes(PERMISSIONS.INSTALL_MANAGE));
+    return this.platesService.install(id, user, photoUrl, user.permissions.includes(PERMISSIONS.INSTALL_MANAGE));
   }
 
   @RequirePermissions(PERMISSIONS.PLATE_INSTALL)
@@ -79,7 +79,7 @@ export class HousePlatesController {
     @Body() dto: NotInstalledPlateDto,
     @CurrentUser() user: AuthenticatedUser,
   ) {
-    return this.platesService.markNotInstalled(id, dto, user.id, user.permissions.includes(PERMISSIONS.INSTALL_MANAGE));
+    return this.platesService.markNotInstalled(id, dto, user, user.permissions.includes(PERMISSIONS.INSTALL_MANAGE));
   }
 
   @RequirePermissions(PERMISSIONS.PLATE_REVOKE)
@@ -89,6 +89,6 @@ export class HousePlatesController {
     @Body() dto: RevokePlateDto,
     @CurrentUser() user: AuthenticatedUser,
   ) {
-    return this.platesService.revoke(id, dto, user.id);
+    return this.platesService.revoke(id, dto, user);
   }
 }

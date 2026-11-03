@@ -1,4 +1,5 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, Query } from '@nestjs/common';
+import { Body, Controller, Delete, Get, NotFoundException, Param, Patch, Post, Query } from '@nestjs/common';
+import { isHamletScoped } from '../auth/data-scope';
 import { RequirePermissions } from '../auth/decorators/permissions.decorator';
 import { PERMISSIONS } from '../auth/permissions';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
@@ -11,6 +12,8 @@ import { CreateItemDto } from './dto/create-item.dto';
 import { UpdateItemDto } from './dto/update-item.dto';
 import { RejectSchemeDto } from './dto/reject-scheme.dto';
 
+const SCHEME_NOT_FOUND = 'Không tìm thấy phương án đánh số';
+
 /**
  * Lập phương án đánh số (Phase 7 — V). Đọc mở cho mọi vai trò đã đăng nhập;
  * soạn thảo (tạo/sửa/thêm-sửa-xóa nhà/sinh số/trình duyệt) dành cho ADMIN &
@@ -21,18 +24,22 @@ import { RejectSchemeDto } from './dto/reject-scheme.dto';
 export class NumberingSchemesController {
   constructor(private readonly schemesService: NumberingSchemesService) {}
 
+  // Phương án đánh số là công việc cấp xã — nhân sự ấp/thôn không xem được (danh sách rỗng, chi tiết 404).
   @Get()
-  findAll(@Query() query: ListSchemesQueryDto) {
+  findAll(@Query() query: ListSchemesQueryDto, @CurrentUser() user: AuthenticatedUser) {
+    if (isHamletScoped(user)) return [];
     return this.schemesService.findAll(query);
   }
 
   @Get(':id')
-  findOne(@Param('id') id: string) {
+  findOne(@Param('id') id: string, @CurrentUser() user: AuthenticatedUser) {
+    if (isHamletScoped(user)) throw new NotFoundException(SCHEME_NOT_FOUND);
     return this.schemesService.findOne(id);
   }
 
   @Get(':id/validate')
-  validate(@Param('id') id: string) {
+  validate(@Param('id') id: string, @CurrentUser() user: AuthenticatedUser) {
+    if (isHamletScoped(user)) throw new NotFoundException(SCHEME_NOT_FOUND);
     return this.schemesService.validate(id);
   }
 

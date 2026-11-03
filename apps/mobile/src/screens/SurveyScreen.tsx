@@ -45,6 +45,7 @@ import { fetchHouse, getAssignment, resurveyHouse as resurveyHouseApi } from '..
 import { ApiError } from '../lib/api';
 import type { MainTabsParamList } from '../navigation/MainTabs';
 import { resolveWorkingWard } from '../lib/workingWard';
+import { useAuth } from '../lib/AuthContext';
 import LocationPickerModal from '../components/LocationPickerModal';
 // import WardSelectorBar from '../components/WardSelectorBar';
 import OwnerAutocompleteField from '../components/OwnerAutocompleteField';
@@ -216,6 +217,31 @@ export default function SurveyScreen() {
   // định #5): nếu có, House mới tạo tự gắn vào nhiệm vụ này để tính tiến độ; nếu không/offline
   // thì bỏ qua lặng lẽ, form vẫn hoạt động tự do như trước.
   const [activeAssignment, setActiveAssignment] = useState<SurveyAssignment | null>(null);
+
+  // Nhân sự ấp/thôn chỉ ghi nhận nhà trong ấp của mình (API từ chối ấp khác): khóa Xã + Ấp theo tài khoản.
+  // Ngoại lệ: đang làm nhiệm vụ được giao (có thể ở ấp khác) hoặc đang sửa lại nhà của nhiệm vụ.
+  const { user } = useAuth();
+  const hamletLock =
+    user?.level === 'HAMLET' && user.hamletId && user.wardId && !activeAssignment && !resurveyHouseId
+      ? {
+          wardId: user.wardId,
+          wardName: user.ward?.name ?? '',
+          hamletId: user.hamletId,
+          hamletName: user.hamlet?.name ?? '',
+        }
+      : null;
+  useEffect(() => {
+    if (!hamletLock) return;
+    if (wardId !== hamletLock.wardId) {
+      setWardId(hamletLock.wardId);
+      setWard(hamletLock.wardName);
+    }
+    if (hamletId !== hamletLock.hamletId) {
+      setHamletId(hamletLock.hamletId);
+      setHamletName(hamletLock.hamletName);
+    }
+    // Chạy lại sau mọi lần form bị đổi xã/ấp (reset, điền theo chủ hộ cũ, xã đang làm việc…).
+  }, [hamletLock?.wardId, hamletLock?.hamletId, wardId, hamletId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Tải nhiệm vụ đang chạy; trả về Promise để kéo-để-tải-lại chờ xong mới tắt vòng quay.
   const loadActiveAssignment = useCallback(async (isCancelled: () => boolean = () => false) => {
@@ -972,6 +998,18 @@ export default function SurveyScreen() {
             setStreet(text);
           }}
         />
+        {hamletLock ? (
+          <>
+            <Text style={styles.label}>Phường/Xã · Ấp/Thôn</Text>
+            <Text style={[styles.input, { color: '#334155' }]}>
+              {hamletLock.wardName} · {hamletLock.hamletName}
+            </Text>
+            <Text style={{ fontSize: 11, color: '#64748b', marginTop: 2 }}>
+              Theo tài khoản ấp/thôn — chỉ ghi nhận nhà trong ấp của mình.
+            </Text>
+          </>
+        ) : (
+          <>
         <AddressPickerField
           label="Phường/Xã"
           required
@@ -1007,6 +1045,8 @@ export default function SurveyScreen() {
           }}
           onManualText={() => {}}
         />
+          </>
+        )}
 
         <Text style={styles.label}>Phía đường *</Text>
         <View style={styles.chipRow}>

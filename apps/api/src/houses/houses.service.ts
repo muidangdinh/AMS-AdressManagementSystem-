@@ -22,6 +22,13 @@ import {
   Prisma,
 } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import {
+  houseScopeSql,
+  houseScopeWhere,
+  OUT_OF_SCOPE_HOUSE,
+  resolveHamletForWrite,
+} from '../auth/data-scope';
+import type { AuthenticatedUser } from '../auth/types/authenticated-user';
 import { getUploadRoot } from '../config/upload.config';
 import { CreateHouseDto } from './dto/create-house.dto';
 import { UpdateHouseDto } from './dto/update-house.dto';
@@ -190,7 +197,7 @@ export class HousesService {
     };
   }
 
-  async findAll(query: ListHousesQueryDto) {
+  async findAll(query: ListHousesQueryDto, user: AuthenticatedUser) {
     const { page, pageSize, street, ward, wardId, streetId, hamletId, status, reviewStage, search, createdById } =
       query;
     const where = this.buildWhere({
@@ -204,6 +211,7 @@ export class HousesService {
       search,
       createdById,
     });
+    where.AND = [houseScopeWhere(user)];
 
     const [items, total] = await this.prisma.$transaction([
       this.prisma.house.findMany({
@@ -227,8 +235,8 @@ export class HousesService {
    * Không phân trang (bản đồ cần thấy toàn bộ điểm khớp bộ lọc), nhưng giới
    * hạn MAX_GEOJSON_FEATURES để tránh tải cả CSDL nếu người dùng không lọc.
    */
-  async findAllGeoJson(query: GeoJsonQueryDto) {
-    const where = this.buildWhere(query);
+  async findAllGeoJson(query: GeoJsonQueryDto, user: AuthenticatedUser) {
+    const where = { ...this.buildWhere(query), AND: [houseScopeWhere(user)] };
 
     const houses = await this.prisma.house.findMany({
       where,
@@ -271,9 +279,10 @@ export class HousesService {
   }
 
   /** Thống kê tổng quan cho dashboard (Phase 5 — IX. Báo cáo - Thống kê). */
-  async getStats() {
+  async getStats(user: AuthenticatedUser) {
     const grouped = await this.prisma.house.groupBy({
       by: ['status'],
+      where: houseScopeWhere(user),
       _count: { _all: true },
     });
 
@@ -298,8 +307,8 @@ export class HousesService {
    * Xuất danh sách số nhà ra file Excel (.xlsx) theo đúng bộ lọc đang xem
    * (Phase 5 — IX. Báo cáo - Thống kê. "Xuất Excel, PDF").
    */
-  async exportToExcel(query: GeoJsonQueryDto): Promise<Buffer> {
-    const where = this.buildWhere(query);
+  async exportToExcel(query: GeoJsonQueryDto, user: AuthenticatedUser): Promise<Buffer> {
+    const where = { ...this.buildWhere(query), AND: [houseScopeWhere(user)] };
     const houses = await this.prisma.house.findMany({
       where,
       orderBy: [{ street: 'asc' }, { houseNumber: 'asc' }],
@@ -383,7 +392,7 @@ export class HousesService {
    * (Phase 3 — I. "Tìm kiếm theo tọa độ"). Ép kiểu geography để bán kính
    * tính bằng MÉT thay vì độ kinh vĩ.
    */
-  async findNearby(query: NearbyQueryDto) {
+  async findNearby(query: NearbyQueryDto, user: AuthenticatedUser) {
     const { lat, lng, radius, limit } = query;
 
     const rows = await this.prisma.$queryRaw<NearbyRow[]>`
@@ -401,6 +410,7 @@ export class HousesService {
         ST_SetSRID(ST_MakePoint(${lng}, ${lat}), 4326)::geography,
         ${radius}
       )
+      ${houseScopeSql(user)}
       ORDER BY distance ASC
       LIMIT ${limit}
     `;
@@ -425,7 +435,7 @@ export class HousesService {
    * số nhà và vài nhà gần nhất để cán bộ nhận ra đúng người. Cần extension `unaccent` (migration
    * 20261002120000_unaccent). `q` ngắn hơn 2 ký tự trả về rỗng.
    */
-  async searchOwners(q: string | undefined) {
+  async searchOwners(q: string | undefined, user: AuthenticatedUser) {
     const term = (q ?? '').trim();
     if (term.length < 2) return [];
     // Escape ký tự đặc biệt của LIKE để người dùng gõ % hoặc _ không thành ký tự đại diện.
@@ -449,8 +459,9 @@ export class HousesService {
              count(*)::int AS "houseCount",
              (array_agg(id ORDER BY "updatedAt" DESC))[1:5] AS "houseIds"
       FROM house
-      WHERE unaccent(lower("ownerName")) LIKE unaccent(lower(${like}))
-      ${phoneCond}
+      WHERE (unaccent(lower("ownerName")) LIKE unaccent(lower(${like}))
+      ${phoneCond})
+      ${houseScopeSql(user)}
       GROUP BY "ownerName", "ownerPhone", "ownerIdNumber"
       ORDER BY max("updatedAt") DESC
       LIMIT 20
@@ -503,9 +514,17 @@ export class HousesService {
     });
   }
 
+  /** Không kiểm tra phạm vi — chỉ dùng cho route công khai (ảnh QR). */
   async findOneOrThrow(id: string): Promise<House> {
     const house = await this.prisma.house.findUnique({ where: { id } });
     if (!house) throw new NotFoundException('Không tìm thấy hồ sơ số nhà');
+    return house;
+  }
+
+  /** Nhà ngoài phạm vi của tài khoản (cán bộ ấp) cũng báo "không tìm thấy" để không lộ dữ liệu. */
+  private async findInScopeOrThrow(id: string, user: AuthenticatedUser): Promise<House> {
+    const house = await this.prisma.house.findFirst({ where: { id, ...houseScopeWhere(user) } });
+    if (!house) throw new NotFoundException(OUT_OF_SCOPE_HOUSE);
     return house;
   }
 
@@ -532,9 +551,9 @@ export class HousesService {
     return house;
   }
 
-  async findOne(id: string) {
-    const house = await this.prisma.house.findUnique({
-      where: { id },
+  async findOne(id: string, user: AuthenticatedUser) {
+    const house = await this.prisma.house.findFirst({
+      where: { id, ...houseScopeWhere(user) },
       include: {
         photos: { orderBy: { createdAt: 'asc' } },
         createdBy: {
@@ -547,8 +566,8 @@ export class HousesService {
     return house;
   }
 
-  async getHistory(houseId: string) {
-    await this.findOneOrThrow(houseId);
+  async getHistory(houseId: string, user: AuthenticatedUser) {
+    await this.findInScopeOrThrow(houseId, user);
     return this.prisma.houseHistory.findMany({
       where: { houseId },
       orderBy: { createdAt: 'desc' },
@@ -561,7 +580,8 @@ export class HousesService {
     });
   }
 
-  async create(dto: CreateHouseDto, userId: string) {
+  async create(dto: CreateHouseDto, user: AuthenticatedUser) {
+    const userId = user.id;
     const id = randomUUID();
     const qrCode = `TN-${id.split('-')[0].toUpperCase()}`;
 
@@ -578,6 +598,13 @@ export class HousesService {
       }
     }
 
+    // Cán bộ ấp: bỏ trống ấp thì gán ấp của mình; chọn ấp khác bị chặn, trừ nhà thuộc nhiệm vụ của mình.
+    const hamletId = resolveHamletForWrite(user, dto.hamletId, !!surveyAssignmentId);
+    let wardId = dto.wardId;
+    if (hamletId && hamletId !== dto.hamletId && !wardId) {
+      wardId = (await this.prisma.hamlet.findUnique({ where: { id: hamletId }, select: { wardId: true } }))?.wardId;
+    }
+
     const house = await this.prisma.$transaction(async (tx) => {
       const created = await tx.house.create({
         data: {
@@ -588,8 +615,8 @@ export class HousesService {
           ward: dto.ward,
           district: dto.district,
           districtId: dto.districtId,
-          wardId: dto.wardId,
-          hamletId: dto.hamletId,
+          wardId,
+          hamletId,
           streetId: dto.streetId,
           alleyId: dto.alleyId,
           ownerName: dto.ownerName,
@@ -688,8 +715,13 @@ export class HousesService {
     return newStatus === HouseStatus.APPROVED ? new Date() : null;
   }
 
-  async update(id: string, dto: UpdateHouseDto, userId: string) {
-    const existing = await this.findOneOrThrow(id);
+  async update(id: string, dto: UpdateHouseDto, user: AuthenticatedUser) {
+    const userId = user.id;
+    const existing = await this.findInScopeOrThrow(id, user);
+    // Cán bộ ấp không được chuyển nhà sang ấp khác (hay bỏ trống ấp).
+    if (dto.hamletId !== undefined && dto.hamletId !== existing.hamletId) {
+      resolveHamletForWrite(user, dto.hamletId ?? '', false);
+    }
     const changes = this.diffTracked(existing, dto);
     const approvedAt = this.computeApprovedAt(existing.status, dto.status, existing.approvedAt);
 
@@ -769,8 +801,9 @@ export class HousesService {
     });
   }
 
-  async addPhoto(houseId: string, file: Express.Multer.File, type: string | undefined, userId: string) {
-    await this.findOneOrThrow(houseId);
+  async addPhoto(houseId: string, file: Express.Multer.File, type: string | undefined, user: AuthenticatedUser) {
+    const userId = user.id;
+    await this.findInScopeOrThrow(houseId, user);
 
     const resolvedType: PhotoType =
       type === PhotoType.FACADE || type === PhotoType.PLATE ? type : PhotoType.CONDITION;
@@ -799,7 +832,9 @@ export class HousesService {
     });
   }
 
-  async removePhoto(houseId: string, photoId: string, userId: string) {
+  async removePhoto(houseId: string, photoId: string, user: AuthenticatedUser) {
+    const userId = user.id;
+    await this.findInScopeOrThrow(houseId, user);
     const photo = await this.prisma.housePhoto.findUnique({ where: { id: photoId } });
     if (!photo || photo.houseId !== houseId) {
       throw new NotFoundException('Không tìm thấy ảnh');

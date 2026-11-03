@@ -18,13 +18,13 @@ export class DashboardController {
    * của riêng xã đó (thay cho gộp toàn tỉnh).
    */
   @Get('summary')
-  getSummary(@Query() query: DashboardSummaryQueryDto) {
-    return this.dashboardService.getSummary(query);
+  getSummary(@Query() query: DashboardSummaryQueryDto, @CurrentUser() user: AuthenticatedUser) {
+    return this.dashboardService.getSummary(query, user);
   }
 
   /** Báo cáo nhanh cá nhân (mobile nhóm 10) — số liệu gắn với người đang đăng nhập. */
   @Get('mine')
   getMine(@CurrentUser() user: AuthenticatedUser) {
-    return this.dashboardService.getMine(user.id);
+    return this.dashboardService.getMine(user);
   }
 }

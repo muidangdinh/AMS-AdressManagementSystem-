@@ -156,6 +156,46 @@ export const PERMISSIONS = {
 
 export type PermissionCode = (typeof PERMISSIONS)[keyof typeof PERMISSIONS];
 
+/**
+ * Cấp tổ chức của tài khoản — khớp enum UserLevel trong Prisma schema.
+ * Chỉ HAMLET bị giới hạn dữ liệu (ấp của mình + nhiệm vụ được giao); SYSTEM và WARD thấy toàn hệ thống.
+ */
+export enum UserLevel {
+  SYSTEM = 'SYSTEM',
+  WARD = 'WARD',
+  HAMLET = 'HAMLET',
+}
+
+export const USER_LEVEL_LABELS: Record<UserLevel, string> = {
+  [UserLevel.SYSTEM]: 'Tài khoản hệ thống',
+  [UserLevel.WARD]: 'Nhân sự UBND xã',
+  [UserLevel.HAMLET]: 'Nhân sự ấp/thôn',
+};
+
+/**
+ * Quyền bị bỏ theo cấp tài khoản, kể cả khi vai trò có gán — mirror `PERMISSIONS_DENIED_BY_LEVEL`
+ * ở apps/api/src/auth/permissions.ts (dùng để ghi chú trên UI; backend mới là nơi thực thi).
+ */
+export const PERMISSIONS_DENIED_BY_LEVEL: Record<UserLevel, PermissionCode[]> = {
+  [UserLevel.SYSTEM]: [],
+  [UserLevel.WARD]: [PERMISSIONS.USER_MANAGE, PERMISSIONS.ROLE_MANAGE],
+  [UserLevel.HAMLET]: [
+    PERMISSIONS.USER_MANAGE,
+    PERMISSIONS.ROLE_MANAGE,
+    PERMISSIONS.SETTING_MANAGE,
+    PERMISSIONS.ADDRESS_WRITE,
+    PERMISSIONS.ROUTE_MANAGE,
+    PERMISSIONS.SCHEME_MANAGE,
+    PERMISSIONS.SCHEME_APPROVE,
+    PERMISSIONS.SURVEY_MANAGE,
+    PERMISSIONS.ASSIGNMENT_REVIEW,
+    PERMISSIONS.INSTALL_MANAGE,
+    PERMISSIONS.INSTALL_REVIEW,
+    PERMISSIONS.NOTIFICATION_REMIND,
+    PERMISSIONS.NOTIFICATION_RUN_REMINDERS,
+  ],
+};
+
 /** Một quyền trong danh mục (GET /api/permissions). */
 export interface PermissionDef {
   code: string;
@@ -236,6 +276,39 @@ export interface UserSummary {
   /** Chức vụ (TN-05, góp ý khách hàng 11/09/2026) — tự do nhập, tuỳ chọn. */
   position?: string | null;
   isActive: boolean;
+  /** Cấp tổ chức; bản API cũ chưa có thì coi như SYSTEM. */
+  level?: UserLevel;
+  wardId?: string | null;
+  hamletId?: string | null;
+  ward?: { id: string; name: string } | null;
+  hamlet?: { id: string; name: string } | null;
+  /** Phòng ban (danh mục). Khi có, `unit` = tên phòng ban. */
+  departmentId?: string | null;
+  department?: { id: string; name: string } | null;
+}
+
+/** Phòng ban — GET /api/departments (chỉ tài khoản hệ thống có quyền user:manage). */
+export interface Department {
+  id: string;
+  name: string;
+  /** null = phòng ban cấp tỉnh/hệ thống. */
+  wardId: string | null;
+  ward: { id: string; name: string } | null;
+  isActive: boolean;
+  createdAt: string;
+  updatedAt: string;
+  _count?: { users: number };
+}
+
+export interface CreateDepartmentRequest {
+  name: string;
+  wardId?: string | null;
+}
+
+export interface UpdateDepartmentRequest {
+  name?: string;
+  wardId?: string | null;
+  isActive?: boolean;
 }
 
 /** Body POST /api/users — khớp CreateUserDto ở API. Cần quyền user:manage. */
@@ -247,6 +320,13 @@ export interface CreateUserRequest {
   roleIds: string[];
   unit?: string;
   position?: string;
+  level?: UserLevel;
+  /** Bắt buộc khi level = WARD. */
+  wardId?: string | null;
+  /** Bắt buộc khi level = HAMLET (xã tự lấy theo ấp). */
+  hamletId?: string | null;
+  /** Phòng ban cấp tỉnh hoặc thuộc đúng xã của tài khoản. */
+  departmentId?: string | null;
 }
 
 /** Body PATCH /api/users/:id — khớp UpdateUserDto; `password` để đặt lại mật khẩu. */
@@ -258,6 +338,12 @@ export interface UpdateUserRequest {
   position?: string;
   isActive?: boolean;
   password?: string;
+  /** Đổi cấp/xã/ấp — chuyển tài khoản giữa các mục trong trang Người dùng. */
+  level?: UserLevel;
+  wardId?: string | null;
+  hamletId?: string | null;
+  /** null = bỏ gán phòng ban. */
+  departmentId?: string | null;
 }
 
 /** Body PATCH /api/auth/me/password — tự đổi mật khẩu, phải kèm mật khẩu hiện tại. */
@@ -284,7 +370,21 @@ export interface LoginResponse extends AuthTokens {
   /** unit/position kèm theo để dashboard mobile dựng lời chào (TN-13) mà không cần gọi thêm /auth/me. */
   user: Pick<
     UserSummary,
-    'id' | 'username' | 'fullName' | 'role' | 'roles' | 'permissions' | 'unit' | 'position'
+    | 'id'
+    | 'username'
+    | 'fullName'
+    | 'role'
+    | 'roles'
+    | 'permissions'
+    | 'unit'
+    | 'position'
+    | 'level'
+    | 'wardId'
+    | 'hamletId'
+    | 'ward'
+    | 'hamlet'
+    | 'departmentId'
+    | 'department'
   >;
 }
 

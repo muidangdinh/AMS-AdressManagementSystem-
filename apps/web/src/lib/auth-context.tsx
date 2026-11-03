@@ -20,10 +20,7 @@ import {
   setUnauthorizedHandler,
 } from './api';
 
-type CurrentUser = Pick<
-  UserSummary,
-  'id' | 'username' | 'fullName' | 'role' | 'roles' | 'permissions' | 'unit' | 'position'
->;
+type CurrentUser = LoginResponse['user'];
 
 interface AuthContextValue {
   user: CurrentUser | null;

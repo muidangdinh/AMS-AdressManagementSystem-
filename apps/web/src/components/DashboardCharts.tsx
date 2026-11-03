@@ -3,7 +3,6 @@
 import { createContext, useContext, useState } from 'react';
 import { useTheme } from '@/lib/theme';
 import {
-  ArcElement,
   BarElement,
   CategoryScale,
   Chart as ChartJS,
@@ -14,15 +13,19 @@ import {
   type ChartOptions,
   type Plugin,
 } from 'chart.js';
-import { Bar, Doughnut } from 'react-chartjs-2';
+import { Bar } from 'react-chartjs-2';
 import type { ChartSlice, StackedBarItem } from '@tayninh/shared';
 import { EmptyState } from './ui';
 
 // Kiểu dữ liệu biểu đồ dùng chung với mobile — định nghĩa ở packages/shared.
 export type { ChartSlice, StackedBarItem };
 
-ChartJS.register(ArcElement, BarElement, CategoryScale, LinearScale, Tooltip, Legend);
+ChartJS.register(BarElement, CategoryScale, LinearScale, Tooltip, Legend);
 ChartJS.defaults.font.family = 'system-ui, -apple-system, "Segoe UI", Roboto, sans-serif';
+// Số trên trục theo kiểu Việt Nam (9.000), khớp với số trên cột và tooltip (`fmt`).
+ChartJS.defaults.locale = 'vi-VN';
+
+const fmt = (n: number) => n.toLocaleString('vi-VN');
 
 /** Đọc màu token theme hiện tại (globals.css) cho Chart.js — canvas không dùng được class Tailwind. */
 function cssColor(name: string, alpha = 1): string {
@@ -32,7 +35,7 @@ function cssColor(name: string, alpha = 1): string {
 }
 
 /**
- * Theo dõi theme để vẽ lại biểu đồ khi đổi sáng/tối: trả về `key` gắn vào <Doughnut>/<Bar>
+ * Theo dõi theme để vẽ lại biểu đồ khi đổi sáng/tối: trả về `key` gắn vào <Bar>
  * (đổi key = Chart.js tạo lại canvas với màu mới) và cập nhật màu chữ mặc định.
  */
 function useChartTheme() {
@@ -53,7 +56,7 @@ const ToggleDetailsContext = createContext<() => void>(() => {});
 /**
  * Khung dùng chung cho mọi mục trên Dashboard: mặc định chỉ hiện biểu đồ, bấm vào
  * nền biểu đồ mới bung khối số liệu cũ (thẻ số/danh sách xếp hạng) ra bên dưới.
- * Bấm trúng 1 lát/1 thanh thì mở popup danh sách thay vì bung khối chi tiết.
+ * Bấm trúng 1 cột thì mở popup danh sách thay vì bung khối chi tiết.
  */
 export function ChartSection({
   title,
@@ -80,12 +83,12 @@ export function ChartSection({
         onClick={toggle}
         className="glass p-4 cursor-pointer hover:border-accent/30 transition"
       >
-        {/* Canvas tự xử lý click (lát → popup, nền → toggle) nên chặn nổi bọt để không toggle 2 lần. */}
+        {/* Canvas tự xử lý click (cột → popup, nền → toggle) nên chặn nổi bọt để không toggle 2 lần. */}
         <div onClick={(e) => e.stopPropagation()}>
           <ToggleDetailsContext.Provider value={toggle}>{chart}</ToggleDetailsContext.Provider>
         </div>
         <p className="text-[11px] text-fg-subtle text-center mt-2">
-          Bấm vào lát/thanh để xem danh sách · bấm nền biểu đồ để{' '}
+          Bấm vào cột để xem danh sách · bấm nền biểu đồ để{' '}
           {expanded ? 'thu gọn' : 'xem'} số liệu chi tiết
         </p>
       </div>
@@ -105,90 +108,107 @@ const TOOLTIP_STYLE = {
   bodyFont: { size: 12 },
 };
 
-/** Vẽ số tổng + nhãn vào đúng tâm vòng donut (Chart.js không có sẵn). */
-function centerTextPlugin(label: string, value: number): Plugin<'doughnut'> {
-  return {
-    id: 'centerText',
-    afterDraw(chart: Chart<'doughnut'>) {
-      const arc = chart.getDatasetMeta(0)?.data?.[0] as unknown as { x: number; y: number } | undefined;
-      if (!arc) return;
-      const { ctx } = chart;
-      ctx.save();
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      ctx.fillStyle = cssColor('--fg');
-      ctx.font = `bold 24px ${ChartJS.defaults.font.family}`;
-      ctx.fillText(String(value), arc.x, arc.y - 8);
-      ctx.fillStyle = cssColor('--fg-subtle');
-      ctx.font = `11px ${ChartJS.defaults.font.family}`;
-      ctx.fillText(label, arc.x, arc.y + 14);
-      ctx.restore();
-    },
-  };
+/**
+ * Vẽ giá trị ở đầu mỗi cột — thay cho chartjs-plugin-datalabels để khỏi thêm package.
+ * Cột đứng: số nằm trên đỉnh cột; cột ngang (`indexAxis: 'y'`): số nằm bên phải thanh.
+ */
+const barValuePlugin: Plugin<'bar'> = {
+  id: 'barValue',
+  afterDatasetsDraw(chart: Chart<'bar'>) {
+    const horizontal = chart.options.indexAxis === 'y';
+    const { ctx } = chart;
+    const meta = chart.getDatasetMeta(0);
+    ctx.save();
+    ctx.fillStyle = cssColor('--fg');
+    ctx.font = `bold 11px ${ChartJS.defaults.font.family}`;
+    ctx.textAlign = horizontal ? 'left' : 'center';
+    ctx.textBaseline = horizontal ? 'middle' : 'bottom';
+    meta.data.forEach((bar, i) => {
+      const value = chart.data.datasets[0].data[i];
+      if (typeof value !== 'number') return;
+      const { x, y } = bar as unknown as { x: number; y: number };
+      if (horizontal) ctx.fillText(fmt(value), x + 6, y);
+      else ctx.fillText(fmt(value), x, y - 4);
+    });
+    ctx.restore();
+  },
+};
+
+/** Ngắt nhãn trục thành nhiều dòng (~10 ký tự/dòng) để cột đứng không phải xoay chữ nghiêng. */
+function wrapLabel(name: string, maxLen = 10): string[] {
+  const lines: string[] = [];
+  let line = '';
+  for (const word of name.split(/\s+/)) {
+    if (line && `${line} ${word}`.length > maxLen) {
+      lines.push(line);
+      line = word;
+    } else {
+      line = line ? `${line} ${word}` : word;
+    }
+  }
+  if (line) lines.push(line);
+  return lines;
 }
 
-/** Donut cho các mục "tổng + chia theo trạng thái" — tổng hiển thị ở giữa vòng tròn. */
-export function DonutChart({
+/**
+ * Cột đứng cho các mục "tổng + chia theo trạng thái": mỗi trạng thái 1 cột, giữ màu theo trạng thái,
+ * số tổng hiện ở dòng trên biểu đồ. Bấm cột → `onBarClick(key)`, bấm nền → mở/thu số liệu chi tiết.
+ */
+export function ColumnChart({
   data,
-  centerLabel,
-  centerValue,
-  onSliceClick,
+  totalLabel,
+  totalValue,
+  onBarClick,
 }: {
   data: ChartSlice[];
-  centerLabel: string;
-  centerValue: number;
-  onSliceClick?: (key: string) => void;
+  totalLabel: string;
+  totalValue: number;
+  onBarClick?: (key: string) => void;
 }) {
   const chartTheme = useChartTheme();
   const toggleDetails = useContext(ToggleDetailsContext);
-  const total = data.reduce((sum, d) => sum + d.value, 0);
+  const sum = data.reduce((s, d) => s + d.value, 0);
 
-  if (total === 0) return <EmptyState icon="📭" text="Chưa có dữ liệu" />;
+  if (sum === 0) return <EmptyState icon="📭" text="Chưa có dữ liệu" />;
 
-  const options: ChartOptions<'doughnut'> = {
+  const options: ChartOptions<'bar'> = {
     responsive: true,
     maintainAspectRatio: false,
-    cutout: '68%',
-    layout: { padding: 4 },
+    // Chừa chỗ phía trên cho số trên đỉnh cột cao nhất.
+    layout: { padding: { top: 20 } },
     onClick: (_evt, elements) => {
       const index = elements[0]?.index;
       if (index === undefined) toggleDetails();
-      else onSliceClick?.(data[index].key);
+      else onBarClick?.(data[index].key);
     },
     onHover: (evt, elements) => {
       const target = evt.native?.target as HTMLElement | undefined;
       if (target) target.style.cursor = elements.length ? 'pointer' : 'default';
     },
-    plugins: {
-      legend: {
-        position: 'right',
-        labels: {
-          usePointStyle: true,
-          pointStyle: 'circle',
-          boxWidth: 8,
-          padding: 14,
-          // Màu chữ chú giải theo theme (rõ ở cả sáng lẫn tối) — xem cssColor/useChartTheme.
-          color: cssColor('--fg'),
-          font: { size: 12, weight: 500 },
-          generateLabels: () =>
-            data.map((slice, i) => ({
-              text: `${slice.name} — ${slice.value}`,
-              fontColor: cssColor('--fg'),
-              fillStyle: slice.color,
-              strokeStyle: slice.color,
-              lineWidth: 0,
-              pointStyle: 'circle' as const,
-              index: i,
-            })),
-        },
+    scales: {
+      x: {
+        // Nhãn đã ngắt dòng (wrapLabel) nên giữ nằm ngang, không để Chart.js xoay nghiêng hay ẩn bớt khi màn hẹp.
+        ticks: { color: cssColor('--fg-muted'), font: { size: 11 }, maxRotation: 0, autoSkip: false },
+        grid: { display: false },
+        border: { display: false },
       },
+      y: {
+        beginAtZero: true,
+        ticks: { precision: 0, color: cssColor('--fg-muted'), font: { size: 11 } },
+        grid: { color: cssColor('--line', 0.6) },
+        border: { display: false },
+      },
+    },
+    plugins: {
+      legend: { display: false },
       tooltip: {
         ...TOOLTIP_STYLE,
         callbacks: {
+          title: (items) => data[items[0].dataIndex]?.name ?? '',
           label: (item) => {
-            const value = item.parsed;
-            const pct = total ? Math.round((value / total) * 100) : 0;
-            return ` ${item.label}: ${value} (${pct}%)`;
+            const value = item.parsed.y ?? 0;
+            const pct = Math.round((value / sum) * 100);
+            return ` ${fmt(value)} (${pct}%)`;
           },
         },
       },
@@ -196,115 +216,57 @@ export function DonutChart({
   };
 
   return (
-    <div className="h-60">
-      <Doughnut
-        key={chartTheme}
-        data={{
-          labels: data.map((d) => d.name),
-          datasets: [
-            {
-              data: data.map((d) => d.value),
-              backgroundColor: data.map((d) => d.color),
-              borderColor: cssColor('--surface'),
-              borderWidth: 2,
-              borderRadius: 6,
-              hoverOffset: 10,
-            },
-          ],
-        }}
-        options={options}
-        plugins={[centerTextPlugin(centerLabel, centerValue)]}
-      />
+    <div>
+      <p className="text-xs text-fg-muted mb-1">
+        {totalLabel}: <b className="text-base text-fg tabular-nums">{fmt(totalValue)}</b>
+      </p>
+      <div className="h-60">
+        <Bar
+          key={chartTheme}
+          data={{
+            labels: data.map((d) => wrapLabel(d.name)),
+            datasets: [
+              {
+                data: data.map((d) => d.value),
+                backgroundColor: data.map((d) => d.color),
+                hoverBackgroundColor: data.map((d) => d.color),
+                borderRadius: 6,
+                maxBarThickness: 56,
+              },
+            ],
+          }}
+          options={options}
+          plugins={[barValuePlugin]}
+        />
+      </div>
     </div>
   );
 }
 
-/** Đồng hồ bán nguyệt cho 1 chỉ số phần trăm (tiến độ gắn biển, hoàn tất khảo sát…). */
-export function GaugeChart({
-  value,
-  label,
-  color,
-}: {
-  value: number;
-  label: string;
-  color: string;
-}) {
-  const chartTheme = useChartTheme();
+/**
+ * Ô số phần trăm kèm thanh tiến độ (tiến độ gắn biển, hoàn tất khảo sát…) — thay cho đồng hồ
+ * bán nguyệt. Bấm vào để mở/thu số liệu chi tiết như bấm nền biểu đồ.
+ */
+export function ProgressStat({ value, label, color }: { value: number; label: string; color: string }) {
   const toggleDetails = useContext(ToggleDetailsContext);
   const pct = Math.max(0, Math.min(100, Math.round(value)));
 
-  const gaugeTextPlugin: Plugin<'doughnut'> = {
-    id: 'gaugeText',
-    afterDraw(chart: Chart<'doughnut'>) {
-      const arc = chart.getDatasetMeta(0)?.data?.[0] as unknown as { x: number; y: number } | undefined;
-      if (!arc) return;
-      const { ctx } = chart;
-      ctx.save();
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      ctx.fillStyle = cssColor('--fg');
-      ctx.font = `bold 22px ${ChartJS.defaults.font.family}`;
-      ctx.fillText(`${pct}%`, arc.x, arc.y - 10);
-      ctx.fillStyle = cssColor('--fg-subtle');
-      ctx.font = `11px ${ChartJS.defaults.font.family}`;
-      ctx.fillText(label, arc.x, arc.y + 12);
-      ctx.restore();
-    },
-  };
-
-  const options: ChartOptions<'doughnut'> = {
-    responsive: true,
-    maintainAspectRatio: false,
-    circumference: 180,
-    rotation: 270,
-    cutout: '72%',
-    layout: { padding: 4 },
-    onClick: () => toggleDetails(),
-    plugins: { legend: { display: false }, tooltip: { enabled: false } },
-  };
-
   return (
-    <div className="h-[150px]">
-      <Doughnut
-        key={chartTheme}
-        data={{
-          labels: [label, 'Còn lại'],
-          datasets: [
-            {
-              data: [pct, 100 - pct],
-              backgroundColor: [color, cssColor('--line')],
-              borderWidth: 0,
-              borderRadius: 6,
-            },
-          ],
-        }}
-        options={options}
-        plugins={[gaugeTextPlugin]}
-      />
-    </div>
+    <button
+      type="button"
+      onClick={toggleDetails}
+      className="w-full text-left rounded-xl border border-line bg-surface-2/50 p-4 hover:border-accent/30 transition"
+    >
+      <p className="text-3xl font-extrabold tabular-nums leading-tight" style={{ color }}>
+        {pct}%
+      </p>
+      <p className="text-xs text-fg-muted font-medium mt-0.5">{label}</p>
+      <div className="mt-3 h-2 rounded-full bg-fg-subtle/25 overflow-hidden">
+        <div className="h-full rounded-full" style={{ width: `${pct}%`, background: color }} />
+      </div>
+    </button>
   );
 }
-
-/** Vẽ giá trị ở cuối mỗi thanh — thay cho chartjs-plugin-datalabels để khỏi thêm package. */
-const barValuePlugin: Plugin<'bar'> = {
-  id: 'barValue',
-  afterDatasetsDraw(chart: Chart<'bar'>) {
-    const { ctx } = chart;
-    const meta = chart.getDatasetMeta(0);
-    ctx.save();
-    ctx.fillStyle = cssColor('--fg');
-    ctx.font = `bold 11px ${ChartJS.defaults.font.family}`;
-    ctx.textAlign = 'left';
-    ctx.textBaseline = 'middle';
-    meta.data.forEach((bar, i) => {
-      const value = chart.data.datasets[0].data[i];
-      if (typeof value !== 'number') return;
-      const { x, y } = bar as unknown as { x: number; y: number };
-      ctx.fillText(String(value), x + 6, y);
-    });
-    ctx.restore();
-  },
-};
 
 /** Bar ngang cho các mục xếp hạng (ấp/thôn, tuyến đường, số nhà trùng). */
 export function BarChartH({
@@ -362,7 +324,7 @@ export function BarChartH({
         ...TOOLTIP_STYLE,
         callbacks: {
           title: (items) => data[items[0].dataIndex]?.name ?? '',
-          label: (item) => ` ${item.parsed.x} nhà`,
+          label: (item) => ` ${fmt(item.parsed.x ?? 0)} nhà`,
         },
       },
     },
@@ -458,10 +420,10 @@ export function StackedBarChart({
         ...TOOLTIP_STYLE,
         callbacks: {
           title: (items) => data[items[0].dataIndex]?.name ?? '',
-          label: (item) => ` ${item.dataset.label}: ${item.parsed.x} nhà`,
+          label: (item) => ` ${item.dataset.label}: ${fmt(item.parsed.x ?? 0)} nhà`,
           footer: (items) => {
             const item = data[items[0].dataIndex];
-            return item ? `Tổng: ${item.approved + item.withoutNumber} nhà` : '';
+            return item ? `Tổng: ${fmt(item.approved + item.withoutNumber)} nhà` : '';
           },
         },
       },

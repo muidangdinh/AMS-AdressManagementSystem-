@@ -3,6 +3,8 @@ import { randomUUID } from 'crypto';
 import * as QRCode from 'qrcode';
 import { AssignmentStatus, HouseStatus, HousePlate, PlateIssueReason, PlateStatus, Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { houseScopeWhere, OUT_OF_SCOPE_HOUSE, plateScopeWhere } from '../auth/data-scope';
+import type { AuthenticatedUser } from '../auth/types/authenticated-user';
 import { InstallAssignmentsService } from '../installs/install-assignments.service';
 import { IssuePlateDto } from './dto/issue-plate.dto';
 import { RevokePlateDto } from './dto/revoke-plate.dto';
@@ -39,8 +41,9 @@ export class HousePlatesService {
     private readonly installAssignments: InstallAssignmentsService,
   ) {}
 
-  findAll(query: ListPlatesQueryDto) {
+  findAll(query: ListPlatesQueryDto, user: AuthenticatedUser) {
     const where: Prisma.HousePlateWhereInput = {
+      AND: [plateScopeWhere(user)],
       status: query.status,
       houseId: query.houseId,
       ...(query.search && {
@@ -66,11 +69,18 @@ export class HousePlatesService {
     });
   }
 
-  async findOne(id: string) {
-    const plate = await this.prisma.housePlate.findUnique({
-      where: { id },
+  async findOne(id: string, user: AuthenticatedUser) {
+    const plate = await this.prisma.housePlate.findFirst({
+      where: { id, ...plateScopeWhere(user) },
       include: PLATE_INCLUDE,
     });
+    if (!plate) throw new NotFoundException('Không tìm thấy biển số');
+    return plate;
+  }
+
+  /** Biển ngoài phạm vi của cán bộ ấp cũng báo "không tìm thấy" để không lộ dữ liệu. */
+  private async findInScopeOrThrow(id: string, user: AuthenticatedUser): Promise<HousePlate> {
+    const plate = await this.prisma.housePlate.findFirst({ where: { id, ...plateScopeWhere(user) } });
     if (!plate) throw new NotFoundException('Không tìm thấy biển số');
     return plate;
   }
@@ -119,10 +129,11 @@ export class HousePlatesService {
   }
 
   /** Cấp biển mới / cấp đổi / cấp lại (6.2-6.4) — 1 endpoint, phân biệt bằng `reason`. */
-  async issue(dto: IssuePlateDto, userId: string) {
+  async issue(dto: IssuePlateDto, user: AuthenticatedUser) {
+    const userId = user.id;
     const houseId = dto.houseId;
-    const house = await this.prisma.house.findUnique({ where: { id: houseId } });
-    if (!house) throw new NotFoundException('Không tìm thấy hồ sơ số nhà');
+    const house = await this.prisma.house.findFirst({ where: { id: houseId, ...houseScopeWhere(user) } });
+    if (!house) throw new NotFoundException(OUT_OF_SCOPE_HOUSE);
 
     const reason = dto.reason ?? PlateIssueReason.NEW;
     const activePlate = await this.getActivePlate(houseId);
@@ -211,8 +222,9 @@ export class HousePlatesService {
   }
 
   /** Xác nhận đã gắn tại hiện trường (mobile 7.6) — cũng đồng bộ House.status = APPROVED. */
-  async install(id: string, userId: string, photoUrl?: string, isInstallManager = false) {
-    const plate = await this.findOneOrThrow(id);
+  async install(id: string, user: AuthenticatedUser, photoUrl?: string, isInstallManager = false) {
+    const userId = user.id;
+    const plate = await this.findInScopeOrThrow(id, user);
     if (plate.status !== PlateStatus.ISSUED) {
       throw new ConflictException('Chỉ xác nhận gắn được biển đang ở trạng thái "Đã cấp"');
     }
@@ -239,8 +251,14 @@ export class HousePlatesService {
   }
 
   /** Ghi nhận chưa gắn được + lý do (mobile 7.7-7.8) — không đổi status, chỉ ghi chú. */
-  async markNotInstalled(id: string, dto: NotInstalledPlateDto, userId: string, isInstallManager = false) {
-    const plate = await this.findOneOrThrow(id);
+  async markNotInstalled(
+    id: string,
+    dto: NotInstalledPlateDto,
+    user: AuthenticatedUser,
+    isInstallManager = false,
+  ) {
+    const userId = user.id;
+    const plate = await this.findInScopeOrThrow(id, user);
     if (plate.status !== PlateStatus.ISSUED) {
       throw new ConflictException('Chỉ ghi nhận "chưa gắn" cho biển đang ở trạng thái "Đã cấp"');
     }
@@ -257,8 +275,9 @@ export class HousePlatesService {
     });
   }
 
-  async revoke(id: string, dto: RevokePlateDto, userId: string) {
-    const plate = await this.findOneOrThrow(id);
+  async revoke(id: string, dto: RevokePlateDto, user: AuthenticatedUser) {
+    const userId = user.id;
+    const plate = await this.findInScopeOrThrow(id, user);
     if (plate.status === PlateStatus.REVOKED) {
       throw new ConflictException('Biển này đã bị thu hồi trước đó');
     }

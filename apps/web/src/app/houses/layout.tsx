@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import Link from 'next/link';
 import {
+  Building2,
   ChevronDown,
   Database,
   FileText,
@@ -40,6 +41,7 @@ const NAV_ICONS: Record<string, LucideIcon> = {
   usage: Home,
   addresses: MapPin,
   users: UserCheck,
+  departments: Building2,
   roles: ShieldCheck,
   branding: Settings,
   mapSettings: Layers,
@@ -523,6 +525,13 @@ export default function HousesLayout({ children }: { children: React.ReactNode }
                     </NavLink>
                   </NavItem>
                 )}
+                {hasPermission(PERMISSIONS.USER_MANAGE) && (
+                  <NavItem index={6}>
+                    <NavLink href="/houses/departments" icon="departments" block touch onNavigate={closeNav}>
+                      Phòng ban
+                    </NavLink>
+                  </NavItem>
+                )}
                 {hasPermission(PERMISSIONS.ROLE_MANAGE) && (
                   <NavItem index={7}>
                     <NavLink href="/houses/roles" icon="roles" block touch onNavigate={closeNav}>
@@ -607,6 +616,11 @@ export default function HousesLayout({ children }: { children: React.ReactNode }
           {hasPermission(PERMISSIONS.USER_MANAGE) && (
             <NavLink href="/houses/users" icon="users" block>
               Người dùng
+            </NavLink>
+          )}
+          {hasPermission(PERMISSIONS.USER_MANAGE) && (
+            <NavLink href="/houses/departments" icon="departments" block>
+              Phòng ban
             </NavLink>
           )}
           {hasPermission(PERMISSIONS.ROLE_MANAGE) && (
