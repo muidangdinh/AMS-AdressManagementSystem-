@@ -10,6 +10,10 @@ export class ListPlatesQueryDto {
   @IsString()
   houseId?: string;
 
+  @IsOptional()
+  @IsString()
+  hamletId?: string;
+
   /** Tìm theo mã biển, số nhà hoặc chủ hộ. */
   @IsOptional()
   @IsString()

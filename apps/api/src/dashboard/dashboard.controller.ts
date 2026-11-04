@@ -15,7 +15,7 @@ export class DashboardController {
   /**
    * Tổng quan toàn hệ thống — dùng cho trang `/houses/dashboard` (web) và
    * dashboard mobile. TN-10: truyền `?wardId=` để lấy báo cáo theo ấp/đường
-   * của riêng xã đó (thay cho gộp toàn tỉnh).
+   * của riêng xã đó; web có thể truyền `?hamletId=` để lọc theo một ấp/thôn.
    */
   @Get('summary')
   getSummary(@Query() query: DashboardSummaryQueryDto, @CurrentUser() user: AuthenticatedUser) {

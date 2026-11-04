@@ -43,7 +43,10 @@ export class HousePlatesService {
 
   findAll(query: ListPlatesQueryDto, user: AuthenticatedUser) {
     const where: Prisma.HousePlateWhereInput = {
-      AND: [plateScopeWhere(user)],
+      AND: [
+        plateScopeWhere(user),
+        ...(query.hamletId ? [{ house: { hamletId: query.hamletId } }] : []),
+      ],
       status: query.status,
       houseId: query.houseId,
       ...(query.search && {

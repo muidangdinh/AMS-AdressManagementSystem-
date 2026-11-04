@@ -15,6 +15,10 @@ export class ListAssignmentsQueryDto {
   assigneeId?: string;
 
   @IsOptional()
+  @IsString()
+  hamletId?: string;
+
+  @IsOptional()
   @IsEnum(AssignmentStatus)
   status?: AssignmentStatus;
 

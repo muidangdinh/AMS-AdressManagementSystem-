@@ -50,6 +50,7 @@ import LocationPickerModal from '../components/LocationPickerModal';
 // import WardSelectorBar from '../components/WardSelectorBar';
 import OwnerAutocompleteField from '../components/OwnerAutocompleteField';
 import NearbyOwnersCard from '../components/NearbyOwnersCard';
+import ImageViewer from '../components/ImageViewer';
 
 const BUILDING_TYPES = Object.values(BuildingType);
 const PLATE_NEEDS = Object.values(PlateNeed);
@@ -312,6 +313,7 @@ export default function SurveyScreen() {
   const [facadePhotoUri, setFacadePhotoUri] = useState<string | null>(null);
   const [platePhotoUri, setPlatePhotoUri] = useState<string | null>(null);
   const [photoUris, setPhotoUris] = useState<string[]>([]);
+  const [viewer, setViewer] = useState<{ uris: string[]; index: number } | null>(null);
   const [saving, setSaving] = useState(false);
 
   // Nguồn của tọa độ đang hiển thị — 'default' nghĩa là vẫn là tọa độ mặc định (chưa lấy GPS /
@@ -1134,6 +1136,7 @@ export default function SurveyScreen() {
         <PhotoSlot
           uri={facadePhotoUri}
           onPick={() => pickSinglePhoto('Ảnh mặt tiền nhà', setFacadePhotoUri)}
+          onView={() => facadePhotoUri && setViewer({ uris: [facadePhotoUri], index: 0 })}
           onRemove={() => setFacadePhotoUri(null)}
         />
 
@@ -1141,6 +1144,7 @@ export default function SurveyScreen() {
         <PhotoSlot
           uri={platePhotoUri}
           onPick={() => pickSinglePhoto('Ảnh biển số nhà', setPlatePhotoUri)}
+          onView={() => platePhotoUri && setViewer({ uris: [platePhotoUri], index: 0 })}
           onRemove={() => setPlatePhotoUri(null)}
         />
 
@@ -1150,7 +1154,9 @@ export default function SurveyScreen() {
         <View style={styles.photoGrid}>
           {photoUris.map((uri, index) => (
             <View key={`${uri}-${index}`} style={styles.photoThumbWrap}>
-              <Image source={{ uri }} style={styles.photoThumb} />
+              <TouchableOpacity activeOpacity={0.85} onPress={() => setViewer({ uris: photoUris, index })}>
+                <Image source={{ uri }} style={styles.photoThumb} />
+              </TouchableOpacity>
               <TouchableOpacity style={styles.photoRemoveBtn} onPress={() => removePhoto(index)}>
                 <Text style={styles.photoRemoveText}>×</Text>
               </TouchableOpacity>
@@ -1221,6 +1227,15 @@ export default function SurveyScreen() {
           setPickerVisible(false);
         }}
       />
+
+      {viewer && (
+        <ImageViewer
+          visible
+          uris={viewer.uris}
+          initialIndex={viewer.index}
+          onClose={() => setViewer(null)}
+        />
+      )}
     </ScrollView>
   );
 }
@@ -1245,16 +1260,20 @@ function Field({
 function PhotoSlot({
   uri,
   onPick,
+  onView,
   onRemove,
 }: {
   uri: string | null;
   onPick: () => void;
+  onView: () => void;
   onRemove: () => void;
 }) {
   if (uri) {
     return (
       <View style={styles.photoThumbWrap}>
-        <Image source={{ uri }} style={styles.photoThumb} />
+        <TouchableOpacity activeOpacity={0.85} onPress={onView}>
+          <Image source={{ uri }} style={styles.photoThumb} />
+        </TouchableOpacity>
         <TouchableOpacity style={styles.photoRemoveBtn} onPress={onRemove}>
           <Text style={styles.photoRemoveText}>×</Text>
         </TouchableOpacity>

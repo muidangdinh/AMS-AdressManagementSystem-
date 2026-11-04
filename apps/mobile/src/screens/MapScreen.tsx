@@ -17,6 +17,7 @@ import {
 } from 'react-native';
 import { Camera, type CameraRef, GeoJSONSource, Layer, Marker } from '@maplibre/maplibre-react-native';
 import GoongMap from '../components/GoongMap';
+import ImageViewer from '../components/ImageViewer';
 import { GOONG_TEXT_FONT } from '../lib/goong';
 import { useAppConfig } from '../lib/AppConfigContext';
 import Geolocation from '@react-native-community/geolocation';
@@ -199,6 +200,7 @@ export default function MapScreen() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [detail, setDetail] = useState<HouseSummary | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
+  const [viewer, setViewer] = useState<{ uris: string[]; index: number } | null>(null);
   // TN-21 — tên tỉnh cho địa chỉ đầy đủ 5 cấp ở bottom sheet chi tiết hồ sơ.
   const [provinceName, setProvinceName] = useState(DEFAULT_PROVINCE_NAME);
 
@@ -760,12 +762,22 @@ export default function MapScreen() {
                       keyExtractor={(p) => p.id}
                       horizontal
                       showsHorizontalScrollIndicator={false}
-                      renderItem={({ item }) => (
+                      renderItem={({ item, index }) => (
                         <View style={styles.photoItem}>
-                          <Image
-                            source={{ uri: `${API_URL}${item.url}` }}
-                            style={styles.photoImage}
-                          />
+                          <TouchableOpacity
+                            activeOpacity={0.85}
+                            onPress={() =>
+                              setViewer({
+                                uris: (detail?.photos ?? []).map((p) => `${API_URL}${p.url}`),
+                                index,
+                              })
+                            }
+                          >
+                            <Image
+                              source={{ uri: `${API_URL}${item.url}` }}
+                              style={styles.photoImage}
+                            />
+                          </TouchableOpacity>
                           <Text style={styles.photoType}>{PHOTO_TYPE_LABELS[item.type]}</Text>
                         </View>
                       )}
@@ -777,6 +789,15 @@ export default function MapScreen() {
           </View>
         </View>
       </Modal>
+
+      {viewer && (
+        <ImageViewer
+          visible
+          uris={viewer.uris}
+          initialIndex={viewer.index}
+          onClose={() => setViewer(null)}
+        />
+      )}
     </View>
   );
 }

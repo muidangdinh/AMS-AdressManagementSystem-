@@ -1550,8 +1550,8 @@ export interface DashboardSummary {
    */
   byWard?: AddressBreakdownItem[];
   /**
-   * TN-10 — chỉ có khi gọi KÈM `wardId`: đủ ấp của xã đó (kể cả ấp 0 nhà),
-   * mỗi ấp 2 chỉ số.
+   * Danh sách ấp/thôn trong phạm vi đang xem (kể cả mục 0 nhà khi có danh mục),
+   * mỗi ấp gồm số nhà đã cấp số / chưa-chờ cấp số.
    */
   byHamlet?: AddressBreakdownItem[];
   /**

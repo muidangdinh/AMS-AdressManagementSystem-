@@ -213,6 +213,7 @@ export class AssignmentsService {
       status: query.status,
       assigneeId: onlyMine ? currentUserId : query.assigneeId,
       ...(query.campaignId && { zone: { campaignId: query.campaignId } }),
+      ...(query.hamletId && { houses: { some: { hamletId: query.hamletId } } }),
     };
     const rows = await this.prisma.surveyAssignment.findMany({
       where,

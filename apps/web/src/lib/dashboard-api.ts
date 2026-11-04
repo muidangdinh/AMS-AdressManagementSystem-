@@ -5,7 +5,12 @@ const SEARCH_PAGE_SIZE = 20;
 
 /** Dashboard tổng quan (nhóm 1) — client API cho `/api/dashboard`. */
 export const dashboardApi = {
-  summary: () => apiFetch<DashboardSummary>('/api/dashboard/summary'),
+  summary: (hamletId?: string, signal?: AbortSignal) => {
+    const qs = new URLSearchParams();
+    if (hamletId) qs.set('hamletId', hamletId);
+    const query = qs.toString();
+    return apiFetch<DashboardSummary>(`/api/dashboard/summary${query ? `?${query}` : ''}`, { signal });
+  },
   /** Tìm nhanh theo tên đường/chủ hộ/SĐT/CCCD + lọc theo ấp — dùng cho ô tìm kiếm trên dashboard. */
   searchHouses: (params: { search?: string; hamletId?: string }, signal?: AbortSignal) => {
     const qs = new URLSearchParams();

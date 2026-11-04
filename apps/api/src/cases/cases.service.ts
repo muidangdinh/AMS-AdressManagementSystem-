@@ -98,7 +98,10 @@ export class CasesService {
 
   findAll(query: ListCasesQueryDto, user: AuthenticatedUser) {
     const where: Prisma.HouseCaseWhereInput = {
-      AND: [caseScopeWhere(user)],
+      AND: [
+        caseScopeWhere(user),
+        ...(query.hamletId ? [{ house: { hamletId: query.hamletId } }] : []),
+      ],
       status: query.status,
       assignedToId: query.assignedToId,
       ...(query.search && {

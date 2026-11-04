@@ -1,4 +1,5 @@
 import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { ROUTE_INCLUDE } from './routes.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { throwIfUniqueConflict } from '../addresses/address-conflict.util';
@@ -13,12 +14,16 @@ export class CampaignsService {
   constructor(private readonly prisma: PrismaService) {}
 
   findAll(query: ListCampaignsQueryDto, user?: AuthenticatedUser) {
+    const restricted = isSurveyRestricted(user);
+    const assignmentWhere: Prisma.SurveyAssignmentWhereInput = {
+      ...(restricted && { assigneeId: user!.id }),
+      ...(query.hamletId && { houses: { some: { hamletId: query.hamletId } } }),
+    };
     return this.prisma.surveyCampaign.findMany({
       where: {
         status: query.status,
-        // Cán bộ khảo sát chỉ thấy đợt có nhiệm vụ giao cho mình.
-        ...(isSurveyRestricted(user) && {
-          zones: { some: { assignments: { some: { assigneeId: user!.id } } } },
+        ...((restricted || query.hamletId) && {
+          zones: { some: { assignments: { some: assignmentWhere } } },
         }),
       },
       include: {

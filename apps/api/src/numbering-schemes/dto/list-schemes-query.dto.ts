@@ -9,4 +9,8 @@ export class ListSchemesQueryDto {
   @IsOptional()
   @IsEnum(NumberingSchemeStatus)
   status?: NumberingSchemeStatus;
+
+  @IsOptional()
+  @IsString()
+  hamletId?: string;
 }

@@ -455,15 +455,26 @@ export default function DashboardPage() {
   const [data, setData] = useState<DashboardSummary | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [hamletId, setHamletId] = useState('');
 
   // Số đợt khảo sát theo trạng thái — API tổng quan chỉ trả số đợt đang triển khai, nên tự đếm từ
   // danh sách đợt (API có sẵn). Lỗi riêng request này không làm hỏng cả Tổng Quan (ẩn hàng đợt).
   const [campaignCounts, setCampaignCounts] = useState<Record<CampaignStatus, number> | null>(null);
+  const loadAbortRef = useRef<AbortController | null>(null);
 
   const load = useCallback(async () => {
+    loadAbortRef.current?.abort();
+    const controller = new AbortController();
+    loadAbortRef.current = controller;
     setLoading(true);
     setError(null);
-    apiFetch<SurveyCampaign[]>('/api/survey-campaigns')
+    const campaignQuery = new URLSearchParams();
+    if (hamletId) campaignQuery.set('hamletId', hamletId);
+    const campaignQueryString = campaignQuery.toString();
+    apiFetch<SurveyCampaign[]>(
+      `/api/survey-campaigns${campaignQueryString ? `?${campaignQueryString}` : ''}`,
+      { signal: controller.signal },
+    )
       .then((list) => {
         const counts = Object.fromEntries(
           Object.values(CampaignStatus).map((st) => [st, 0]),
@@ -471,20 +482,25 @@ export default function DashboardPage() {
         list.forEach((c) => {
           counts[c.status] += 1;
         });
-        setCampaignCounts(counts);
+        if (!controller.signal.aborted) setCampaignCounts(counts);
       })
-      .catch(() => setCampaignCounts(null));
+      .catch(() => {
+        if (!controller.signal.aborted) setCampaignCounts(null);
+      });
     try {
-      setData(await dashboardApi.summary());
+      setData(await dashboardApi.summary(hamletId || undefined, controller.signal));
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Không tải được số liệu tổng quan');
+      if (!controller.signal.aborted) {
+        setError(err instanceof ApiError ? err.message : 'Không tải được số liệu tổng quan');
+      }
     } finally {
-      setLoading(false);
+      if (!controller.signal.aborted) setLoading(false);
     }
-  }, []);
+  }, [hamletId]);
 
   useEffect(() => {
     load();
+    return () => loadAbortRef.current?.abort();
   }, [load]);
 
   // Nhân sự ấp/thôn: API đã giới hạn mọi số liệu trong ấp của họ — bộ lọc ấp chỉ hiển thị, không đổi được.
@@ -493,7 +509,6 @@ export default function DashboardPage() {
 
   // Tìm kiếm nhanh: lọc theo ấp/thôn + gõ tìm theo tên đường/chủ hộ/SĐT/CCCD.
   const [hamlets, setHamlets] = useState<Hamlet[]>([]);
-  const [hamletId, setHamletId] = useState('');
   const [search, setSearch] = useState('');
   const [results, setResults] = useState<HouseSummary[] | null>(null);
   const [searching, setSearching] = useState(false);
@@ -505,10 +520,11 @@ export default function DashboardPage() {
   }, []);
 
   useEffect(() => {
-    if (!search.trim() && !hamletId) {
+    if (!search.trim()) {
       searchAbortRef.current?.abort();
       setResults(null);
       setSearchError(null);
+      setSearching(false);
       return;
     }
 
@@ -607,6 +623,7 @@ export default function DashboardPage() {
       status?: HouseStatus;
       reviewStage?: HouseReviewStage;
       ward?: string;
+      hamletId?: string;
       street?: string;
       search?: string;
     },
@@ -616,8 +633,10 @@ export default function DashboardPage() {
       if (params.status) qs.set('status', params.status);
       if (params.reviewStage) qs.set('reviewStage', params.reviewStage);
       if (params.ward) qs.set('ward', params.ward);
+      if (params.hamletId) qs.set('hamletId', params.hamletId);
       if (params.street) qs.set('street', params.street);
       if (params.search) qs.set('search', params.search);
+      if (hamletId) qs.set('hamletId', hamletId);
       const res = await apiFetch<PaginatedResult<HouseSummary>>(`/api/houses?${qs.toString()}`);
       return { rows: res.items.map(houseRow), total: res.total };
     });
@@ -635,8 +654,11 @@ export default function DashboardPage() {
 
   function openPlates(title: string, subtitle: string | undefined, status?: PlateStatus) {
     openModal(title, subtitle, async () => {
-      const qs = status ? `?status=${status}` : '';
-      const res = await apiFetch<HousePlate[]>(`/api/house-plates${qs}`);
+      const qs = new URLSearchParams();
+      if (status) qs.set('status', status);
+      if (hamletId) qs.set('hamletId', hamletId);
+      const query = qs.toString();
+      const res = await apiFetch<HousePlate[]>(`/api/house-plates${query ? `?${query}` : ''}`);
       return { rows: res.map(plateRow), total: res.length };
     });
   }
@@ -654,8 +676,11 @@ export default function DashboardPage() {
   /** Hồ sơ "đang xử lý" gộp nhiều trạng thái (mọi trạng thái trừ hoàn tất/từ chối) — lọc client-side. */
   function openCases(title: string, subtitle: string | undefined, status?: CaseStatus | 'OPEN') {
     openModal(title, subtitle, async () => {
-      const qs = status && status !== 'OPEN' ? `?status=${status}` : '';
-      const res = await apiFetch<HouseCase[]>(`/api/house-cases${qs}`);
+      const qs = new URLSearchParams();
+      if (status && status !== 'OPEN') qs.set('status', status);
+      if (hamletId) qs.set('hamletId', hamletId);
+      const query = qs.toString();
+      const res = await apiFetch<HouseCase[]>(`/api/house-cases${query ? `?${query}` : ''}`);
       const filtered =
         status === 'OPEN'
           ? res.filter((c) => c.status !== CaseStatus.COMPLETED && c.status !== CaseStatus.REJECTED)
@@ -676,8 +701,11 @@ export default function DashboardPage() {
 
   function openCampaigns(title: string, subtitle: string | undefined, status?: CampaignStatus) {
     openModal(title, subtitle, async () => {
-      const qs = status ? `?status=${status}` : '';
-      const res = await apiFetch<SurveyCampaign[]>(`/api/survey-campaigns${qs}`);
+      const qs = new URLSearchParams();
+      if (status) qs.set('status', status);
+      if (hamletId) qs.set('hamletId', hamletId);
+      const query = qs.toString();
+      const res = await apiFetch<SurveyCampaign[]>(`/api/survey-campaigns${query ? `?${query}` : ''}`);
       return { rows: res.map(campaignRow), total: res.length };
     });
   }
@@ -697,7 +725,11 @@ export default function DashboardPage() {
   function openAssignments(title: string, subtitle: string | undefined, statuses: AssignmentStatus[]) {
     openModal(title, subtitle, async () => {
       const results = await Promise.all(
-        statuses.map((s) => apiFetch<SurveyAssignment[]>(`/api/survey-assignments?status=${s}`)),
+        statuses.map((s) => {
+          const qs = new URLSearchParams({ status: s });
+          if (hamletId) qs.set('hamletId', hamletId);
+          return apiFetch<SurveyAssignment[]>(`/api/survey-assignments?${qs}`);
+        }),
       );
       const all = results.flat();
       return { rows: all.map(assignmentRow), total: all.length };
@@ -717,9 +749,13 @@ export default function DashboardPage() {
   function openSchemes(title: string, subtitle: string | undefined, statuses?: NumberingSchemeStatus[]) {
     openModal(title, subtitle, async () => {
       const results = await Promise.all(
-        (statuses ?? [undefined]).map((s) =>
-          apiFetch<NumberingScheme[]>(`/api/numbering-schemes${s ? `?status=${s}` : ''}`),
-        ),
+        (statuses ?? [undefined]).map((s) => {
+          const qs = new URLSearchParams();
+          if (s) qs.set('status', s);
+          if (hamletId) qs.set('hamletId', hamletId);
+          const query = qs.toString();
+          return apiFetch<NumberingScheme[]>(`/api/numbering-schemes${query ? `?${query}` : ''}`);
+        }),
       );
       const all = results.flat();
       return { rows: all.map(schemeRow), total: all.length };
@@ -729,6 +765,9 @@ export default function DashboardPage() {
   // `byWard` chỉ có khi gọi summary không kèm wardId, và trả về ĐỦ danh mục xã/phường
   // (kể cả xã 0 nhà) — nên phải cắt top 10 theo tổng số nhà, không vẽ hết được.
   const topWardBreakdown = toStackedBreakdown(data?.byWard, 10);
+  const topHamletBreakdown = [...(data?.byHamlet ?? [])]
+    .sort((a, b) => b.approved + b.withoutNumber - (a.approved + a.withoutNumber))
+    .slice(0, 5);
 
   // ---- Ngăn chi tiết: bấm tile mở khối tương ứng; đóng thì trả focus về tile đã bấm.
   const [openSection, setOpenSection] = useState<SectionId | null>(null);
@@ -907,7 +946,14 @@ export default function DashboardPage() {
                 label="Ấp/thôn — nhiều nhà nhất"
                 icon={MapPin}
                 onClick={openDrawer('hamlets')}
-                content={<MiniList items={data.topWards.slice(0, 3).map((w) => ({ name: w.ward, value: w.houseCount }))} />}
+                content={
+                  <MiniList
+                    items={topHamletBreakdown.slice(0, 3).map((hamlet) => ({
+                      name: hamlet.name,
+                      value: hamlet.approved + hamlet.withoutNumber,
+                    }))}
+                  />
+                }
               />
               <Tile
                 size="wide"
@@ -930,7 +976,12 @@ export default function DashboardPage() {
       <header className="mb-5">
         <h1 className="text-4xl sm:text-5xl font-light text-white">Tổng quan</h1>
         <p className="mt-1 text-sm text-white">
-          {hamletScoped ? `Phạm vi: ${user?.hamlet?.name ?? 'chưa được gán ấp/thôn'}` : 'Toàn tỉnh'} · bấm vào ô để xem chi tiết
+          {hamletScoped
+            ? `Phạm vi: ${user?.hamlet?.name ?? 'chưa được gán ấp/thôn'}`
+            : hamletId
+              ? `Phạm vi: ${hamlets.find((hamlet) => hamlet.id === hamletId)?.name ?? 'Ấp/thôn đã chọn'}`
+              : 'Toàn tỉnh'}{' '}
+          · bấm vào ô để xem chi tiết
         </p>
       </header>
 
@@ -1216,32 +1267,38 @@ export default function DashboardPage() {
             chart={
               <BarChartH
                 data={
-                  data.topWards.map((w) => ({
-                    key: w.ward,
-                    name: w.ward,
-                    value: w.houseCount,
+                  topHamletBreakdown.map((hamlet) => ({
+                    key: hamlet.id ?? hamlet.name,
+                    name: hamlet.name,
+                    value: hamlet.approved + hamlet.withoutNumber,
                   })) satisfies ChartBar[]
                 }
-                onBarClick={(key) => openHouses(`Nhà ở ${key}`, undefined, { ward: key })}
+                onBarClick={(key) => {
+                  const hamlet = topHamletBreakdown.find((item) => (item.id ?? item.name) === key);
+                  if (hamlet?.id) {
+                    openHouses(`Nhà ở ${hamlet.name}`, undefined, { hamletId: hamlet.id });
+                  }
+                }}
               />
             }
             details={
           <RankedList
-            items={data.topWards}
+            items={topHamletBreakdown}
             emptyText="Chưa có dữ liệu"
-            renderItem={(w, i) => (
-              <li key={w.ward}>
+            renderItem={(hamlet, i) => (
+              <li key={hamlet.id ?? hamlet.name}>
                 <button
-                  onClick={() => openHouses(`Nhà ở ${w.ward}`, undefined, { ward: w.ward })}
+                  onClick={() => hamlet.id && openHouses(`Nhà ở ${hamlet.name}`, undefined, { hamletId: hamlet.id })}
+                  disabled={!hamlet.id}
                   className="w-full flex items-center justify-between px-4 py-2.5 text-sm hover:bg-accent/10 text-left"
                 >
                   <span className="flex items-center gap-2.5">
                     <span className="w-5 h-5 rounded-full bg-surface-2 text-fg-muted text-[11px] font-bold flex items-center justify-center">
                       {i + 1}
                     </span>
-                    <span className="text-fg font-medium">{w.ward}</span>
+                    <span className="text-fg font-medium">{hamlet.name}</span>
                   </span>
-                  <span className="font-bold text-fg">{w.houseCount} nhà</span>
+                  <span className="font-bold text-fg">{hamlet.approved + hamlet.withoutNumber} nhà</span>
                 </button>
               </li>
             )}

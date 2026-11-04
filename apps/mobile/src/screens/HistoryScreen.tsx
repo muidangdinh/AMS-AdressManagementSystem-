@@ -13,6 +13,7 @@ import {
 import { useFocusEffect } from '@react-navigation/native';
 import { BUILDING_TYPE_LABELS } from '@tayninh/shared';
 import { deleteDraft, getDrafts, syncAllPending, SurveyDraft } from '../lib/surveyStore';
+import ImageViewer from '../components/ImageViewer';
 
 const STATUS_LABEL: Record<SurveyDraft['status'], string> = {
   pending_sync: 'Chờ đồng bộ',
@@ -32,6 +33,7 @@ export default function HistoryScreen() {
   const [drafts, setDrafts] = useState<SurveyDraft[]>([]);
   const [refreshing, setRefreshing] = useState(false);
   const [syncing, setSyncing] = useState(false);
+  const [viewer, setViewer] = useState<{ uris: string[]; index: number } | null>(null);
 
   const load = useCallback(async () => {
     setDrafts(await getDrafts());
@@ -108,7 +110,12 @@ export default function HistoryScreen() {
           const color = STATUS_COLOR[item.status];
           return (
             <View style={styles.item}>
-              <View style={styles.thumbWrap}>
+              <TouchableOpacity
+                style={styles.thumbWrap}
+                activeOpacity={0.85}
+                disabled={!item.photoUris?.length}
+                onPress={() => item.photoUris?.length && setViewer({ uris: item.photoUris, index: 0 })}
+              >
                 {item.photoUris && item.photoUris.length > 0 ? (
                   <Image source={{ uri: item.photoUris[0] }} style={styles.thumb} />
                 ) : (
@@ -119,7 +126,7 @@ export default function HistoryScreen() {
                     <Text style={styles.photoCountText}>+{item.photoUris.length - 1}</Text>
                   </View>
                 )}
-              </View>
+              </TouchableOpacity>
               <View style={styles.itemBody}>
                 <Text style={styles.itemTitle}>
                   Số {item.houseNumber} {item.street}
@@ -142,6 +149,15 @@ export default function HistoryScreen() {
           );
         }}
       />
+
+      {viewer && (
+        <ImageViewer
+          visible
+          uris={viewer.uris}
+          initialIndex={viewer.index}
+          onClose={() => setViewer(null)}
+        />
+      )}
     </View>
   );
 }

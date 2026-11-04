@@ -57,6 +57,7 @@ export class NumberingSchemesService {
       where: {
         streetId: query.streetId,
         status: query.status,
+        ...(query.hamletId && { items: { some: { house: { hamletId: query.hamletId } } } }),
       },
       include: SCHEME_INCLUDE,
       orderBy: { createdAt: 'desc' },

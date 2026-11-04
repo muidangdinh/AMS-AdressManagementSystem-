@@ -10,6 +10,10 @@ export class ListCasesQueryDto {
   @IsString()
   assignedToId?: string;
 
+  @IsOptional()
+  @IsString()
+  hamletId?: string;
+
   /** Tìm theo số hồ sơ hoặc tên người yêu cầu. */
   @IsOptional()
   @IsString()

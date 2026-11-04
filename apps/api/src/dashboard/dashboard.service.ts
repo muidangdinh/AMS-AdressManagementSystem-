@@ -46,13 +46,33 @@ export class DashboardService {
   /**
    * Tổng quan toàn hệ thống — dùng cho web `/houses/dashboard` (mọi vai trò đã đăng nhập).
    * Nhân sự ấp/thôn: mọi số liệu chỉ trong phạm vi của mình (nhà/biển/hồ sơ trong ấp, nhiệm vụ được giao),
-   * phương án đánh số bằng 0, và luôn xem theo xã của mình (bỏ qua `wardId` gửi lên).
+   * phương án đánh số bằng 0, và luôn xem theo xã của mình (bỏ qua bộ lọc địa bàn gửi lên).
    */
   async getSummary(query: DashboardSummaryQueryDto = {}, user?: AuthenticatedUser) {
     const hamletScoped = isHamletScoped(user);
     const wardId = hamletScoped ? user!.wardId : query.wardId;
-    const hw = houseScopeWhere(user);
-    const assignmentWhere: Prisma.SurveyAssignmentWhereInput = hamletScoped ? { assigneeId: user!.id } : {};
+    const selectedHamletId = hamletScoped ? undefined : query.hamletId;
+    // Survey tasks/campaigns are attributable to an ấp only once they have linked houses there.
+    const hw: Prisma.HouseWhereInput = {
+      AND: [houseScopeWhere(user), ...(selectedHamletId ? [{ hamletId: selectedHamletId }] : [])],
+    };
+    const assignmentWhere: Prisma.SurveyAssignmentWhereInput = hamletScoped
+      ? { assigneeId: user!.id }
+      : selectedHamletId
+        ? { houses: { some: { hamletId: selectedHamletId } } }
+        : {};
+    const plateWhere: Prisma.HousePlateWhereInput = {
+      AND: [
+        plateScopeWhere(user),
+        ...(selectedHamletId ? [{ house: { hamletId: selectedHamletId } }] : []),
+      ],
+    };
+    const caseWhere: Prisma.HouseCaseWhereInput = {
+      AND: [
+        caseScopeWhere(user),
+        ...(selectedHamletId ? [{ house: { hamletId: selectedHamletId } }] : []),
+      ],
+    };
 
     const [
       housesByStatus,
@@ -68,18 +88,28 @@ export class DashboardService {
     ] = await Promise.all([
       this.prisma.house.groupBy({ by: ['status'], where: hw, _count: { _all: true } }),
       this.prisma.house.groupBy({ by: ['reviewStage'], where: hw, _count: { _all: true } }),
-      this.prisma.housePlate.groupBy({ by: ['status'], where: plateScopeWhere(user), _count: { _all: true } }),
-      this.prisma.houseCase.groupBy({ by: ['status'], where: caseScopeWhere(user), _count: { _all: true } }),
+      this.prisma.housePlate.groupBy({ by: ['status'], where: plateWhere, _count: { _all: true } }),
+      this.prisma.houseCase.groupBy({ by: ['status'], where: caseWhere, _count: { _all: true } }),
       this.prisma.surveyCampaign.count({
         where: {
           status: CampaignStatus.ACTIVE,
           ...(hamletScoped && { zones: { some: { assignments: { some: assignmentWhere } } } }),
+          ...(!hamletScoped &&
+            selectedHamletId && {
+              zones: { some: { assignments: { some: { houses: { some: { hamletId: selectedHamletId } } } } } },
+            }),
         },
       }),
       this.prisma.surveyAssignment.groupBy({ by: ['status'], where: assignmentWhere, _count: { _all: true } }),
       hamletScoped
         ? Promise.resolve([] as { status: NumberingSchemeStatus; _count: { _all: number } }[])
-        : this.prisma.numberingScheme.groupBy({ by: ['status'], _count: { _all: true } }),
+        : this.prisma.numberingScheme.groupBy({
+            by: ['status'],
+            where: selectedHamletId
+              ? { items: { some: { house: { hamletId: selectedHamletId } } } }
+              : undefined,
+            _count: { _all: true },
+          }),
       this.prisma.house.groupBy({
         by: ['ward'],
         where: hw,
@@ -131,9 +161,14 @@ export class DashboardService {
     // trên GIỮ NGUYÊN hành vi cũ (top 5, dạng chữ) cho tương thích ngược.
     const wardBreakdown = hamletScoped
       ? await this.getHamletScopedBreakdown(user!)
+      : selectedHamletId
+        ? await this.getHamletBreakdown(selectedHamletId, hw)
       : wardId
         ? await this.getWardScopedBreakdown(wardId)
-        : await this.getWardLevelBreakdown();
+        : await this.getWardLevelBreakdown(hw);
+    const hamletBreakdown = hamletScoped || selectedHamletId || wardId
+      ? {}
+      : await this.getHamletLevelBreakdown(hw);
 
     return {
       houses: {
@@ -190,6 +225,7 @@ export class DashboardService {
       },
       reviewStages,
       ...wardBreakdown,
+      ...hamletBreakdown,
     };
   }
 
@@ -222,15 +258,21 @@ export class DashboardService {
   private async getHamletScopedBreakdown(
     user: AuthenticatedUser,
   ): Promise<{ byHamlet: AddressBreakdownItem[]; byStreet: AddressBreakdownItem[] }> {
-    const hw = houseScopeWhere(user);
+    return this.getHamletBreakdown(user.hamletId ?? '', houseScopeWhere(user));
+  }
+
+  private async getHamletBreakdown(
+    hamletId: string,
+    where: Prisma.HouseWhereInput,
+  ): Promise<{ byHamlet: AddressBreakdownItem[]; byStreet: AddressBreakdownItem[] }> {
     const [houseByHamlet, houseByStreet] = await Promise.all([
-      this.prisma.house.groupBy({ by: ['hamletId', 'status'], where: hw, _count: { _all: true } }),
-      this.prisma.house.groupBy({ by: ['streetId', 'status'], where: hw, _count: { _all: true } }),
+      this.prisma.house.groupBy({ by: ['hamletId', 'status'], where, _count: { _all: true } }),
+      this.prisma.house.groupBy({ by: ['streetId', 'status'], where, _count: { _all: true } }),
     ]);
     const streetIds = [...new Set(houseByStreet.map((g) => g.streetId).filter((id): id is string => !!id))];
     const [hamlets, streets] = await Promise.all([
-      user.hamletId
-        ? this.prisma.hamlet.findMany({ where: { id: user.hamletId }, select: { id: true, name: true } })
+      hamletId
+        ? this.prisma.hamlet.findMany({ where: { id: hamletId }, select: { id: true, name: true } })
         : Promise.resolve([]),
       this.prisma.street.findMany({
         where: { id: { in: streetIds } },
@@ -249,13 +291,34 @@ export class DashboardService {
    * cả xã 0 nhà, thay cho `topWards` (top 5) ở khối "Theo xã/phường" trên
    * mobile khi đang xem toàn tỉnh.
    */
-  private async getWardLevelBreakdown(): Promise<{ byWard: AddressBreakdownItem[] }> {
+  private async getWardLevelBreakdown(
+    where: Prisma.HouseWhereInput = {},
+  ): Promise<{ byWard: AddressBreakdownItem[] }> {
     const [wards, houseByWard] = await Promise.all([
       this.prisma.ward.findMany({ select: { id: true, name: true }, orderBy: { name: 'asc' } }),
-      this.prisma.house.groupBy({ by: ['wardId', 'status'], _count: { _all: true } }),
+      this.prisma.house.groupBy({ by: ['wardId', 'status'], where, _count: { _all: true } }),
     ]);
 
     return { byWard: buildAddressBreakdown(wards, houseByWard, (g) => g.wardId) };
+  }
+
+  /** Danh sách ấp/thôn toàn hệ thống (hoặc theo phạm vi tài khoản) cho khối Dashboard tương ứng. */
+  private async getHamletLevelBreakdown(
+    where: Prisma.HouseWhereInput,
+  ): Promise<{ byHamlet: AddressBreakdownItem[] }> {
+    const [hamlets, houseByHamlet] = await Promise.all([
+      this.prisma.hamlet.findMany({
+        select: { id: true, name: true },
+        orderBy: { name: 'asc' },
+      }),
+      this.prisma.house.groupBy({
+        by: ['hamletId', 'status'],
+        where,
+        _count: { _all: true },
+      }),
+    ]);
+
+    return { byHamlet: buildAddressBreakdown(hamlets, houseByHamlet, (g) => g.hamletId) };
   }
 
   /**
