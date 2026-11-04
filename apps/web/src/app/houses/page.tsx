@@ -2,6 +2,7 @@
 
 import { Suspense, useCallback, useEffect, useRef, useState } from 'react';
 import dynamic from 'next/dynamic';
+import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { ChevronUp, Filter, List, Map as MapIcon, Plus, Search, Zap } from 'lucide-react';
 import {
@@ -371,6 +372,7 @@ export default function HousesPage() {
   // ấp chỉ hiển thị; hồ sơ mới mặc định thuộc ấp của họ.
   const hamletScoped = user?.level === UserLevel.HAMLET;
   const canEdit = hasPermission(PERMISSIONS.HOUSE_UPDATE);
+  const canManageCases = hasPermission(PERMISSIONS.CASE_MANAGE);
   const apiUrl = getApiUrl();
 
   // Bộ lọc
@@ -1114,6 +1116,14 @@ export default function HousesPage() {
             <Plus className="w-4 h-4" />
             Thêm số nhà
           </Button>
+        )}
+        {canManageCases && (
+          <Link
+            href="/houses/cases"
+            className="inline-flex items-center justify-center gap-1.5 rounded-lg px-3.5 py-2 text-sm font-semibold transition-all duration-300 bg-warn text-white shadow-glow-warn hover:brightness-110"
+          >
+            Nhập liệu
+          </Link>
         )}
         {viewMode === 'map' && (
           <button
