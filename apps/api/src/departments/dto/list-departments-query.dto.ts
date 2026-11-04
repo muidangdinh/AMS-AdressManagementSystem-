@@ -1,15 +1,19 @@
 import { IsIn, IsOptional, IsString } from 'class-validator';
 
 export class ListDepartmentsQueryDto {
-  /** Lọc theo xã; dùng 'province' để chỉ lấy phòng ban cấp tỉnh. */
+  /** WARD / HAMLET, hoặc UNSET = phòng ban cấp tỉnh cũ chưa phân cấp. */
+  @IsOptional()
+  @IsIn(['WARD', 'HAMLET', 'UNSET'])
+  level?: 'WARD' | 'HAMLET' | 'UNSET';
+
+  /** Lọc theo xã — gồm cả phòng ban của các ấp thuộc xã đó. */
   @IsOptional()
   @IsString()
   wardId?: string;
 
-  /** 'true' = lọc theo `wardId` nhưng kèm cả phòng ban cấp tỉnh (ô chọn phòng ban trong form người dùng). */
   @IsOptional()
-  @IsIn(['true', 'false'])
-  includeProvince?: string;
+  @IsString()
+  hamletId?: string;
 
   /** 'true' = bỏ phòng ban đã ngừng sử dụng. */
   @IsOptional()

@@ -188,14 +188,26 @@ model User {
 /// Refresh token duy trì phiên đăng nhập. Chỉ lưu SHA-256, không lưu token gốc.
 /// Mỗi lần làm mới phát hành 1 dòng mới cùng `familyId` (xoay vòng); 1 lần đăng nhập = 1 family.
 /// Dùng lại token đã xoay sau thời gian ân hạn ⇒ coi như bị lộ, thu hồi cả family.
+/// Cấp của phòng ban: thuộc UBND một xã, hoặc thuộc một ấp/thôn.
+enum DepartmentLevel {
+  WARD
+  HAMLET
+}
+
 /// Danh mục phòng ban — chỉ để chọn/lọc người dùng, không ảnh hưởng quyền hay phạm vi dữ liệu.
-/// `wardId` null = phòng ban cấp tỉnh/hệ thống; có giá trị = phòng ban thuộc UBND xã đó.
-/// Trùng tên trong cùng phạm vi được chặn ở service (unique index không chặn được khi wardId null).
+/// - level WARD: thuộc UBND xã `wardId`, gán cho nhân sự UBND của xã đó.
+/// - level HAMLET: thuộc ấp `hamletId` (`wardId` = xã của ấp), gán cho nhân sự của ấp đó.
+/// - level null: "chưa phân cấp" — phòng ban cấp tỉnh cũ tạo từ ô "Đơn vị" (migration 20261104090000).
+///   Người đang gán vẫn giữ, nhưng không gán mới được; admin sửa sang cấp xã/ấp hoặc xóa.
+/// Trùng tên trong cùng phạm vi được chặn ở service (unique index không chặn được khi cột null).
 model Department {
-  id        String   @id @default(uuid())
+  id        String           @id @default(uuid())
   name      String
+  level     DepartmentLevel?
   wardId    String?
-  ward      Ward?    @relation(fields: [wardId], references: [id], onDelete: Restrict)
+  ward      Ward?            @relation(fields: [wardId], references: [id], onDelete: Restrict)
+  hamletId  String?
+  hamlet    Hamlet?          @relation(fields: [hamletId], references: [id], onDelete: Restrict)
   isActive  Boolean  @default(true)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -203,6 +215,7 @@ model Department {
   users User[]
 
   @@index([wardId])
+  @@index([hamletId])
   @@map("department")
 }
 
@@ -503,8 +516,9 @@ model Hamlet {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  houses House[]
-  users  User[]
+  houses      House[]
+  users       User[]
+  departments Department[]
 
   @@unique([name, wardId])
   @@map("address_hamlet")

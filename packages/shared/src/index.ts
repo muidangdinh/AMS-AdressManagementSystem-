@@ -287,13 +287,25 @@ export interface UserSummary {
   department?: { id: string; name: string } | null;
 }
 
+/** Cấp phòng ban — khớp enum DepartmentLevel trong Prisma schema. */
+export type DepartmentLevel = 'WARD' | 'HAMLET';
+
+export const DEPARTMENT_LEVEL_LABELS: Record<DepartmentLevel, string> = {
+  WARD: 'Cấp xã',
+  HAMLET: 'Cấp ấp/thôn',
+};
+
 /** Phòng ban — GET /api/departments (chỉ tài khoản hệ thống có quyền user:manage). */
 export interface Department {
   id: string;
   name: string;
-  /** null = phòng ban cấp tỉnh/hệ thống. */
+  /** null = phòng ban cấp tỉnh cũ "chưa phân cấp" (tạo từ ô Đơn vị) — không gán mới được. */
+  level: DepartmentLevel | null;
+  /** Xã của phòng ban (cấp ấp: xã chứa ấp). */
   wardId: string | null;
   ward: { id: string; name: string } | null;
+  hamletId: string | null;
+  hamlet: { id: string; name: string } | null;
   isActive: boolean;
   createdAt: string;
   updatedAt: string;
@@ -302,12 +314,18 @@ export interface Department {
 
 export interface CreateDepartmentRequest {
   name: string;
+  level: DepartmentLevel;
+  /** Bắt buộc với cấp xã. */
   wardId?: string | null;
+  /** Bắt buộc với cấp ấp/thôn (xã tự lấy theo ấp). */
+  hamletId?: string | null;
 }
 
 export interface UpdateDepartmentRequest {
   name?: string;
+  level?: DepartmentLevel;
   wardId?: string | null;
+  hamletId?: string | null;
   isActive?: boolean;
 }
 
@@ -325,7 +343,7 @@ export interface CreateUserRequest {
   wardId?: string | null;
   /** Bắt buộc khi level = HAMLET (xã tự lấy theo ấp). */
   hamletId?: string | null;
-  /** Phòng ban cấp tỉnh hoặc thuộc đúng xã của tài khoản. */
+  /** Phòng ban đúng cấp, đúng địa bàn của tài khoản; tài khoản hệ thống không có phòng ban. */
   departmentId?: string | null;
 }
 

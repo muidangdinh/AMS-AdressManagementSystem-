@@ -3,29 +3,49 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { PERMISSIONS } from '@tayninh/shared';
-import type { Department, Ward } from '@tayninh/shared';
+import { DEPARTMENT_LEVEL_LABELS, PERMISSIONS } from '@tayninh/shared';
+import type { Department, DepartmentLevel, Hamlet, Ward } from '@tayninh/shared';
 import { useAuth } from '@/lib/auth-context';
 import { ApiError } from '@/lib/api';
 import { departmentsApi } from '@/lib/departments-api';
-import { wardsApi } from '@/lib/addresses-api';
-import { ButtonSpinner, EmptyState, FIELD_CLASS, FormField, PageHeader, ToggleSwitch } from '@/components/ui';
+import { hamletsApi, wardsApi } from '@/lib/addresses-api';
+import {
+  ButtonSpinner,
+  EmptyState,
+  FIELD_CLASS,
+  FormField,
+  PageHeader,
+  SegmentedControl,
+  ToggleSwitch,
+} from '@/components/ui';
 
 interface FormState {
   name: string;
-  /** '' = cấp tỉnh. */
+  /** '' = chưa chọn (chỉ gặp khi sửa phòng ban cấp tỉnh cũ chưa phân cấp). */
+  level: DepartmentLevel | '';
   wardId: string;
+  hamletId: string;
   isActive: boolean;
 }
 
-const EMPTY_FORM: FormState = { name: '', wardId: '', isActive: true };
+const EMPTY_FORM: FormState = { name: '', level: 'WARD', wardId: '', hamletId: '', isActive: true };
 
-/** Bộ lọc "Thuộc": '' = tất cả, 'province' = cấp tỉnh, còn lại = id xã. */
-type ScopeFilter = string;
+/** Bộ lọc cấp: '' = tất cả, 'UNSET' = chưa phân cấp. */
+type LevelFilter = '' | DepartmentLevel | 'UNSET';
+
+const UNSET_LABEL = 'Chưa phân cấp';
+
+/** "Thuộc": tên xã (cấp xã) hoặc "ấp — xã" (cấp ấp). */
+function placeOf(d: Department): string {
+  if (d.level === 'HAMLET') return `${d.hamlet?.name ?? '—'} — ${d.ward?.name ?? ''}`;
+  if (d.level === 'WARD') return d.ward?.name ?? '—';
+  return '—';
+}
 
 /**
- * Danh mục phòng ban — dùng để chọn phòng ban cho tài khoản ở trang Người dùng (thay cho ô "Đơn vị" gõ
- * tự do). Không ảnh hưởng quyền hay phạm vi dữ liệu. Cùng quyền với quản lý người dùng.
+ * Danh mục phòng ban — mỗi phòng ban thuộc UBND một xã (cấp xã) hoặc một ấp/thôn (cấp ấp). Dùng để chọn phòng
+ * ban cho nhân sự đúng cấp, đúng địa bàn ở trang Người dùng; không ảnh hưởng quyền hay phạm vi dữ liệu.
+ * Phòng ban cấp tỉnh cũ (tạo từ ô "Đơn vị") hiện là "Chưa phân cấp" để admin chọn cấp hoặc xóa.
  */
 export default function DepartmentsPage() {
   const { user, hasPermission } = useAuth();
@@ -38,6 +58,7 @@ export default function DepartmentsPage() {
 
   const [items, setItems] = useState<Department[]>([]);
   const [wards, setWards] = useState<Ward[]>([]);
+  const [hamlets, setHamlets] = useState<Hamlet[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
@@ -46,9 +67,14 @@ export default function DepartmentsPage() {
     setLoading(true);
     setLoadError(null);
     try {
-      const [list, wardList] = await Promise.all([departmentsApi.list(), wardsApi.list()]);
+      const [list, wardList, hamletList] = await Promise.all([
+        departmentsApi.list(),
+        wardsApi.list(),
+        hamletsApi.list(),
+      ]);
       setItems(list);
       setWards(wardList);
+      setHamlets(hamletList);
     } catch (err) {
       setLoadError(err instanceof ApiError ? err.message : 'Không tải được danh sách phòng ban');
     } finally {
@@ -62,16 +88,20 @@ export default function DepartmentsPage() {
   }, [load, canManage]);
 
   const [search, setSearch] = useState('');
-  const [scope, setScope] = useState<ScopeFilter>('');
+  const [levelFilter, setLevelFilter] = useState<LevelFilter>('');
+  const [wardFilter, setWardFilter] = useState('');
+
+  const unsetCount = items.filter((d) => !d.level).length;
 
   const visible = useMemo(() => {
     const q = search.trim().toLowerCase();
     return items.filter(
       (d) =>
-        (!scope || (scope === 'province' ? d.wardId === null : d.wardId === scope)) &&
+        (!levelFilter || (levelFilter === 'UNSET' ? !d.level : d.level === levelFilter)) &&
+        (!wardFilter || d.wardId === wardFilter) &&
         (!q || d.name.toLowerCase().includes(q)),
     );
-  }, [items, scope, search]);
+  }, [items, levelFilter, wardFilter, search]);
 
   // `editing` = null: đóng; 'new': thêm mới; Department: sửa.
   const [editing, setEditing] = useState<Department | 'new' | null>(null);
@@ -80,14 +110,24 @@ export default function DepartmentsPage() {
   const [formError, setFormError] = useState<string | null>(null);
 
   function openNew() {
-    // Đang lọc theo 1 xã thì phòng ban mới mặc định thuộc xã đó.
-    setForm({ ...EMPTY_FORM, wardId: scope && scope !== 'province' ? scope : '' });
+    // Đang lọc theo cấp/xã thì phòng ban mới mặc định theo bộ lọc đó.
+    setForm({
+      ...EMPTY_FORM,
+      level: levelFilter === 'HAMLET' ? 'HAMLET' : 'WARD',
+      wardId: wardFilter,
+    });
     setFormError(null);
     setEditing('new');
   }
 
   function openEdit(d: Department) {
-    setForm({ name: d.name, wardId: d.wardId ?? '', isActive: d.isActive });
+    setForm({
+      name: d.name,
+      level: d.level ?? '',
+      wardId: d.wardId ?? '',
+      hamletId: d.hamletId ?? '',
+      isActive: d.isActive,
+    });
     setFormError(null);
     setEditing(d);
   }
@@ -95,10 +135,27 @@ export default function DepartmentsPage() {
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (editing === null) return;
+    if (!form.level) {
+      setFormError('Chọn cấp cho phòng ban: cấp xã hoặc cấp ấp/thôn');
+      return;
+    }
+    if (!form.wardId) {
+      setFormError('Chọn xã/phường');
+      return;
+    }
+    if (form.level === 'HAMLET' && !form.hamletId) {
+      setFormError('Chọn ấp/thôn');
+      return;
+    }
     setSaving(true);
     setFormError(null);
     try {
-      const dto = { name: form.name.trim(), wardId: form.wardId || null };
+      const dto = {
+        name: form.name.trim(),
+        level: form.level,
+        wardId: form.wardId,
+        hamletId: form.level === 'HAMLET' ? form.hamletId : null,
+      };
       if (editing === 'new') await departmentsApi.create(dto);
       else await departmentsApi.update(editing.id, { ...dto, isActive: form.isActive });
       setEditing(null);
@@ -123,12 +180,13 @@ export default function DepartmentsPage() {
 
   const isNew = editing === 'new';
   const editingCount = editing && editing !== 'new' ? (editing._count?.users ?? 0) : 0;
+  const formHamlets = hamlets.filter((h) => h.wardId === form.wardId);
 
   return (
     <div className="h-full overflow-auto p-6 space-y-4">
       <PageHeader
         title="Phòng ban"
-        subtitle="Danh mục phòng ban để gán cho tài khoản — cấp tỉnh hoặc thuộc từng UBND xã"
+        subtitle="Danh mục phòng ban của UBND xã và của ấp/thôn — dùng để gán cho nhân sự đúng cấp, đúng địa bàn"
         actions={
           <button
             onClick={openNew}
@@ -139,7 +197,32 @@ export default function DepartmentsPage() {
         }
       />
 
+      {unsetCount > 0 && (
+        <div className="bg-warn/10 border border-warn/30 text-fg rounded-lg p-3 text-sm flex flex-wrap items-center gap-x-3 gap-y-1">
+          <span>
+            Có <b>{unsetCount}</b> phòng ban <b>chưa phân cấp</b> (tạo từ ô &quot;Đơn vị&quot; cũ, trước đây là cấp
+            tỉnh). Bấm &quot;Phân cấp&quot; để chọn cấp xã hoặc ấp/thôn, hoặc xóa nếu không dùng. Chưa phân cấp thì không
+            gán được cho tài khoản mới.
+          </span>
+          {levelFilter !== 'UNSET' && (
+            <button onClick={() => setLevelFilter('UNSET')} className="text-xs font-semibold text-accent hover:underline">
+              Xem các phòng ban này
+            </button>
+          )}
+        </div>
+      )}
+
       <div className="flex flex-wrap items-center gap-3">
+        <SegmentedControl<LevelFilter>
+          value={levelFilter}
+          onChange={setLevelFilter}
+          options={[
+            { value: '', label: 'Tất cả' },
+            { value: 'WARD', label: DEPARTMENT_LEVEL_LABELS.WARD },
+            { value: 'HAMLET', label: DEPARTMENT_LEVEL_LABELS.HAMLET },
+            ...(unsetCount > 0 ? [{ value: 'UNSET' as const, label: `${UNSET_LABEL} (${unsetCount})` }] : []),
+          ]}
+        />
         <input
           value={search}
           onChange={(e) => setSearch(e.target.value)}
@@ -147,13 +230,12 @@ export default function DepartmentsPage() {
           className={`${FIELD_CLASS} w-full sm:w-64`}
         />
         <select
-          value={scope}
-          onChange={(e) => setScope(e.target.value)}
+          value={wardFilter}
+          onChange={(e) => setWardFilter(e.target.value)}
           className={`${FIELD_CLASS} w-full sm:w-56`}
-          aria-label="Lọc theo nơi trực thuộc"
+          aria-label="Lọc theo xã/phường"
         >
-          <option value="">Tất cả</option>
-          <option value="province">Cấp tỉnh</option>
+          <option value="">Tất cả xã/phường</option>
           {wards.map((w) => (
             <option key={w.id} value={w.id}>
               {w.name}
@@ -180,6 +262,7 @@ export default function DepartmentsPage() {
             <thead className="bg-surface-2 text-[11px] uppercase text-fg-muted text-left">
               <tr>
                 <th className="px-4 py-2.5">Tên phòng ban</th>
+                <th className="px-4 py-2.5">Cấp</th>
                 <th className="px-4 py-2.5">Thuộc</th>
                 <th className="px-4 py-2.5 text-right">Nhân sự</th>
                 <th className="px-4 py-2.5">Trạng thái</th>
@@ -192,7 +275,14 @@ export default function DepartmentsPage() {
                 return (
                   <tr key={d.id} className={d.isActive ? '' : 'text-fg-subtle'}>
                     <td className="px-4 py-2.5 font-semibold">{d.name}</td>
-                    <td className="px-4 py-2.5 whitespace-nowrap">{d.ward?.name ?? 'Cấp tỉnh'}</td>
+                    <td className="px-4 py-2.5 whitespace-nowrap">
+                      {d.level ? (
+                        DEPARTMENT_LEVEL_LABELS[d.level]
+                      ) : (
+                        <span className="px-2 py-0.5 rounded text-[11px] font-bold bg-warn/15 text-warn">{UNSET_LABEL}</span>
+                      )}
+                    </td>
+                    <td className="px-4 py-2.5">{placeOf(d)}</td>
                     <td className="px-4 py-2.5 text-right tabular-nums">
                       {count > 0 ? (
                         <Link
@@ -217,7 +307,7 @@ export default function DepartmentsPage() {
                     </td>
                     <td className="px-4 py-2.5 text-right whitespace-nowrap space-x-3">
                       <button onClick={() => openEdit(d)} className="text-xs font-semibold text-accent hover:underline">
-                        Sửa
+                        {d.level ? 'Sửa' : 'Phân cấp'}
                       </button>
                       {count === 0 && (
                         <button
@@ -250,33 +340,72 @@ export default function DepartmentsPage() {
               {isNew ? 'Thêm phòng ban' : `Sửa: ${editing.name}`}
             </div>
             <div className="p-5 space-y-3">
+              {!isNew && !editing.level && (
+                <p className="text-xs bg-warn/10 border border-warn/30 rounded-lg p-2.5 leading-relaxed">
+                  Phòng ban này chưa phân cấp (trước đây là cấp tỉnh). Chọn cấp xã hoặc cấp ấp/thôn cho phù hợp; mọi
+                  nhân sự đang thuộc phòng ban phải ở đúng xã/ấp đã chọn.
+                </p>
+              )}
               <FormField label="Tên phòng ban" required>
                 <input
                   value={form.name}
                   onChange={(e) => setForm({ ...form, name: e.target.value })}
                   required
                   maxLength={200}
-                  placeholder="vd Phòng Kinh tế, Văn phòng HĐND-UBND"
+                  placeholder="vd Văn phòng HĐND-UBND, Ban nhân dân ấp"
                   className={FIELD_CLASS}
                 />
               </FormField>
-              <FormField label="Thuộc">
+              <FormField label="Cấp" required>
+                <SegmentedControl<DepartmentLevel>
+                  value={form.level === '' ? ('' as DepartmentLevel) : form.level}
+                  onChange={(level) => setForm({ ...form, level, hamletId: level === 'WARD' ? '' : form.hamletId })}
+                  options={[
+                    { value: 'WARD', label: DEPARTMENT_LEVEL_LABELS.WARD },
+                    { value: 'HAMLET', label: DEPARTMENT_LEVEL_LABELS.HAMLET },
+                  ]}
+                />
+                <p className="text-[11px] text-fg-subtle mt-1 leading-relaxed">
+                  {form.level === 'HAMLET'
+                    ? 'Phòng ban cấp ấp/thôn chỉ gán cho nhân sự của đúng ấp/thôn đó.'
+                    : form.level === 'WARD'
+                      ? 'Phòng ban cấp xã chỉ gán cho nhân sự UBND của đúng xã/phường đó.'
+                      : 'Chọn cấp xã hoặc cấp ấp/thôn.'}
+                </p>
+              </FormField>
+              <FormField label="Xã/phường" required>
                 <select
                   value={form.wardId}
-                  onChange={(e) => setForm({ ...form, wardId: e.target.value })}
+                  onChange={(e) => setForm({ ...form, wardId: e.target.value, hamletId: '' })}
+                  required
                   className={FIELD_CLASS}
                 >
-                  <option value="">Cấp tỉnh</option>
+                  <option value="">— Chọn xã/phường —</option>
                   {wards.map((w) => (
                     <option key={w.id} value={w.id}>
-                      UBND {w.name}
+                      {w.name}
                     </option>
                   ))}
                 </select>
-                <p className="text-[11px] text-fg-subtle mt-1 leading-relaxed">
-                  Phòng ban cấp tỉnh gán được cho mọi tài khoản. Phòng ban của một xã chỉ gán cho nhân sự thuộc xã đó.
-                </p>
               </FormField>
+              {form.level === 'HAMLET' && (
+                <FormField label="Ấp/thôn" required>
+                  <select
+                    value={form.hamletId}
+                    onChange={(e) => setForm({ ...form, hamletId: e.target.value })}
+                    required
+                    disabled={!form.wardId}
+                    className={`${FIELD_CLASS} disabled:bg-surface-2`}
+                  >
+                    <option value="">{form.wardId ? '— Chọn ấp/thôn —' : 'Chọn xã/phường trước'}</option>
+                    {formHamlets.map((h) => (
+                      <option key={h.id} value={h.id}>
+                        {h.name}
+                      </option>
+                    ))}
+                  </select>
+                </FormField>
+              )}
               {!isNew && (
                 <label className="flex items-center gap-2.5 text-sm text-fg">
                   <ToggleSwitch

@@ -1,4 +1,5 @@
-import { IsBoolean, IsOptional, IsString, MaxLength, MinLength } from 'class-validator';
+import { DepartmentLevel } from '@prisma/client';
+import { IsBoolean, IsEnum, IsOptional, IsString, MaxLength, MinLength } from 'class-validator';
 
 export class UpdateDepartmentDto {
   @IsOptional()
@@ -7,10 +8,18 @@ export class UpdateDepartmentDto {
   @MaxLength(200)
   name?: string;
 
-  /** null = chuyển thành phòng ban cấp tỉnh. */
+  /** Đổi cấp — cũng là cách "phân cấp" cho phòng ban cấp tỉnh cũ (level null). */
+  @IsOptional()
+  @IsEnum(DepartmentLevel)
+  level?: DepartmentLevel;
+
   @IsOptional()
   @IsString()
   wardId?: string | null;
+
+  @IsOptional()
+  @IsString()
+  hamletId?: string | null;
 
   @IsOptional()
   @IsBoolean()

@@ -1,4 +1,5 @@
-import { IsOptional, IsString, MaxLength, MinLength } from 'class-validator';
+import { DepartmentLevel } from '@prisma/client';
+import { IsEnum, IsOptional, IsString, MaxLength, MinLength } from 'class-validator';
 
 export class CreateDepartmentDto {
   @IsString()
@@ -6,8 +7,17 @@ export class CreateDepartmentDto {
   @MaxLength(200)
   name: string;
 
-  /** Bỏ trống = phòng ban cấp tỉnh/hệ thống; có giá trị = phòng ban thuộc UBND xã đó. */
+  /** WARD = phòng ban của UBND xã; HAMLET = phòng ban của ấp/thôn. */
+  @IsEnum(DepartmentLevel)
+  level: DepartmentLevel;
+
+  /** Bắt buộc khi level = WARD. Với HAMLET tự lấy theo xã của ấp. */
   @IsOptional()
   @IsString()
   wardId?: string | null;
+
+  /** Bắt buộc khi level = HAMLET. */
+  @IsOptional()
+  @IsString()
+  hamletId?: string | null;
 }

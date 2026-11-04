@@ -1,5 +1,5 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
-import { Prisma, UserLevel } from '@prisma/client';
+import { DepartmentLevel, Prisma, UserLevel } from '@prisma/client';
 import * as bcrypt from 'bcryptjs';
 import { PrismaService } from '../prisma/prisma.service';
 import { effectivePermissions, PERMISSIONS } from '../auth/permissions';
@@ -74,25 +74,42 @@ export class UsersService {
   }
 
   /**
-   * Phòng ban gán cho tài khoản phải là phòng ban cấp tỉnh, hoặc thuộc đúng xã của tài khoản.
-   * Chỉ chặn phòng ban đã ngừng sử dụng khi GÁN MỚI (giữ nguyên phòng ban cũ thì vẫn được).
+   * Phòng ban gán cho tài khoản phải đúng cấp, đúng địa bàn:
+   * - phòng ban cấp xã → nhân sự UBND của chính xã đó;
+   * - phòng ban cấp ấp/thôn → nhân sự của chính ấp đó;
+   * - tài khoản hệ thống không thuộc phòng ban (dùng ô "Đơn vị" tự do).
+   * Chỉ kiểm tra khi GÁN MỚI hoặc khi tài khoản đổi cấp/địa bàn — người đang giữ phòng ban cũ (đã ngừng sử dụng,
+   * chưa phân cấp, hoặc gán theo quy tắc trước đây) vẫn sửa được thông tin khác.
    * Trả về tên phòng ban để ghi vào `unit`, hoặc null khi không gán.
    */
   private async resolveDepartment(
     departmentId: string | null,
-    userWardId: string | null,
-    isNewAssignment: boolean,
+    user: Location,
+    mustValidate: boolean,
   ): Promise<string | null> {
     if (!departmentId) return null;
     const d = await this.prisma.department.findUnique({
       where: { id: departmentId },
-      select: { name: true, wardId: true, isActive: true },
+      select: { name: true, level: true, wardId: true, hamletId: true, isActive: true },
     });
     if (!d) throw new BadRequestException('Phòng ban không tồn tại');
-    if (isNewAssignment && !d.isActive) throw new BadRequestException('Phòng ban đã ngừng sử dụng');
-    if (d.wardId && d.wardId !== userWardId) {
+    if (!mustValidate) return d.name;
+    if (user.level === UserLevel.SYSTEM) {
+      throw new BadRequestException('Tài khoản hệ thống không thuộc phòng ban — dùng ô "Đơn vị"');
+    }
+    if (!d.isActive) throw new BadRequestException('Phòng ban đã ngừng sử dụng');
+    if (!d.level) {
+      throw new BadRequestException('Phòng ban chưa phân cấp — vào mục Phòng ban chọn cấp xã hoặc ấp/thôn trước');
+    }
+    const ok =
+      d.level === DepartmentLevel.WARD
+        ? user.level === UserLevel.WARD && d.wardId === user.wardId
+        : user.level === UserLevel.HAMLET && d.hamletId === user.hamletId;
+    if (!ok) {
       throw new BadRequestException(
-        'Phòng ban thuộc xã/phường khác với tài khoản — chọn phòng ban cấp tỉnh hoặc phòng ban của xã đó',
+        d.level === DepartmentLevel.WARD
+          ? 'Phòng ban cấp xã chỉ gán cho nhân sự UBND của đúng xã/phường đó'
+          : 'Phòng ban cấp ấp/thôn chỉ gán cho nhân sự của đúng ấp/thôn đó',
       );
     }
     return d.name;
@@ -117,7 +134,7 @@ export class UsersService {
     await this.loadRolesOrThrow(dto.roleIds);
     const location = await this.resolveLocation(dto.level ?? UserLevel.SYSTEM, dto.wardId, dto.hamletId);
     const departmentId = dto.departmentId || null;
-    const departmentName = await this.resolveDepartment(departmentId, location.wardId, true);
+    const departmentName = await this.resolveDepartment(departmentId, location, true);
 
     const passwordHash = await bcrypt.hash(dto.password, SALT_ROUNDS);
     const user = await this.prisma.user.create({
@@ -170,12 +187,12 @@ export class UsersService {
         location.wardId !== current.wardId ||
         location.hamletId !== current.hamletId);
 
-    // Phòng ban: kiểm tra lại cả khi chỉ đổi xã (phòng ban của xã cũ không còn hợp lệ).
+    // Phòng ban: kiểm tra lại cả khi chỉ đổi cấp/xã/ấp (phòng ban của địa bàn cũ không còn hợp lệ).
     const departmentId = dto.departmentId !== undefined ? dto.departmentId || null : current.departmentId;
     const departmentName = await this.resolveDepartment(
       departmentId,
-      location ? location.wardId : current.wardId,
-      departmentId !== current.departmentId,
+      location ?? { level: current.level, wardId: current.wardId, hamletId: current.hamletId },
+      departmentId !== current.departmentId || locationChanged,
     );
 
     // Chặn tự gỡ quyền quản trị phân quyền của chính mình (khỏi tự khóa mình ra ngoài).
