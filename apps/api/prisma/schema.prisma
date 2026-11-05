@@ -421,6 +421,7 @@ model House {
   @@index([wardId])
   @@index([streetId])
   @@index([surveyAssignmentId])
+  @@index([latitude, longitude])
   @@map("house")
 }
 

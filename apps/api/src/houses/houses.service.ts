@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   ConflictException,
   ForbiddenException,
   Injectable,
@@ -233,11 +234,27 @@ export class HousesService {
 
   /**
    * Dữ liệu số nhà dạng GeoJSON FeatureCollection cho bản đồ (Phase 3 — I).
-   * Không phân trang (bản đồ cần thấy toàn bộ điểm khớp bộ lọc), nhưng giới
-   * hạn MAX_GEOJSON_FEATURES để tránh tải cả CSDL nếu người dùng không lọc.
+   * Không phân trang nhưng giới hạn MAX_GEOJSON_FEATURES để tránh tải cả CSDL.
+   * Có thể lọc thêm theo bbox của khung nhìn (west/south/east/north).
    */
   async findAllGeoJson(query: GeoJsonQueryDto, user: AuthenticatedUser) {
     const where = { ...this.buildWhere(query), AND: [houseScopeWhere(user)] };
+    const bbox = [query.west, query.south, query.east, query.north];
+
+    if (bbox.some((value) => value !== undefined)) {
+      const [west, south, east, north] = bbox;
+      if (west === undefined || south === undefined || east === undefined || north === undefined) {
+        throw new BadRequestException('Cần truyền đủ west, south, east, north cho vùng bản đồ');
+      }
+      if (west >= east || south >= north) {
+        throw new BadRequestException('Vùng bản đồ không hợp lệ: cần west < east và south < north');
+      }
+      // shortcut: bbox lọc bằng index btree (latitude, longitude); khi dữ liệu vượt vài trăm nghìn điểm, chuyển sang geom && ST_MakeEnvelope (GiST).
+      where.AND.push({
+        latitude: { gte: south, lte: north },
+        longitude: { gte: west, lte: east },
+      });
+    }
 
     const houses = await this.prisma.house.findMany({
       where,

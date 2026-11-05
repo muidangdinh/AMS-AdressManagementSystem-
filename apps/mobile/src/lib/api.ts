@@ -6,8 +6,8 @@ import type { AuthTokens } from '@tayninh/shared';
 // dùng thẳng localhost). Xem README.md phần "Cấu hình API_URL".
 // TẠM THỜI cho test qua USB (adb reverse tcp:3001 tcp:3001) — đổi lại
 // 'https://rv.librasoft.vn' khi build bản thật/không còn cắm dây debug.
-// export const API_URL = 'http://localhost:4002';
-export const API_URL = 'https://ams.librasoft.vn';
+export const API_URL = 'http://localhost:4002';
+// export const API_URL = 'https://ams.librasoft.vn';
 // export const API_URL = 'https://myan.amstn.vn';
 // export const API_URL = ' http://10.0.2.2:3001';
 

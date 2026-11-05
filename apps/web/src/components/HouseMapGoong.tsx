@@ -15,17 +15,27 @@ import {
 } from '@/lib/goong';
 
 const SOURCE_ID = 'houses';
+const LAYER_CLUSTER = 'houses-cluster';
+const LAYER_CLUSTER_COUNT = 'houses-cluster-count';
 const LAYER_GLOW = 'houses-glow';
 const LAYER_CIRCLE = 'houses-circle';
 const LAYER_LABEL = 'houses-label';
 
-function toFeatureCollection(houses: HouseMapPoint[]): GeoJSON.FeatureCollection<GeoJSON.Point> {
+function toFeatureCollection(
+  houses: HouseMapPoint[],
+  selectedHouseId?: string | null,
+): GeoJSON.FeatureCollection<GeoJSON.Point> {
   return {
     type: 'FeatureCollection',
     features: houses.map((h) => ({
       type: 'Feature',
       geometry: { type: 'Point', coordinates: [h.longitude, h.latitude] },
-      properties: { id: h.id, houseNumber: h.houseNumber, color: STATUS_COLOR[h.status] ?? '#64748b' },
+      properties: {
+        id: h.id,
+        houseNumber: h.houseNumber,
+        color: STATUS_COLOR[h.status] ?? '#64748b',
+        selected: h.id === selectedHouseId,
+      },
     })),
   };
 }
@@ -56,12 +66,14 @@ function popupContent(h: HouseMapPoint): HTMLElement {
  */
 export default function HouseMapGoong({
   houses,
+  selectedHouseId,
   onSelectHouse,
   onMapClick,
   onMapRightClick,
   flyToRequest,
   adjustLocation,
   onAdjustLocationChange,
+  onBoundsChange,
 }: HouseMapProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
@@ -70,11 +82,13 @@ export default function HouseMapGoong({
   const adjustMarkerRef = useRef<maplibregl.Marker | null>(null);
   const justCreatedRef = useRef(false);
   const housesRef = useRef(houses);
+  const selectedHouseIdRef = useRef(selectedHouseId);
   const onSelectRef = useRef(onSelectHouse);
   const onMapClickRef = useRef(onMapClick);
   const onMapRightClickRef = useRef(onMapRightClick);
   const adjustRef = useRef(adjustLocation);
   const onAdjustLocationChangeRef = useRef(onAdjustLocationChange);
+  const onBoundsChangeRef = useRef(onBoundsChange);
   const [layer, setLayerState] = useState<GoongLayer>('street');
   const [loadError, setLoadError] = useState<string | null>(null);
   // Hệ thống → Cấu hình bản đồ: ẩn icon địa điểm của nền, chỉ còn marker số nhà.
@@ -83,11 +97,13 @@ export default function HouseMapGoong({
   hidePoiRef.current = config.mapHidePoi;
 
   housesRef.current = houses;
+  selectedHouseIdRef.current = selectedHouseId;
   onSelectRef.current = onSelectHouse;
   onMapClickRef.current = onMapClick;
   onMapRightClickRef.current = onMapRightClick;
   adjustRef.current = adjustLocation;
   onAdjustLocationChangeRef.current = onAdjustLocationChange;
+  onBoundsChangeRef.current = onBoundsChange;
 
   // Khởi tạo bản đồ đúng 1 lần
   useEffect(() => {
@@ -107,36 +123,76 @@ export default function HouseMapGoong({
     // Chạy cả lần nạp style đầu tiên lẫn sau mỗi lần setStyle.
     map.on('style.load', () => {
       setPoiLayersVisible(map, !hidePoiRef.current);
-      removeLayers(map, [LAYER_LABEL, LAYER_CIRCLE, LAYER_GLOW], [SOURCE_ID]);
-      map.addSource(SOURCE_ID, { type: 'geojson', data: toFeatureCollection(housesRef.current) });
+      removeLayers(map, [LAYER_LABEL, LAYER_CIRCLE, LAYER_GLOW, LAYER_CLUSTER_COUNT, LAYER_CLUSTER], [SOURCE_ID]);
+      map.addSource(SOURCE_ID, {
+        type: 'geojson',
+        data: toFeatureCollection(housesRef.current, selectedHouseIdRef.current),
+        cluster: true,
+        clusterRadius: 50,
+        clusterMaxZoom: 17,
+      });
+      const font = findStyleTextFont(map);
+      map.addLayer({
+        id: LAYER_CLUSTER,
+        type: 'circle',
+        source: SOURCE_ID,
+        filter: ['has', 'point_count'],
+        paint: {
+          'circle-color': ['step', ['get', 'point_count'], '#60a5fa', 10, '#3b82f6', 100, '#1d4ed8'],
+          'circle-radius': ['step', ['get', 'point_count'], 16, 10, 20, 100, 26],
+          'circle-stroke-width': 2,
+          'circle-stroke-color': 'rgba(255,255,255,0.9)',
+        },
+      });
+      if (font) {
+        map.addLayer({
+          id: LAYER_CLUSTER_COUNT,
+          type: 'symbol',
+          source: SOURCE_ID,
+          filter: ['has', 'point_count'],
+          layout: {
+            'text-field': ['get', 'point_count_abbreviated'],
+            'text-font': font,
+            'text-size': 12,
+          },
+          paint: { 'text-color': '#ffffff' },
+        });
+      }
       // Quầng sáng cùng màu dưới chấm (giống box-shadow phát sáng của bản Leaflet).
       map.addLayer({
         id: LAYER_GLOW,
         type: 'circle',
         source: SOURCE_ID,
-        paint: { 'circle-radius': 20, 'circle-color': ['get', 'color'], 'circle-opacity': 0.25, 'circle-blur': 0.8 },
+        filter: ['!', ['has', 'point_count']],
+        paint: {
+          'circle-radius': ['case', ['get', 'selected'], 30, 20],
+          'circle-color': ['case', ['get', 'selected'], '#a855f7', ['get', 'color']],
+          'circle-opacity': ['case', ['get', 'selected'], 0.65, 0.25],
+          'circle-blur': 0.8,
+        },
       });
       map.addLayer({
         id: LAYER_CIRCLE,
         type: 'circle',
         source: SOURCE_ID,
+        filter: ['!', ['has', 'point_count']],
         paint: {
-          'circle-radius': 14,
+          'circle-radius': ['case', ['get', 'selected'], 18, 14],
           'circle-color': ['get', 'color'],
-          'circle-stroke-width': 2,
-          'circle-stroke-color': 'rgba(255,255,255,0.9)',
+          'circle-stroke-width': ['case', ['get', 'selected'], 4, 2],
+          'circle-stroke-color': ['case', ['get', 'selected'], '#a855f7', 'rgba(255,255,255,0.9)'],
         },
       });
-      const font = findStyleTextFont(map);
       if (font) {
         map.addLayer({
           id: LAYER_LABEL,
           type: 'symbol',
           source: SOURCE_ID,
+          filter: ['!', ['has', 'point_count']],
           layout: {
             'text-field': ['get', 'houseNumber'],
             'text-font': font,
-            'text-size': 11,
+            'text-size': ['case', ['get', 'selected'], 13, 11],
             'text-allow-overlap': true,
             'text-ignore-placement': true,
           },
@@ -144,6 +200,18 @@ export default function HouseMapGoong({
         });
       }
     });
+
+    const emitBounds = () => {
+      const bounds = map.getBounds();
+      onBoundsChangeRef.current?.({
+        west: bounds.getWest(),
+        south: bounds.getSouth(),
+        east: bounds.getEast(),
+        north: bounds.getNorth(),
+      });
+    };
+    map.on('load', emitBounds);
+    map.on('moveend', emitBounds);
 
     map.on('error', (e) => {
       // 401/403 khi tải style/tile = sai key, nhầm loại key (API Key thay vì Maptiles Key) hoặc key bị khoá.
@@ -153,6 +221,20 @@ export default function HouseMapGoong({
 
     map.on('click', (e: MapMouseEvent) => {
       if (adjustRef.current) return;
+      const cluster = map.getLayer(LAYER_CLUSTER)
+        ? map.queryRenderedFeatures(e.point, { layers: [LAYER_CLUSTER] })[0]
+        : undefined;
+      if (cluster) {
+        const clusterId = cluster.properties?.cluster_id as number | undefined;
+        const source = map.getSource(SOURCE_ID) as GeoJSONSource | undefined;
+        if (clusterId === undefined || !source) return;
+        popupRef.current?.remove();
+        void source.getClusterExpansionZoom(clusterId).then((zoom) => {
+          const [lng, lat] = (cluster.geometry as GeoJSON.Point).coordinates;
+          map.easeTo({ center: [lng, lat], zoom });
+        });
+        return;
+      }
       const hit = map.getLayer(LAYER_CIRCLE)
         ? map.queryRenderedFeatures(e.point, { layers: [LAYER_CIRCLE] })[0]
         : undefined;
@@ -185,6 +267,12 @@ export default function HouseMapGoong({
     map.on('mouseleave', LAYER_CIRCLE, () => {
       map.getCanvas().style.cursor = '';
     });
+    map.on('mouseenter', LAYER_CLUSTER, () => {
+      map.getCanvas().style.cursor = 'pointer';
+    });
+    map.on('mouseleave', LAYER_CLUSTER, () => {
+      map.getCanvas().style.cursor = '';
+    });
 
     mapRef.current = map;
     justCreatedRef.current = true;
@@ -203,7 +291,10 @@ export default function HouseMapGoong({
   // Đồng bộ dữ liệu số nhà — chỉ thay data của nguồn, không dựng lại lớp.
   useEffect(() => {
     const source = mapRef.current?.getSource(SOURCE_ID) as GeoJSONSource | undefined;
-    source?.setData(toFeatureCollection(houses));
+    source?.setData(toFeatureCollection(houses, selectedHouseId));
+  }, [houses, selectedHouseId]);
+
+  useEffect(() => {
     popupRef.current?.remove();
   }, [houses]);
 

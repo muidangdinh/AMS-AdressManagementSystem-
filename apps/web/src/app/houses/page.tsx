@@ -46,7 +46,7 @@ import { districtsApi, hamletsApi, streetsApi, usageStatusesApi, wardsApi } from
 import { platesApi } from '@/lib/plates-api';
 import { useWorkingWard } from '@/lib/working-ward';
 import { fetchAppConfig } from '@/lib/app-config';
-import type { FlyToRequest, HouseLocationAdjustment, HouseMapPoint } from '@/components/HouseMap';
+import type { FlyToRequest, HouseLocationAdjustment, HouseMapPoint, MapBounds } from '@/components/HouseMap';
 import { Button, FIELD_CLASS, FormSection, FormField, KpiPill, SegmentedControl } from '@/components/ui';
 
 /**
@@ -476,6 +476,7 @@ export default function HousesPage() {
     }
   }, []);
   const topBarCollapsed = viewMode === 'map' && !topBarOpen;
+  const [mapBounds, setMapBounds] = useState<MapBounds | null>(null);
   // Xoá luôn flyToRequest cũ: bản đồ mount lại mỗi lần chuyển sang chế độ Bản đồ, nếu còn
   // giữ request cũ (vd vị trí GPS từ nút "Bản đồ số nhà") nó sẽ bay lại tới đó ngay lúc khởi tạo.
   const resetToTable = useCallback(() => {
@@ -483,9 +484,9 @@ export default function HousesPage() {
     setFlyToRequest(null);
     setAdjustLocation(null);
     setAdjustError(null);
+    setMapBounds(null);
   }, []);
   const [mapHouses, setMapHouses] = useState<HouseMapPoint[]>([]);
-  const [mapLoading, setMapLoading] = useState(false);
   const [mapError, setMapError] = useState<string | null>(null);
   const [nearbyResults, setNearbyResults] = useState<NearbyHouse[] | null>(null);
   const [nearbyLoading, setNearbyLoading] = useState(false);
@@ -624,47 +625,64 @@ export default function HousesPage() {
 
   const mapAbortRef = useRef<AbortController | null>(null);
 
-  const fetchMapHouses = useCallback(async () => {
-    mapAbortRef.current?.abort();
-    const controller = new AbortController();
-    mapAbortRef.current = controller;
+  const handleMapBoundsChange = useCallback((bounds: MapBounds) => {
+    setMapBounds((prev) =>
+      prev &&
+      prev.west === bounds.west &&
+      prev.south === bounds.south &&
+      prev.east === bounds.east &&
+      prev.north === bounds.north
+        ? prev
+        : bounds,
+    );
+  }, []);
 
-    setMapLoading(true);
-    setMapError(null);
-    try {
-      const params = new URLSearchParams();
-      if (search) params.set('search', search);
-      if (streetId) params.set('streetId', streetId);
-      if (wardId) params.set('wardId', wardId);
-      if (hamletId) params.set('hamletId', hamletId);
-      if (status) params.set('status', status);
-      const res = await apiFetch<HouseGeoJson>(`/api/houses/geojson?${params.toString()}`, {
-        signal: controller.signal,
-      });
-      setMapHouses(
-        res.features.map((f) => ({
-          id: f.properties.id,
-          latitude: f.geometry.coordinates[1],
-          longitude: f.geometry.coordinates[0],
-          houseNumber: f.properties.houseNumber,
-          street: f.properties.street,
-          ownerName: f.properties.ownerName,
-          status: f.properties.status,
-          qrCode: f.properties.qrCode,
-        })),
-      );
-      setNearbyResults(null);
-    } catch (err) {
-      if (err instanceof DOMException && err.name === 'AbortError') return;
-      setMapError(err instanceof ApiError ? err.message : 'Không tải được lớp bản đồ');
-    } finally {
-      if (mapAbortRef.current === controller) setMapLoading(false);
-    }
-  }, [search, streetId, wardId, hamletId, status]);
+  const fetchMapHouses = useCallback(
+    async (bounds: MapBounds) => {
+      mapAbortRef.current?.abort();
+      const controller = new AbortController();
+      mapAbortRef.current = controller;
+
+      setMapError(null);
+      try {
+        const params = new URLSearchParams();
+        if (search) params.set('search', search);
+        if (streetId) params.set('streetId', streetId);
+        if (wardId) params.set('wardId', wardId);
+        if (hamletId) params.set('hamletId', hamletId);
+        if (status) params.set('status', status);
+        params.set('west', String(bounds.west));
+        params.set('south', String(bounds.south));
+        params.set('east', String(bounds.east));
+        params.set('north', String(bounds.north));
+        const res = await apiFetch<HouseGeoJson>(`/api/houses/geojson?${params.toString()}`, {
+          signal: controller.signal,
+        });
+        setMapHouses(
+          res.features.map((f) => ({
+            id: f.properties.id,
+            latitude: f.geometry.coordinates[1],
+            longitude: f.geometry.coordinates[0],
+            houseNumber: f.properties.houseNumber,
+            street: f.properties.street,
+            ownerName: f.properties.ownerName,
+            status: f.properties.status,
+            qrCode: f.properties.qrCode,
+          })),
+        );
+        setNearbyResults(null);
+      } catch (err) {
+        if (err instanceof DOMException && err.name === 'AbortError') return;
+        setMapError(err instanceof ApiError ? err.message : 'Không tải được lớp bản đồ');
+      }
+    },
+    [search, streetId, wardId, hamletId, status],
+  );
 
   useEffect(() => {
-    if (viewMode === 'map') fetchMapHouses();
-  }, [viewMode, fetchMapHouses]);
+    if (viewMode !== 'map' || !mapBounds || adjustLocation) return;
+    void fetchMapHouses(mapBounds);
+  }, [viewMode, mapBounds, adjustLocation, fetchMapHouses]);
 
   /** Tra cứu theo tọa độ (I. "Tìm kiếm theo tọa độ") — bấm vào chỗ trống trên bản đồ. */
   async function handleMapClick(lat: number, lng: number) {
@@ -746,6 +764,7 @@ export default function HousesPage() {
   }
 
   function startAdjustLocation(house: HouseSummary) {
+    mapAbortRef.current?.abort();
     setAdjustLocation({
       id: house.id,
       houseNumber: house.houseNumber,
@@ -781,7 +800,6 @@ export default function HousesPage() {
         prev.map((h) => (h.id === id ? { ...h, latitude, longitude } : h)),
       );
       setAdjustLocation(null);
-      await fetchMapHouses();
       await openDetail(id);
     } catch (err) {
       setAdjustError(err instanceof ApiError ? err.message : 'Không lưu được vị trí mới');
@@ -961,7 +979,7 @@ export default function HousesPage() {
       setModalOpen(false);
       await fetchHouses({ force: true });
       await fetchStats();
-      if (viewMode === 'map') await fetchMapHouses();
+      if (viewMode === 'map' && mapBounds) await fetchMapHouses(mapBounds);
       await openDetail(house.id);
     } catch (err) {
       setFormError(err instanceof ApiError ? err.message : 'Không lưu được hồ sơ');
@@ -1034,6 +1052,7 @@ export default function HousesPage() {
       value={viewMode}
       onChange={(v) => {
         setViewMode(v);
+        setMapBounds(null);
         setFlyToRequest(null);
         if (v !== 'map') {
           setAdjustLocation(null);
@@ -1363,12 +1382,12 @@ export default function HousesPage() {
             320px thì chiếm gần hết bề ngang điện thoại. Từ md trở lên là cột bên trái như cũ. */}
         <aside
           className={`${
-            mapListOpen ? 'block' : 'hidden'
+            mapListOpen && !adjustLocation ? 'block' : 'hidden'
           } absolute top-3 bottom-3 left-3 z-[1100] w-72 max-w-[85%] md:w-80 glass !bg-surface/75 shadow-2xl overflow-y-auto p-3 space-y-2`}
         >
           <div className="flex items-center justify-between">
             <span className="text-xs font-bold text-fg-muted uppercase">
-              Danh sách số nhà ({(nearbyResults ?? mapHouses).length})
+              Danh sách số nhà ({adjustLocation ? 0 : nearbyResults?.length ?? data?.total ?? 0})
             </span>
             <button
               type="button"
@@ -1381,6 +1400,11 @@ export default function HousesPage() {
           {mapError && (
             <div className="bg-danger/10 border border-danger/30 text-danger rounded-lg p-3 text-sm">
               {mapError}
+            </div>
+          )}
+          {listError && (
+            <div className="bg-danger/10 border border-danger/30 text-danger rounded-lg p-3 text-sm">
+              {listError}
             </div>
           )}
 
@@ -1398,24 +1422,30 @@ export default function HousesPage() {
             </div>
           )}
 
-          {(mapLoading || nearbyLoading) && (
+          {(loading || nearbyLoading) && (
             <p className="text-fg-subtle text-sm text-center py-4">Đang tải…</p>
           )}
 
-          {!mapLoading && !nearbyLoading && (nearbyResults ?? mapHouses).length === 0 && (
-            <p className="text-fg-subtle text-sm text-center py-4">
-              Không có hồ sơ nào phù hợp
-            </p>
-          )}
+          {!loading &&
+            !nearbyLoading &&
+            (nearbyResults ?? data?.items ?? []).length === 0 && (
+              <p className="text-fg-subtle text-sm text-center py-4">
+                Không có hồ sơ nào phù hợp
+              </p>
+            )}
 
-          {!mapLoading &&
+          {!loading &&
             !nearbyLoading &&
             (nearbyResults
               ? nearbyResults.map((h) => (
                   <div
                     key={h.id}
                     onClick={() => pickFromMapList(h.id, h.latitude, h.longitude)}
-                    className="p-3 rounded-lg border border-line hover:border-accent/30 hover:bg-accent/10 cursor-pointer transition"
+                    className={`p-3 rounded-lg border cursor-pointer transition ${
+                      h.id === selectedId
+                        ? 'border-2 border-purple-500 bg-purple-500/15 shadow-[0_0_12px_rgba(168,85,247,0.35)]'
+                        : 'border-line hover:border-accent/30 hover:bg-accent/10'
+                    }`}
                   >
                     <div className="flex items-center justify-between">
                       <h3 className="font-bold text-sm text-fg">
@@ -1433,11 +1463,15 @@ export default function HousesPage() {
                     </span>
                   </div>
                 ))
-              : mapHouses.map((h) => (
+              : (data?.items ?? []).map((h) => (
                   <div
                     key={h.id}
                     onClick={() => pickFromMapList(h.id, h.latitude, h.longitude)}
-                    className="p-3 rounded-lg border border-line hover:border-accent/30 hover:bg-accent/10 cursor-pointer transition"
+                    className={`p-3 rounded-lg border cursor-pointer transition ${
+                      h.id === selectedId
+                        ? 'border-2 border-purple-500 bg-purple-500/15 shadow-[0_0_12px_rgba(168,85,247,0.35)]'
+                        : 'border-line hover:border-accent/30 hover:bg-accent/10'
+                    }`}
                   >
                     <h3 className="font-bold text-sm text-fg">
                       Số {h.houseNumber} {h.street}
@@ -1450,25 +1484,55 @@ export default function HousesPage() {
                     </span>
                   </div>
                 )))}
+
+          {nearbyResults === null && data && data.total > PAGE_SIZE && (
+            <div className="sticky bottom-0 flex items-center justify-between gap-2 border-t border-line bg-surface/95 p-2 text-xs">
+              <button
+                type="button"
+                disabled={page <= 1 || loading}
+                onClick={() => setPage((current) => Math.max(1, current - 1))}
+                className="rounded border border-line px-2 py-1 text-fg disabled:opacity-40"
+              >
+                Trước
+              </button>
+              <span className="text-fg-muted">
+                Trang {page}/{totalPages} · {data.total} hồ sơ
+              </span>
+              <button
+                type="button"
+                disabled={page >= totalPages || loading}
+                onClick={() => setPage((current) => Math.min(totalPages, current + 1))}
+                className="rounded border border-line px-2 py-1 text-fg disabled:opacity-40"
+              >
+                Sau
+              </button>
+            </div>
+          )}
         </aside>
 
         <div className="flex-1 relative">
-          {!mapListOpen && (
+          {!mapListOpen && !adjustLocation && (
             <button
               type="button"
               onClick={() => setMapListOpen(true)}
               className="absolute top-3 left-3 z-[1000] bg-surface rounded-lg shadow-md border border-line px-3 py-1.5 text-xs font-semibold text-fg hover:bg-surface-2"
             >
-              ☰ Danh sách ({(nearbyResults ?? mapHouses).length})
+              ☰ Danh sách ({nearbyResults?.length ?? data?.total ?? 0})
             </button>
           )}
           <HouseMap
-            houses={adjustLocation ? mapHouses.filter((h) => h.id !== adjustLocation.id) : mapHouses}
+            houses={
+              adjustLocation
+                ? mapHouses.filter((house) => house.id !== adjustLocation.id)
+                : mapHouses
+            }
+            selectedHouseId={selectedId}
             onSelectHouse={handleMapSelect}
             onMapClick={handleMapClick}
             onMapRightClick={handleMapRightClick}
             flyToRequest={flyToRequest}
             adjustLocation={adjustLocation}
+            onBoundsChange={handleMapBoundsChange}
             onAdjustLocationChange={(lat, lng) =>
               setAdjustLocation((prev) => (prev ? { ...prev, latitude: lat, longitude: lng } : prev))
             }

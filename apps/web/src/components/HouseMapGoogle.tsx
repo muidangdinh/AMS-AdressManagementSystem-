@@ -21,15 +21,22 @@ const HIDE_POI_STYLES: google.maps.MapTypeStyle[] = [
 ];
 
 /** SVG chấm tròn viền trắng theo màu trạng thái — dùng làm icon marker, số nhà hiển thị qua `label`. */
-function buildMarkerIcon(color: string) {
+function buildMarkerIcon(color: string, selected = false) {
+  const size = selected ? 36 : 28;
+  const center = size / 2;
+  const outer = selected
+    ? `<circle cx="${center}" cy="${center}" r="16" fill="#a855f7" stroke="#fff" stroke-width="2" />`
+    : '';
+  const innerRadius = selected ? 11 : 12;
   const svg =
-    `<svg xmlns="http://www.w3.org/2000/svg" width="28" height="28">` +
-    `<circle cx="14" cy="14" r="12" fill="${color}" stroke="white" stroke-width="2" />` +
+    `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}">` +
+    outer +
+    `<circle cx="${center}" cy="${center}" r="${innerRadius}" fill="${color}" stroke="white" stroke-width="2" />` +
     `</svg>`;
   return {
     url: `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`,
-    scaledSize: new google.maps.Size(28, 28),
-    anchor: new google.maps.Point(14, 14),
+    scaledSize: new google.maps.Size(size, size),
+    anchor: new google.maps.Point(center, center),
   };
 }
 
@@ -41,12 +48,14 @@ function buildMarkerIcon(color: string) {
  */
 export default function HouseMapGoogle({
   houses,
+  selectedHouseId,
   onSelectHouse,
   onMapClick,
   onMapRightClick,
   flyToRequest,
   adjustLocation,
   onAdjustLocationChange,
+  onBoundsChange,
 }: HouseMapProps) {
   const apiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY ?? '';
   const { isLoaded, loadError } = useJsApiLoader({
@@ -65,10 +74,12 @@ export default function HouseMapGoogle({
   const onMapRightClickRef = useRef(onMapRightClick);
   const adjustRef = useRef(adjustLocation);
   const onAdjustLocationChangeRef = useRef(onAdjustLocationChange);
+  const onBoundsChangeRef = useRef(onBoundsChange);
   onMapClickRef.current = onMapClick;
   onMapRightClickRef.current = onMapRightClick;
   adjustRef.current = adjustLocation;
   onAdjustLocationChangeRef.current = onAdjustLocationChange;
+  onBoundsChangeRef.current = onBoundsChange;
 
   const onLoad = useCallback((map: google.maps.Map) => {
     mapRef.current = map;
@@ -87,6 +98,20 @@ export default function HouseMapGoogle({
   const handleMapRightClick = useCallback((e: google.maps.MapMouseEvent) => {
     if (adjustRef.current) return;
     if (e.latLng) onMapRightClickRef.current?.(e.latLng.lat(), e.latLng.lng());
+  }, []);
+
+  const handleIdle = useCallback(() => {
+    const map = mapRef.current;
+    const bounds = map?.getBounds();
+    if (!bounds) return;
+    const sw = bounds.getSouthWest();
+    const ne = bounds.getNorthEast();
+    onBoundsChangeRef.current?.({
+      west: sw.lng(),
+      south: sw.lat(),
+      east: ne.lng(),
+      north: ne.lat(),
+    });
   }, []);
 
   // Bay tới vị trí khi flyToRequest đổi (click danh sách trong chế độ bản đồ)
@@ -134,6 +159,7 @@ export default function HouseMapGoogle({
           zoom={15}
           onLoad={onLoad}
           onUnmount={onUnmount}
+          onIdle={handleIdle}
           onClick={handleMapClick}
           onRightClick={handleMapRightClick}
           options={{
@@ -149,8 +175,9 @@ export default function HouseMapGoogle({
             <MarkerF
               key={h.id}
               position={{ lat: h.latitude, lng: h.longitude }}
-              icon={buildMarkerIcon(STATUS_COLOR[h.status] ?? '#64748b')}
+              icon={buildMarkerIcon(STATUS_COLOR[h.status] ?? '#64748b', h.id === selectedHouseId)}
               label={{ text: h.houseNumber, color: '#fff', fontSize: '10px', fontWeight: 'bold' }}
+              zIndex={h.id === selectedHouseId ? 2000 : undefined}
               onClick={() => {
                 if (adjustRef.current) return;
                 setActiveHouseId(h.id);

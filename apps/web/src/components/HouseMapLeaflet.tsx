@@ -15,12 +15,14 @@ import { createSatelliteLayer, createStreetLayer } from '@/lib/map-tiles';
  */
 export default function HouseMapLeaflet({
   houses,
+  selectedHouseId,
   onSelectHouse,
   onMapClick,
   onMapRightClick,
   flyToRequest,
   adjustLocation,
   onAdjustLocationChange,
+  onBoundsChange,
 }: HouseMapProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<L.Map | null>(null);
@@ -37,6 +39,7 @@ export default function HouseMapLeaflet({
   const onMapRightClickRef = useRef(onMapRightClick);
   const adjustRef = useRef(adjustLocation);
   const onAdjustLocationChangeRef = useRef(onAdjustLocationChange);
+  const onBoundsChangeRef = useRef(onBoundsChange);
   const [layer, setLayerState] = useState<'street' | 'satellite'>('street');
 
   onSelectRef.current = onSelectHouse;
@@ -44,6 +47,7 @@ export default function HouseMapLeaflet({
   onMapRightClickRef.current = onMapRightClick;
   adjustRef.current = adjustLocation;
   onAdjustLocationChangeRef.current = onAdjustLocationChange;
+  onBoundsChangeRef.current = onBoundsChange;
 
   // Khởi tạo bản đồ đúng 1 lần
   useEffect(() => {
@@ -76,9 +80,23 @@ export default function HouseMapLeaflet({
     satelliteLayerRef.current = satelliteLayer;
     justCreatedRef.current = true;
 
+    const emitBounds = () => {
+      const bounds = map.getBounds();
+      onBoundsChangeRef.current?.({
+        west: bounds.getWest(),
+        south: bounds.getSouth(),
+        east: bounds.getEast(),
+        north: bounds.getNorth(),
+      });
+    };
+    map.on('moveend', emitBounds);
+
     // Leaflet không tự biết khi container đổi kích thước (map mount lúc layout chưa ổn định,
     // sidebar/menu co giãn…) — nếu không invalidateSize thì chỉ tải tile cho vùng cũ, nền bị xám.
-    const frame = requestAnimationFrame(() => map.invalidateSize());
+    const frame = requestAnimationFrame(() => {
+      map.invalidateSize();
+      emitBounds();
+    });
     const resizeObserver = new ResizeObserver(() => map.invalidateSize());
     resizeObserver.observe(containerRef.current);
 
@@ -112,14 +130,20 @@ export default function HouseMapLeaflet({
 
     houses.forEach((h) => {
       const color = STATUS_COLOR[h.status] ?? '#64748b';
+      const selected = h.id === selectedHouseId;
+      const size = selected ? 36 : 28;
+      const center = size / 2;
       const icon = L.divIcon({
         className: 'custom-house-marker',
-        html: `<div style="width:28px;height:28px;border-radius:50%;background:${color};color:white;font-weight:bold;font-size:11px;display:flex;align-items:center;justify-content:center;border:2px solid rgba(255,255,255,0.9);box-shadow:0 0 0 2px rgba(11,17,32,0.55),0 0 14px ${color};">${h.houseNumber}</div>`,
-        iconSize: [28, 28],
-        iconAnchor: [14, 14],
+        html: `<div style="width:${size}px;height:${size}px;border-radius:50%;background:${color};color:white;font-weight:bold;font-size:${selected ? 12 : 11}px;display:flex;align-items:center;justify-content:center;border:${selected ? 4 : 2}px solid ${selected ? '#a855f7' : 'rgba(255,255,255,0.9)'};box-shadow:${selected ? '0 0 0 3px #fff,0 0 22px 8px rgba(168,85,247,0.85)' : `0 0 0 2px rgba(11,17,32,0.55),0 0 14px ${color}`};">${h.houseNumber}</div>`,
+        iconSize: [size, size],
+        iconAnchor: [center, center],
       });
 
-      const marker = L.marker([h.latitude, h.longitude], { icon }).addTo(map);
+      const marker = L.marker([h.latitude, h.longitude], {
+        icon,
+        zIndexOffset: selected ? 2000 : 0,
+      }).addTo(map);
       marker.on('click', () => {
         if (!adjustRef.current) onSelectRef.current(h.id);
       });
@@ -133,7 +157,7 @@ export default function HouseMapLeaflet({
       );
       markersRef.current[h.id] = marker;
     });
-  }, [houses]);
+  }, [houses, selectedHouseId]);
 
   // Chế độ chỉnh GPS: marker kéo được, tách khỏi danh sách marker bị dựng lại mỗi khi houses đổi.
   // Chỉ phụ thuộc id — cập nhật lat/lng sau dragend không được dựng lại marker đang kéo.

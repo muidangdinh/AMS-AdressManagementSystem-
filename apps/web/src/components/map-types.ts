@@ -20,6 +20,14 @@ export interface FlyToRequest {
   myLocation?: boolean;
 }
 
+/** Khung nhìn bản đồ theo kinh/vĩ độ — dùng để tải số nhà theo vùng. */
+export interface MapBounds {
+  west: number;
+  south: number;
+  east: number;
+  north: number;
+}
+
 /** Nhà đang được kéo để chỉnh GPS trên bản đồ web. */
 export interface HouseLocationAdjustment {
   id: string;
@@ -31,6 +39,7 @@ export interface HouseLocationAdjustment {
 
 export interface HouseMapProps {
   houses: HouseMapPoint[];
+  selectedHouseId?: string | null;
   onSelectHouse: (id: string) => void;
   /** Click vào bản đồ ở nơi không có marker — dùng cho tra cứu theo tọa độ/bán kính. */
   onMapClick?: (lat: number, lng: number) => void;
@@ -47,6 +56,8 @@ export interface HouseMapProps {
   /** Chế độ chỉnh GPS: marker kéo được thay cho chấm của nhà này. */
   adjustLocation?: HouseLocationAdjustment | null;
   onAdjustLocationChange?: (lat: number, lng: number) => void;
+  /** Phát khung nhìn sau khi bản đồ load hoặc người dùng pan/zoom. */
+  onBoundsChange?: (bounds: MapBounds) => void;
 }
 
 export const STATUS_COLOR: Record<HouseStatus, string> = {
