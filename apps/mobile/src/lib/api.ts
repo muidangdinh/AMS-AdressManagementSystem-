@@ -8,6 +8,7 @@ import type { AuthTokens } from '@tayninh/shared';
 // 'https://rv.librasoft.vn' khi build bản thật/không còn cắm dây debug.
 // export const API_URL = 'http://localhost:4002';
 export const API_URL = 'https://ams.librasoft.vn';
+// export const API_URL = 'https://myan.amstn.vn';
 // export const API_URL = ' http://10.0.2.2:3001';
 
 

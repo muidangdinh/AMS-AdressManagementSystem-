@@ -20,6 +20,15 @@ export interface FlyToRequest {
   myLocation?: boolean;
 }
 
+/** Nhà đang được kéo để chỉnh GPS trên bản đồ web. */
+export interface HouseLocationAdjustment {
+  id: string;
+  latitude: number;
+  longitude: number;
+  houseNumber: string;
+  status: HouseStatus;
+}
+
 export interface HouseMapProps {
   houses: HouseMapPoint[];
   onSelectHouse: (id: string) => void;
@@ -35,6 +44,9 @@ export interface HouseMapProps {
    * tránh hoàn toàn vấn đề đó — theo đúng khuyến nghị của Next.js.
    */
   flyToRequest?: FlyToRequest | null;
+  /** Chế độ chỉnh GPS: marker kéo được thay cho chấm của nhà này. */
+  adjustLocation?: HouseLocationAdjustment | null;
+  onAdjustLocationChange?: (lat: number, lng: number) => void;
 }
 
 export const STATUS_COLOR: Record<HouseStatus, string> = {

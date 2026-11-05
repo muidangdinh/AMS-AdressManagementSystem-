@@ -5,7 +5,7 @@ import HouseMapGoong from './HouseMapGoong';
 import HouseMapLeaflet from './HouseMapLeaflet';
 import type { HouseMapProps } from './map-types';
 
-export type { HouseMapPoint, FlyToRequest } from './map-types';
+export type { HouseMapPoint, FlyToRequest, HouseLocationAdjustment } from './map-types';
 
 /**
  * Bản đồ GIS hiển thị số nhà (Phase 3 — I) — wrapper chọn implementation qua

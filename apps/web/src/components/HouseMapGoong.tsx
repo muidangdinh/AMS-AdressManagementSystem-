@@ -60,16 +60,21 @@ export default function HouseMapGoong({
   onMapClick,
   onMapRightClick,
   flyToRequest,
+  adjustLocation,
+  onAdjustLocationChange,
 }: HouseMapProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
   const popupRef = useRef<maplibregl.Popup | null>(null);
   const myLocationMarkerRef = useRef<maplibregl.Marker | null>(null);
+  const adjustMarkerRef = useRef<maplibregl.Marker | null>(null);
   const justCreatedRef = useRef(false);
   const housesRef = useRef(houses);
   const onSelectRef = useRef(onSelectHouse);
   const onMapClickRef = useRef(onMapClick);
   const onMapRightClickRef = useRef(onMapRightClick);
+  const adjustRef = useRef(adjustLocation);
+  const onAdjustLocationChangeRef = useRef(onAdjustLocationChange);
   const [layer, setLayerState] = useState<GoongLayer>('street');
   const [loadError, setLoadError] = useState<string | null>(null);
   // Hệ thống → Cấu hình bản đồ: ẩn icon địa điểm của nền, chỉ còn marker số nhà.
@@ -81,6 +86,8 @@ export default function HouseMapGoong({
   onSelectRef.current = onSelectHouse;
   onMapClickRef.current = onMapClick;
   onMapRightClickRef.current = onMapRightClick;
+  adjustRef.current = adjustLocation;
+  onAdjustLocationChangeRef.current = onAdjustLocationChange;
 
   // Khởi tạo bản đồ đúng 1 lần
   useEffect(() => {
@@ -145,6 +152,7 @@ export default function HouseMapGoong({
     });
 
     map.on('click', (e: MapMouseEvent) => {
+      if (adjustRef.current) return;
       const hit = map.getLayer(LAYER_CIRCLE)
         ? map.queryRenderedFeatures(e.point, { layers: [LAYER_CIRCLE] })[0]
         : undefined;
@@ -167,6 +175,7 @@ export default function HouseMapGoong({
     map.on('contextmenu', (e: MapMouseEvent) => {
       e.preventDefault();
       e.originalEvent.preventDefault();
+      if (adjustRef.current) return;
       onMapRightClickRef.current?.(e.lngLat.lat, e.lngLat.lng);
     });
 
@@ -197,6 +206,39 @@ export default function HouseMapGoong({
     source?.setData(toFeatureCollection(houses));
     popupRef.current?.remove();
   }, [houses]);
+
+  // Chế độ chỉnh GPS: marker DOM kéo được, tách khỏi lớp GeoJSON để không bị setData ghi đè.
+  // Chỉ phụ thuộc id — cập nhật lat/lng sau dragend không được dựng lại marker đang kéo.
+  useEffect(() => {
+    const map = mapRef.current;
+    const current = adjustRef.current;
+    adjustMarkerRef.current?.remove();
+    adjustMarkerRef.current = null;
+    popupRef.current?.remove();
+    if (!map || !current) return;
+
+    const color = STATUS_COLOR[current.status] ?? '#64748b';
+    const el = document.createElement('div');
+    el.style.cssText =
+      'min-width:34px;height:34px;padding:0 6px;border-radius:17px;display:flex;align-items:center;justify-content:center;border:3px solid #fff;box-shadow:0 2px 6px rgba(0,0,0,.35);cursor:grab;color:#fff;font-size:12px;font-weight:700;';
+    el.style.backgroundColor = color;
+    el.textContent = current.houseNumber;
+    el.title = `Kéo để chỉnh vị trí số ${current.houseNumber}`;
+
+    const marker = new maplibregl.Marker({ element: el, draggable: true, anchor: 'center' })
+      .setLngLat([current.longitude, current.latitude])
+      .addTo(map);
+    marker.on('dragend', () => {
+      const { lat, lng } = marker.getLngLat();
+      onAdjustLocationChangeRef.current?.(lat, lng);
+    });
+    adjustMarkerRef.current = marker;
+
+    return () => {
+      marker.remove();
+      if (adjustMarkerRef.current === marker) adjustMarkerRef.current = null;
+    };
+  }, [adjustLocation?.id]);
 
   // Admin đổi cấu hình lúc bản đồ đang mở → áp ngay (chưa nạp xong style thì `style.load` tự áp).
   useEffect(() => {

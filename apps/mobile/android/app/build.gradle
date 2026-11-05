@@ -80,11 +80,11 @@ android {
 
     namespace "com.tayninh.gis"
     defaultConfig {
-        applicationId "com.tayninh.gis"
+        applicationId "com.tayninh.gis.thanhhoa"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 12
-        versionName "1.11"
+        versionCode 13
+        versionName "1.12"
     }
     signingConfigs {
         debug {

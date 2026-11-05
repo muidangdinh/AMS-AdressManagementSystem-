@@ -32,6 +32,7 @@ import type { AuthenticatedUser } from '../auth/types/authenticated-user';
 import { getUploadRoot } from '../config/upload.config';
 import { CreateHouseDto } from './dto/create-house.dto';
 import { UpdateHouseDto } from './dto/update-house.dto';
+import { UpdateHouseLocationDto } from './dto/update-house-location.dto';
 import { ResurveyHouseDto } from './dto/resurvey-house.dto';
 import { ListHousesQueryDto } from './dto/list-houses-query.dto';
 import { GeoJsonQueryDto } from './dto/geojson-query.dto';
@@ -746,6 +747,11 @@ export class HousesService {
     });
 
     return updated;
+  }
+
+  /** Điều chỉnh GPS: dùng lại update() để kiểm tra phạm vi + ghi HouseHistory, nhưng chỉ gửi tọa độ. */
+  async updateLocation(id: string, dto: UpdateHouseLocationDto, user: AuthenticatedUser) {
+    return this.update(id, { latitude: dto.latitude, longitude: dto.longitude }, user);
   }
 
   /**

@@ -646,7 +646,7 @@ Ký hiệu cột **Mức**: 🔴 *Hệ thống cưỡng chế* (vi phạm bị c
 | BR-11 | Xoá ảnh sẽ xoá cả tệp vật lý trên máy chủ — **không khôi phục được** | 🔴 |
 | BR-12 | Toạ độ không gian dùng cho bản đồ được hệ thống **tự đồng bộ** từ vĩ độ/kinh độ mỗi khi thêm hoặc sửa, không cần thao tác của người dùng | 🔴 |
 | BR-13 | Tìm kiếm hồ sơ quét trên: số nhà, tên đường, tên chủ sở hữu, số điện thoại, **số CCCD/CMND**, mã QR | ⚪ |
-| BR-14 | Cán bộ khảo sát tạo được hồ sơ nhưng **không sửa được** hồ sơ sau khi đã tạo | 🔴 |
+| BR-14 | Cán bộ khảo sát tạo được hồ sơ nhưng **không sửa được** hồ sơ sau khi đã tạo — **ngoại lệ:** được chỉnh riêng toạ độ GPS qua quyền `house:location:update`, có ghi lịch sử | 🔴 |
 
 ### 7.2 Danh mục địa chỉ
 
@@ -1059,6 +1059,7 @@ Tiền tố chung `/api`. Cột **Quyền**: `*` = mọi vai trò đã đăng nh
 | 1.2 | 26/09/2026 | Business Analyst | Phase 11 Đợt 1: thông báo và nhắc nhở giao việc (QT-09, BR-74 đến BR-81), hạn xử lý cho hồ sơ hành chính, endpoint `/notifications` |
 | 1.3 | 26/09/2026 | Business Analyst | Phase 11 Đợt 2: chỉ tiêu và tiến độ %, nhật ký nhiệm vụ khảo sát, báo vấn đề / xin hỗ trợ (BR-78, BR-82, BR-83) |
 | 1.4 | 26/09/2026 | Business Analyst | Phase 11 Đợt 2b: khảo sát lại theo từng nhà thay vì tạo nhà mới trùng (BR-84, BR-85, BR-86; điều chỉnh BR-14) |
+| 1.5 | 04/11/2026 | Business Analyst | Cho phép cán bộ khảo sát/địa chính/admin chỉnh riêng toạ độ GPS trên bản đồ mobile và web (quyền `house:location:update`, có ghi lịch sử; điều chỉnh BR-14) |
 
 ---
 

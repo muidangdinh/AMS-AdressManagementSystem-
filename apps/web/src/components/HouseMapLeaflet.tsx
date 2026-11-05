@@ -19,6 +19,8 @@ export default function HouseMapLeaflet({
   onMapClick,
   onMapRightClick,
   flyToRequest,
+  adjustLocation,
+  onAdjustLocationChange,
 }: HouseMapProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<L.Map | null>(null);
@@ -26,17 +28,22 @@ export default function HouseMapLeaflet({
   const satelliteLayerRef = useRef<L.TileLayer | null>(null);
   const markersRef = useRef<Record<string, L.Marker>>({});
   const myLocationMarkerRef = useRef<L.Marker | null>(null);
+  const adjustMarkerRef = useRef<L.Marker | null>(null);
   // true từ lúc map vừa tạo tới lần chạy đầu của effect flyTo — request đến ngay lúc mount thì
   // đặt view thẳng (không animation), vì flyTo trên map chưa có tile nào dễ để lại nền trống.
   const justCreatedRef = useRef(false);
   const onSelectRef = useRef(onSelectHouse);
   const onMapClickRef = useRef(onMapClick);
   const onMapRightClickRef = useRef(onMapRightClick);
+  const adjustRef = useRef(adjustLocation);
+  const onAdjustLocationChangeRef = useRef(onAdjustLocationChange);
   const [layer, setLayerState] = useState<'street' | 'satellite'>('street');
 
   onSelectRef.current = onSelectHouse;
   onMapClickRef.current = onMapClick;
   onMapRightClickRef.current = onMapRightClick;
+  adjustRef.current = adjustLocation;
+  onAdjustLocationChangeRef.current = onAdjustLocationChange;
 
   // Khởi tạo bản đồ đúng 1 lần
   useEffect(() => {
@@ -53,12 +60,14 @@ export default function HouseMapLeaflet({
     L.control.zoom({ position: 'bottomright' }).addTo(map);
 
     map.on('click', (e: L.LeafletMouseEvent) => {
+      if (adjustRef.current) return;
       onMapClickRef.current?.(e.latlng.lat, e.latlng.lng);
     });
 
     // Chuột phải: chặn menu ngữ cảnh mặc định của trình duyệt, mở form thêm số nhà thay vào đó.
     map.on('contextmenu', (e: L.LeafletMouseEvent) => {
       L.DomEvent.preventDefault(e.originalEvent);
+      if (adjustRef.current) return;
       onMapRightClickRef.current?.(e.latlng.lat, e.latlng.lng);
     });
 
@@ -111,7 +120,9 @@ export default function HouseMapLeaflet({
       });
 
       const marker = L.marker([h.latitude, h.longitude], { icon }).addTo(map);
-      marker.on('click', () => onSelectRef.current(h.id));
+      marker.on('click', () => {
+        if (!adjustRef.current) onSelectRef.current(h.id);
+      });
       marker.bindPopup(
         `<div style="font-size:12px;min-width:160px">` +
         `<div style="font-weight:bold;color:#1d4ed8;text-transform:uppercase;font-size:10px">${h.street}</div>` +
@@ -123,6 +134,46 @@ export default function HouseMapLeaflet({
       markersRef.current[h.id] = marker;
     });
   }, [houses]);
+
+  // Chế độ chỉnh GPS: marker kéo được, tách khỏi danh sách marker bị dựng lại mỗi khi houses đổi.
+  // Chỉ phụ thuộc id — cập nhật lat/lng sau dragend không được dựng lại marker đang kéo.
+  useEffect(() => {
+    const map = mapRef.current;
+    const current = adjustRef.current;
+    adjustMarkerRef.current?.remove();
+    adjustMarkerRef.current = null;
+    if (!map || !current) return;
+
+    const color = STATUS_COLOR[current.status] ?? '#64748b';
+    const el = document.createElement('div');
+    el.style.cssText =
+      'min-width:34px;height:34px;padding:0 6px;border-radius:17px;display:flex;align-items:center;justify-content:center;border:3px solid #fff;box-shadow:0 2px 6px rgba(0,0,0,.35);cursor:grab;color:#fff;font-size:12px;font-weight:700;';
+    el.style.backgroundColor = color;
+    el.textContent = current.houseNumber;
+    el.title = `Kéo để chỉnh vị trí số ${current.houseNumber}`;
+
+    const marker = L.marker([current.latitude, current.longitude], {
+      icon: L.divIcon({
+        className: 'custom-adjust-marker',
+        html: el,
+        iconSize: [34, 34],
+        iconAnchor: [17, 17],
+      }),
+      draggable: true,
+      zIndexOffset: 2000,
+    }).addTo(map);
+    marker.on('dragend', () => {
+      const { lat, lng } = marker.getLatLng();
+      onAdjustLocationChangeRef.current?.(lat, lng);
+    });
+    map.closePopup();
+    adjustMarkerRef.current = marker;
+
+    return () => {
+      marker.remove();
+      if (adjustMarkerRef.current === marker) adjustMarkerRef.current = null;
+    };
+  }, [adjustLocation?.id]);
 
   // Bay tới vị trí khi flyToRequest đổi (click danh sách trong chế độ bản đồ)
   useEffect(() => {

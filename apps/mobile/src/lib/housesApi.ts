@@ -11,3 +11,15 @@ export async function findHouseByQrCode(code: string): Promise<HouseSummary | nu
   );
   return res.items.find((house) => house.qrCode.toLowerCase() === qrCode.toLowerCase()) ?? null;
 }
+
+/** Chỉnh riêng tọa độ GPS (kéo chấm nhà trên bản đồ). */
+export function updateHouseLocation(
+  id: string,
+  latitude: number,
+  longitude: number,
+): Promise<HouseSummary> {
+  return apiFetch<HouseSummary>(`/api/houses/${id}/location`, {
+    method: 'PATCH',
+    body: JSON.stringify({ latitude, longitude }),
+  });
+}

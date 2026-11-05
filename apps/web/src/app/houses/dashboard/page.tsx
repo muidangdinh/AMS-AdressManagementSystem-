@@ -99,10 +99,10 @@ type SectionId =
   | 'cases';
 
 const SECTION_META: Record<SectionId, { title: string; color: MetroColor }> = {
-  houses: { title: 'Báo cáo số lượng nhà', color: 'blue' },
-  reviewStages: { title: 'Phân loại số nhà', color: 'blue' },
-  duplicates: { title: 'Báo cáo số nhà trùng', color: 'danger' },
-  plates: { title: 'Báo cáo biển số nhà', color: 'teal' },
+  houses: { title: 'Báo cáo số lượng hộ dân', color: 'blue' },
+  reviewStages: { title: 'Phân loại số hộ dân', color: 'blue' },
+  duplicates: { title: 'Báo cáo số hộ dân trùng', color: 'danger' },
+  plates: { title: 'Báo cáo biển số hộ dân', color: 'teal' },
   surveys: { title: 'Báo cáo tiến độ khảo sát', color: 'orange' },
   numbering: { title: 'Báo cáo tiến độ đánh số', color: 'purple' },
   cases: { title: 'Hồ sơ – quy trình', color: 'crimson' },
@@ -307,7 +307,7 @@ function RankedList<T>({
   items: T[];
   emptyText: string;
   renderItem: (item: T, index: number) => React.ReactNode;
-  /** Viền/tiêu đề màu cảnh báo — dùng cho báo cáo bất thường (số nhà trùng). */
+  /** Viền/tiêu đề màu cảnh báo — dùng cho báo cáo bất thường (số hộ dân trùng). */
   danger?: boolean;
 }) {
   return (
@@ -763,7 +763,7 @@ export default function DashboardPage() {
   }
 
   // `byWard` chỉ có khi gọi summary không kèm wardId, và trả về ĐỦ danh mục xã/phường
-  // (kể cả xã 0 nhà) — nên phải cắt top 10 theo tổng số nhà, không vẽ hết được.
+  // (kể cả xã 0 nhà) — nên phải cắt top 10 theo tổng số hộ dân, không vẽ hết được.
   const topWardBreakdown = toStackedBreakdown(data?.byWard, 10);
   const topHamletBreakdown = [...(data?.byHamlet ?? [])]
     .sort((a, b) => b.approved + b.withoutNumber - (a.approved + a.withoutNumber))
@@ -810,11 +810,11 @@ export default function DashboardPage() {
         const dupGroups = data.duplicates.totalGroups;
         return (
           <>
-            <TileGroup title="Số nhà">
+            <TileGroup title="Số hộ dân">
               <Tile
                 size="medium"
                 color="blue"
-                label="Tổng số nhà"
+                label="Tổng số hộ dân"
                 value={h.total}
                 sub={`${fmt(h.approved)} đã có số / QR`}
                 icon={Home}
@@ -828,8 +828,8 @@ export default function DashboardPage() {
                 label={dupGroups > 0 ? 'Nhóm trùng số' : 'Không trùng số'}
                 ariaLabel={
                   dupGroups > 0
-                    ? `Nhóm số nhà trùng: ${fmt(dupGroups)} — xem chi tiết`
-                    : 'Không có số nhà trùng — xem chi tiết'
+                    ? `Nhóm số hộ dân trùng: ${fmt(dupGroups)} — xem chi tiết`
+                    : 'Không có số hộ dân trùng — xem chi tiết'
                 }
                 value={dupGroups}
                 icon={Copy}
@@ -838,7 +838,7 @@ export default function DashboardPage() {
               <Tile
                 size="wide"
                 color="blue"
-                label="Phân loại số nhà"
+                label="Phân loại số hộ dân"
                 value={data.reviewStages?.total ?? 0}
                 icon={ClipboardList}
                 onClick={openDrawer('reviewStages')}
@@ -1161,12 +1161,12 @@ export default function DashboardPage() {
           >
           <DrawerSection
             id="houses"
-            subtitle={`10.1 — tổng số nhà ${
+            subtitle={`10.1 — tổng số hộ dân ${
               hamletScoped ? `trong phạm vi ${user?.hamlet?.name ?? 'ấp/thôn'}` : 'toàn tỉnh'
             }, theo trạng thái phê duyệt`}
             chart={
               <ColumnChart
-                totalLabel="Tổng số nhà"
+                totalLabel="Tổng số hộ dân"
                 totalValue={data.houses.total}
                 data={buildHouseStatusSlices(data)}
                 onBarClick={(key) =>
@@ -1179,11 +1179,11 @@ export default function DashboardPage() {
             details={
           <Section>
             <StatCard
-              label="Tổng số nhà"
+              label="Tổng số hộ dân"
               value={data.houses.total}
               color="blue"
               icon="🏠"
-              onClick={() => openHouses('Tổng số nhà', undefined, {})}
+              onClick={() => openHouses('Tổng số hộ dân', undefined, {})}
             />
             <StatCard
               label="Đã có số / QR"
@@ -1214,7 +1214,7 @@ export default function DashboardPage() {
 
           <DrawerSection
             id="reviewStages"
-            subtitle="5 giai đoạn phân loại — độc lập với trạng thái phê duyệt (Báo cáo số lượng nhà)"
+            subtitle="5 giai đoạn phân loại — độc lập với trạng thái phê duyệt (Báo cáo số lượng hộ dân)"
             chart={
               <ColumnChart
                 totalLabel="Tổng đã phân loại"
@@ -1222,7 +1222,7 @@ export default function DashboardPage() {
                 data={buildReviewStageSlices(data)}
                 onBarClick={(key) =>
                   openHouses(
-                    `Số nhà — ${HOUSE_REVIEW_STAGE_LABELS[key as HouseReviewStage]}`,
+                    `Số hộ dân — ${HOUSE_REVIEW_STAGE_LABELS[key as HouseReviewStage]}`,
                     undefined,
                     { reviewStage: key as HouseReviewStage },
                   )
@@ -1242,7 +1242,7 @@ export default function DashboardPage() {
               <li key={item.stage}>
                 <button
                   onClick={() =>
-                    openHouses(`Số nhà — ${HOUSE_REVIEW_STAGE_LABELS[item.stage]}`, undefined, {
+                    openHouses(`Số hộ dân — ${HOUSE_REVIEW_STAGE_LABELS[item.stage]}`, undefined, {
                       reviewStage: item.stage,
                     })
                   }
@@ -1387,7 +1387,7 @@ export default function DashboardPage() {
 
           <DrawerSection
             id="duplicates"
-            subtitle={`10.5 — cùng phường/xã + đường + số nhà (${data.duplicates.totalGroups} nhóm trùng${
+            subtitle={`10.5 — cùng phường/xã + đường + số hộ dân (${data.duplicates.totalGroups} nhóm trùng${
               data.duplicates.totalGroups > data.duplicates.groups.length ? `, hiển thị ${data.duplicates.groups.length} nhóm nhiều nhất` : ''
             })`}
             chart={
@@ -1402,7 +1402,7 @@ export default function DashboardPage() {
                 }
                 onBarClick={(key) => {
                   const [street, houseNumber, ward] = key.split('|');
-                  openHouses(`Số nhà trùng: ${houseNumber} — ${street}`, ward, {
+                  openHouses(`Số hộ dân trùng: ${houseNumber} — ${street}`, ward, {
                     street,
                     search: houseNumber,
                   });
@@ -1412,13 +1412,13 @@ export default function DashboardPage() {
             details={
           <RankedList
             items={data.duplicates.groups}
-            emptyText="Không phát hiện số nhà trùng"
+            emptyText="Không phát hiện số hộ dân trùng"
             danger={data.duplicates.totalGroups > 0}
             renderItem={(d, i) => (
               <li key={`${d.ward}-${d.street}-${d.houseNumber}-${i}`}>
                 <button
                   onClick={() =>
-                    openHouses(`Số nhà trùng: ${d.houseNumber} — ${d.street}`, d.ward, {
+                    openHouses(`Số hộ dân trùng: ${d.houseNumber} — ${d.street}`, d.ward, {
                       street: d.street,
                       search: d.houseNumber,
                     })
@@ -1452,7 +1452,7 @@ export default function DashboardPage() {
                 data={buildPlateSlices(data)}
                 onBarClick={(key) =>
                   openPlates(
-                    `Biển số nhà — ${PLATE_STATUS_LABELS[key as PlateStatus]}`,
+                    `Biển số hộ dân — ${PLATE_STATUS_LABELS[key as PlateStatus]}`,
                     undefined,
                     key as PlateStatus,
                   )
@@ -1475,28 +1475,28 @@ export default function DashboardPage() {
               value={data.plates.total}
               color="blue"
               icon="📇"
-              onClick={() => openPlates('Biển số nhà đã cấp (tổng)', undefined)}
+              onClick={() => openPlates('Biển số hộ dân đã cấp (tổng)', undefined)}
             />
             <StatCard
               label="Đã gắn"
               value={data.plates.installed}
               color="emerald"
               icon="📌"
-              onClick={() => openPlates('Biển số nhà đã gắn', undefined, PlateStatus.INSTALLED)}
+              onClick={() => openPlates('Biển số hộ dân đã gắn', undefined, PlateStatus.INSTALLED)}
             />
             <StatCard
               label="Chưa gắn"
               value={data.plates.issued}
               color="amber"
               icon="🏷️"
-              onClick={() => openPlates('Biển số nhà chưa gắn', undefined, PlateStatus.ISSUED)}
+              onClick={() => openPlates('Biển số hộ dân chưa gắn', undefined, PlateStatus.ISSUED)}
             />
             <StatCard
               label="Đã thu hồi"
               value={data.plates.revoked}
               color="slate"
               icon="↩️"
-              onClick={() => openPlates('Biển số nhà đã thu hồi', undefined, PlateStatus.REVOKED)}
+              onClick={() => openPlates('Biển số hộ dân đã thu hồi', undefined, PlateStatus.REVOKED)}
             />
           </Section>
             }
@@ -1711,7 +1711,7 @@ export default function DashboardPage() {
 
           <DrawerSection
             id="cases"
-            subtitle="Hồ sơ xin cấp số nhà đang xử lý (nhóm 9)"
+            subtitle="Hồ sơ xin cấp số hộ dân đang xử lý (nhóm 9)"
             chart={
               <ColumnChart
                 totalLabel="Tổng hồ sơ"

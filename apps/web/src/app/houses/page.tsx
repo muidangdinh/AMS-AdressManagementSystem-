@@ -46,7 +46,7 @@ import { districtsApi, hamletsApi, streetsApi, usageStatusesApi, wardsApi } from
 import { platesApi } from '@/lib/plates-api';
 import { useWorkingWard } from '@/lib/working-ward';
 import { fetchAppConfig } from '@/lib/app-config';
-import type { FlyToRequest, HouseMapPoint } from '@/components/HouseMap';
+import type { FlyToRequest, HouseLocationAdjustment, HouseMapPoint } from '@/components/HouseMap';
 import { Button, FIELD_CLASS, FormSection, FormField, KpiPill, SegmentedControl } from '@/components/ui';
 
 /**
@@ -372,6 +372,7 @@ export default function HousesPage() {
   // ấp chỉ hiển thị; hồ sơ mới mặc định thuộc ấp của họ.
   const hamletScoped = user?.level === UserLevel.HAMLET;
   const canEdit = hasPermission(PERMISSIONS.HOUSE_UPDATE);
+  const canAdjustLocation = hasPermission(PERMISSIONS.HOUSE_LOCATION_UPDATE);
   const canManageCases = hasPermission(PERMISSIONS.CASE_MANAGE);
   const apiUrl = getApiUrl();
 
@@ -459,6 +460,10 @@ export default function HousesPage() {
   // Tham chiếu ổn định cho ResetToTableFromQuery — truyền hàm inline mỗi render sẽ khiến
   // effect của nó chạy lại liên tục và ép viewMode về 'table' ngay cả khi vừa chuyển sang 'map'.
   const [flyToRequest, setFlyToRequest] = useState<FlyToRequest | null>(null);
+  // Chỉnh GPS trên bản đồ — đóng drawer để kéo marker, mở lại sau khi lưu/hủy.
+  const [adjustLocation, setAdjustLocation] = useState<HouseLocationAdjustment | null>(null);
+  const [savingAdjust, setSavingAdjust] = useState(false);
+  const [adjustError, setAdjustError] = useState<string | null>(null);
   // Danh sách số nhà bên trái bản đồ — bật/tắt được; điện thoại (< md) mặc định ẩn vì chiếm gần hết màn hình.
   const [mapListOpen, setMapListOpen] = useState(true);
   // Thanh thống kê + bộ lọc phía trên — ở chế độ Bản đồ thu gọn được thành 1 dòng mảnh; điện
@@ -476,6 +481,8 @@ export default function HousesPage() {
   const resetToTable = useCallback(() => {
     setViewMode('table');
     setFlyToRequest(null);
+    setAdjustLocation(null);
+    setAdjustError(null);
   }, []);
   const [mapHouses, setMapHouses] = useState<HouseMapPoint[]>([]);
   const [mapLoading, setMapLoading] = useState(false);
@@ -661,6 +668,7 @@ export default function HousesPage() {
 
   /** Tra cứu theo tọa độ (I. "Tìm kiếm theo tọa độ") — bấm vào chỗ trống trên bản đồ. */
   async function handleMapClick(lat: number, lng: number) {
+    if (adjustLocation) return;
     setNearbyLoading(true);
     try {
       const res = await apiFetch<NearbyHouse[]>(
@@ -680,6 +688,7 @@ export default function HousesPage() {
 
   /** Bấm 1 dòng trong danh sách cạnh bản đồ — trên điện thoại đóng danh sách để thấy bản đồ bay tới. */
   function pickFromMapList(id: string, lat: number, lng: number) {
+    if (adjustLocation) return;
     selectAndFlyTo(id, lat, lng);
     if (window.innerWidth < MOBILE_MAX_WIDTH) setMapListOpen(false);
   }
@@ -687,6 +696,11 @@ export default function HousesPage() {
   function selectAndFlyTo(id: string, lat: number, lng: number) {
     openDetail(id);
     setFlyToRequest({ lat, lng, nonce: Date.now() });
+  }
+
+  function handleMapSelect(id: string) {
+    if (adjustLocation) return;
+    void openDetail(id);
   }
 
   /**
@@ -729,6 +743,51 @@ export default function HousesPage() {
     setDetail(null);
     setHistory([]);
     setPlates([]);
+  }
+
+  function startAdjustLocation(house: HouseSummary) {
+    setAdjustLocation({
+      id: house.id,
+      houseNumber: house.houseNumber,
+      status: house.status,
+      latitude: house.latitude,
+      longitude: house.longitude,
+    });
+    setAdjustError(null);
+    closeDetail();
+    setViewMode('map');
+    setMapListOpen(false);
+    setFlyToRequest({ lat: house.latitude, lng: house.longitude, nonce: Date.now() });
+  }
+
+  function cancelAdjustLocation() {
+    const id = adjustLocation?.id;
+    setAdjustLocation(null);
+    setAdjustError(null);
+    if (id) void openDetail(id);
+  }
+
+  async function saveAdjustLocation() {
+    if (!adjustLocation || savingAdjust) return;
+    const { id, latitude, longitude } = adjustLocation;
+    setSavingAdjust(true);
+    setAdjustError(null);
+    try {
+      await apiFetch<HouseSummary>(`/api/houses/${id}/location`, {
+        method: 'PATCH',
+        body: JSON.stringify({ latitude, longitude }),
+      });
+      setMapHouses((prev) =>
+        prev.map((h) => (h.id === id ? { ...h, latitude, longitude } : h)),
+      );
+      setAdjustLocation(null);
+      await fetchMapHouses();
+      await openDetail(id);
+    } catch (err) {
+      setAdjustError(err instanceof ApiError ? err.message : 'Không lưu được vị trí mới');
+    } finally {
+      setSavingAdjust(false);
+    }
   }
 
   async function refreshPlates() {
@@ -812,7 +871,7 @@ export default function HousesPage() {
 
   /** Chuột phải trên bản đồ (chế độ Bản đồ) — mở form thêm số nhà, tọa độ lấy từ vị trí bấm. */
   function handleMapRightClick(lat: number, lng: number) {
-    if (!canEdit) return;
+    if (!canEdit || adjustLocation) return;
     openCreateModal({ lat, lng });
   }
 
@@ -976,6 +1035,10 @@ export default function HousesPage() {
       onChange={(v) => {
         setViewMode(v);
         setFlyToRequest(null);
+        if (v !== 'map') {
+          setAdjustLocation(null);
+          setAdjustError(null);
+        }
       }}
       options={[
         { value: 'table', label: <><List className="w-4 h-4" /> Bảng</> },
@@ -1400,12 +1463,52 @@ export default function HousesPage() {
             </button>
           )}
           <HouseMap
-            houses={mapHouses}
-            onSelectHouse={openDetail}
+            houses={adjustLocation ? mapHouses.filter((h) => h.id !== adjustLocation.id) : mapHouses}
+            onSelectHouse={handleMapSelect}
             onMapClick={handleMapClick}
             onMapRightClick={handleMapRightClick}
             flyToRequest={flyToRequest}
+            adjustLocation={adjustLocation}
+            onAdjustLocationChange={(lat, lng) =>
+              setAdjustLocation((prev) => (prev ? { ...prev, latitude: lat, longitude: lng } : prev))
+            }
           />
+          {adjustLocation && (
+            <div
+              role="dialog"
+              aria-label="Điều chỉnh vị trí GPS"
+              className="absolute inset-x-3 bottom-4 z-[1200] mx-auto max-w-md space-y-2 rounded-xl border border-line bg-surface p-3 shadow-2xl"
+            >
+              <p className="text-xs leading-relaxed text-fg-muted">
+                Kéo chấm số{' '}
+                <span className="font-bold text-fg">{adjustLocation.houseNumber}</span> đến đúng vị
+                trí căn nhà, sau đó bấm Lưu vị trí.
+              </p>
+              {adjustError && (
+                <p className="text-xs font-semibold text-danger" role="alert">
+                  {adjustError}
+                </p>
+              )}
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={cancelAdjustLocation}
+                  disabled={savingAdjust}
+                  className="flex-1 rounded-lg border border-line py-2 text-sm font-bold text-fg-muted hover:bg-surface-2 disabled:opacity-60"
+                >
+                  Hủy
+                </button>
+                <button
+                  type="button"
+                  onClick={saveAdjustLocation}
+                  disabled={savingAdjust}
+                  className="flex-1 rounded-lg bg-brand py-2 text-sm font-bold text-white hover:bg-brand/90 disabled:opacity-60"
+                >
+                  {savingAdjust ? 'Đang lưu…' : 'Lưu vị trí'}
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       </div>
       )}
@@ -1628,6 +1731,15 @@ export default function HousesPage() {
                         </a>
                       </div>
                     </div>
+                    {canAdjustLocation && (
+                      <button
+                        type="button"
+                        onClick={() => startAdjustLocation(detail)}
+                        className="w-full rounded-lg bg-brand py-2 text-sm font-bold text-white hover:bg-brand/90"
+                      >
+                        Điều chỉnh vị trí GPS
+                      </button>
+                    )}
                   </div>
 
                   {/* Phase 8 — Biển số nhà (tách khỏi qrCode ở trên, xem module house-plates) */}

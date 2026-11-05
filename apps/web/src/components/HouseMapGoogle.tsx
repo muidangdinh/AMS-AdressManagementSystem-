@@ -45,6 +45,8 @@ export default function HouseMapGoogle({
   onMapClick,
   onMapRightClick,
   flyToRequest,
+  adjustLocation,
+  onAdjustLocationChange,
 }: HouseMapProps) {
   const apiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY ?? '';
   const { isLoaded, loadError } = useJsApiLoader({
@@ -61,8 +63,12 @@ export default function HouseMapGoogle({
 
   const onMapClickRef = useRef(onMapClick);
   const onMapRightClickRef = useRef(onMapRightClick);
+  const adjustRef = useRef(adjustLocation);
+  const onAdjustLocationChangeRef = useRef(onAdjustLocationChange);
   onMapClickRef.current = onMapClick;
   onMapRightClickRef.current = onMapRightClick;
+  adjustRef.current = adjustLocation;
+  onAdjustLocationChangeRef.current = onAdjustLocationChange;
 
   const onLoad = useCallback((map: google.maps.Map) => {
     mapRef.current = map;
@@ -73,11 +79,13 @@ export default function HouseMapGoogle({
   }, []);
 
   const handleMapClick = useCallback((e: google.maps.MapMouseEvent) => {
+    if (adjustRef.current) return;
     setActiveHouseId(null);
     if (e.latLng) onMapClickRef.current?.(e.latLng.lat(), e.latLng.lng());
   }, []);
 
   const handleMapRightClick = useCallback((e: google.maps.MapMouseEvent) => {
+    if (adjustRef.current) return;
     if (e.latLng) onMapRightClickRef.current?.(e.latLng.lat(), e.latLng.lng());
   }, []);
 
@@ -96,7 +104,7 @@ export default function HouseMapGoogle({
     setLayer(type);
   }
 
-  const activeHouse = houses.find((h) => h.id === activeHouseId) ?? null;
+  const activeHouse = adjustLocation ? null : houses.find((h) => h.id === activeHouseId) ?? null;
 
   return (
     <div className="relative h-full w-full">
@@ -144,11 +152,30 @@ export default function HouseMapGoogle({
               icon={buildMarkerIcon(STATUS_COLOR[h.status] ?? '#64748b')}
               label={{ text: h.houseNumber, color: '#fff', fontSize: '10px', fontWeight: 'bold' }}
               onClick={() => {
+                if (adjustRef.current) return;
                 setActiveHouseId(h.id);
                 onSelectHouse(h.id);
               }}
             />
           ))}
+
+          {adjustLocation && (
+            <MarkerF
+              position={{ lat: adjustLocation.latitude, lng: adjustLocation.longitude }}
+              icon={buildMarkerIcon(STATUS_COLOR[adjustLocation.status] ?? '#64748b')}
+              label={{
+                text: adjustLocation.houseNumber,
+                color: '#fff',
+                fontSize: '10px',
+                fontWeight: 'bold',
+              }}
+              draggable
+              zIndex={2000}
+              onDragEnd={(e) => {
+                if (e.latLng) onAdjustLocationChangeRef.current?.(e.latLng.lat(), e.latLng.lng());
+              }}
+            />
+          )}
 
           {myLocation && (
             <MarkerF

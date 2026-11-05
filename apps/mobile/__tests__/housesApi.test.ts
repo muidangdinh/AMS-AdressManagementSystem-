@@ -1,6 +1,6 @@
 import type { HouseSummary, PaginatedResult } from '@tayninh/shared';
 import { apiFetch } from '../src/lib/api';
-import { findHouseByQrCode } from '../src/lib/housesApi';
+import { findHouseByQrCode, updateHouseLocation } from '../src/lib/housesApi';
 
 jest.mock('../src/lib/api', () => ({ apiFetch: jest.fn() }));
 
@@ -36,4 +36,15 @@ test('trả null khi không có hồ sơ khớp chính xác', async () => {
 test('mã rỗng không gọi API', async () => {
   await expect(findHouseByQrCode('   ')).resolves.toBeNull();
   expect(mockApiFetch).not.toHaveBeenCalled();
+});
+
+test('gửi đúng tọa độ GPS mới khi chỉnh vị trí', async () => {
+  mockApiFetch.mockResolvedValue(house('h1', 'TN-AAAAAAAA'));
+
+  await updateHouseLocation('h1', 11.3123, 106.1234);
+
+  expect(mockApiFetch).toHaveBeenCalledWith('/api/houses/h1/location', {
+    method: 'PATCH',
+    body: JSON.stringify({ latitude: 11.3123, longitude: 106.1234 }),
+  });
 });

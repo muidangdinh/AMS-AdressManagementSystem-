@@ -41,7 +41,7 @@ const STATUS_BADGE: Record<CaseStatus, string> = {
   [CaseStatus.REJECTED]: 'bg-danger/15 text-danger border-danger/30',
 };
 
-/** Danh sách hồ sơ (Phase 10 — IX. Quản lý hồ sơ – quy trình). */
+/** Danh sách hồ sơ (Phase 10 — IX. Quản lý hồ sơ số nhà). */
 export default function CasesPage() {
   const { user, hasPermission } = useAuth();
   const router = useRouter();
@@ -104,7 +104,7 @@ export default function CasesPage() {
   return (
     <div className="h-full overflow-auto p-6 space-y-4">
       <PageHeader
-        title="Hồ sơ – Quy trình"
+        title="Hồ sơ số nhà"
         subtitle="Tiếp nhận yêu cầu cấp số nhà, theo dõi tiến độ xử lý từ tiếp nhận đến trả kết quả."
         actions={
           canEdit && (

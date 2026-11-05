@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  BackHandler,
   FlatList,
   Image,
   Linking,
@@ -15,7 +16,14 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import { Camera, type CameraRef, GeoJSONSource, Layer, Marker } from '@maplibre/maplibre-react-native';
+import {
+  Camera,
+  type CameraRef,
+  GeoJSONSource,
+  Layer,
+  Marker,
+  ViewAnnotation,
+} from '@maplibre/maplibre-react-native';
 import GoongMap from '../components/GoongMap';
 import ImageViewer from '../components/ImageViewer';
 import { GOONG_TEXT_FONT } from '../lib/goong';
@@ -31,6 +39,7 @@ import {
   HOUSE_STATUS_LABELS,
   HouseStatus,
   HouseSummary,
+  PERMISSIONS,
   PHOTO_TYPE_LABELS,
   type Hamlet,
   type Street,
@@ -39,6 +48,8 @@ import {
 import { API_URL, apiFetch, ApiError } from '../lib/api';
 import { fetchAppConfig } from '../lib/appConfig';
 import { fetchHamlets, fetchStreets, fetchWards } from '../lib/addressCatalog';
+import { updateHouseLocation } from '../lib/housesApi';
+import { useAuth } from '../lib/AuthContext';
 import type { MainTabsParamList } from '../navigation/MainTabs';
 
 /** Trung tâm mặc định: TP. Tây Ninh — dùng khi chưa lấy được GPS thật. */
@@ -121,6 +132,8 @@ async function requestLocationPermission(): Promise<boolean> {
 
 export default function MapScreen() {
   const { refresh } = useAppConfig();
+  const { user } = useAuth();
+  const canAdjustLocation = !!user?.permissions?.includes(PERMISSIONS.HOUSE_LOCATION_UPDATE);
   useFocusEffect(
     useCallback(() => {
       void refresh();
@@ -142,8 +155,26 @@ export default function MapScreen() {
   const [loading, setLoading] = useState(false);
   const [locating, setLocating] = useState(false);
   const [myLocation, setMyLocation] = useState<{ latitude: number; longitude: number } | null>(null);
+  // Đang kéo chấm để chỉnh GPS — tách khỏi detail để đóng modal mà vẫn giữ nhà đang chỉnh.
+  const [adjust, setAdjust] = useState<{
+    id: string;
+    houseNumber: string;
+    status: HouseStatus;
+    latitude: number;
+    longitude: number;
+  } | null>(null);
+  const [savingAdjust, setSavingAdjust] = useState(false);
   const lastKnownPositionRef = useRef<{ latitude: number; longitude: number } | null>(null);
   const watchIdRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    if (!adjust) return;
+    const subscription = BackHandler.addEventListener('hardwareBackPress', () => {
+      setAdjust(null);
+      return true;
+    });
+    return () => subscription.remove();
+  }, [adjust]);
 
   // "Làm nóng" GPS ngay khi vào màn hình Bản Đồ — theo dõi vị trí chạy nền (không
   // hiện chấm đỏ) để lúc bấm nút 📍 có sẵn vị trí gần nhất, phản hồi tức thì thay vì
@@ -297,6 +328,40 @@ export default function MapScreen() {
     setDetail(null);
   }
 
+  function startAdjustLocation(house: HouseSummary) {
+    setAdjust({
+      id: house.id,
+      houseNumber: house.houseNumber,
+      status: house.status,
+      latitude: house.latitude,
+      longitude: house.longitude,
+    });
+    closeDetail();
+  }
+
+  async function saveAdjustLocation() {
+    if (!adjust || savingAdjust) return;
+    setSavingAdjust(true);
+    try {
+      await updateHouseLocation(adjust.id, adjust.latitude, adjust.longitude);
+      setHouses((prev) =>
+        prev.map((h) =>
+          h.id === adjust.id ? { ...h, latitude: adjust.latitude, longitude: adjust.longitude } : h,
+        ),
+      );
+      setFocusTarget((prev) =>
+        prev && prev.id === adjust.id
+          ? { ...prev, lat: adjust.latitude, lng: adjust.longitude }
+          : prev,
+      );
+      setAdjust(null);
+    } catch (err) {
+      Alert.alert('Lỗi', err instanceof ApiError ? err.message : 'Không lưu được vị trí mới');
+    } finally {
+      setSavingAdjust(false);
+    }
+  }
+
   async function handleMapPress(lat: number, lng: number) {
     setNearbyLoading(true);
     try {
@@ -397,6 +462,7 @@ export default function MapScreen() {
       <GoongMap
         onReady={() => setMapReady(true)}
         onPress={(latitude, longitude) => {
+          if (adjust) return;
           setNearby(null);
           handleMapPress(latitude, longitude);
         }}
@@ -405,9 +471,10 @@ export default function MapScreen() {
 
         <GeoJSONSource
           id="houses"
-          data={toFeatureCollection(houses)}
+          data={toFeatureCollection(adjust ? houses.filter((h) => h.id !== adjust.id) : houses)}
           onPress={(event) => {
             event.stopPropagation();
+            if (adjust) return;
             const id = event.nativeEvent.features[0]?.properties?.id;
             if (typeof id === 'string') openDetail(id);
           }}
@@ -449,13 +516,32 @@ export default function MapScreen() {
           />
         </GeoJSONSource>
 
-        {focusTarget && !houses.some((h) => h.id === focusTarget.id) && (
+        {!adjust && focusTarget && !houses.some((h) => h.id === focusTarget.id) && (
           <Marker
             lngLat={[focusTarget.lng, focusTarget.lat]}
-            onPress={() => openDetail(focusTarget.id)}
+            onPress={() => {
+              if (!adjust) openDetail(focusTarget.id);
+            }}
           >
             <View style={styles.focusMarker} />
           </Marker>
+        )}
+
+        {adjust && (
+          <ViewAnnotation
+            id={`adjust-${adjust.id}`}
+            lngLat={[adjust.longitude, adjust.latitude]}
+            anchor="center"
+            draggable
+            onDragEnd={(event) => {
+              const [longitude, latitude] = event.nativeEvent.lngLat;
+              setAdjust((prev) => (prev ? { ...prev, latitude, longitude } : prev));
+            }}
+          >
+            <View style={[styles.adjustMarker, { backgroundColor: STATUS_COLOR[adjust.status] }]}>
+              <Text style={styles.adjustMarkerText}>{adjust.houseNumber}</Text>
+            </View>
+          </ViewAnnotation>
         )}
 
         {myLocation && (
@@ -677,6 +763,34 @@ export default function MapScreen() {
         </View>
       )}
 
+      {adjust && (
+        <View style={styles.adjustBar}>
+          <Text style={styles.adjustHint}>
+            Kéo chấm số {adjust.houseNumber} đến đúng vị trí căn nhà, sau đó bấm Lưu vị trí.
+          </Text>
+          <View style={styles.adjustActions}>
+            <TouchableOpacity
+              style={styles.adjustCancel}
+              onPress={() => setAdjust(null)}
+              disabled={savingAdjust}
+            >
+              <Text style={styles.adjustCancelText}>Hủy</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.adjustSave}
+              onPress={saveAdjustLocation}
+              disabled={savingAdjust}
+            >
+              {savingAdjust ? (
+                <ActivityIndicator color="#fff" size="small" />
+              ) : (
+                <Text style={styles.adjustSaveText}>Lưu vị trí</Text>
+              )}
+            </TouchableOpacity>
+          </View>
+        </View>
+      )}
+
       {/* Modal chi tiết hồ sơ */}
       <Modal visible={!!selectedId} animationType="slide" transparent onRequestClose={closeDetail}>
         <View style={styles.modalBackdrop}>
@@ -720,6 +834,15 @@ export default function MapScreen() {
                 >
                   <Text style={styles.directionsButtonText}>🧭 Chỉ đường đến đây</Text>
                 </TouchableOpacity>
+
+                {canAdjustLocation && (
+                  <TouchableOpacity
+                    style={styles.adjustButton}
+                    onPress={() => startAdjustLocation(detail)}
+                  >
+                    <Text style={styles.adjustButtonText}>📍 Điều chỉnh vị trí</Text>
+                  </TouchableOpacity>
+                )}
 
                 <View style={styles.modalQrRow}>
                   <Image
@@ -821,6 +944,21 @@ const styles = StyleSheet.create({
     borderWidth: 4,
     borderColor: '#fff',
   },
+  adjustMarker: {
+    minWidth: 34,
+    height: 34,
+    borderRadius: 17,
+    borderWidth: 3,
+    borderColor: '#fff',
+    paddingHorizontal: 6,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+    elevation: 6,
+  },
+  adjustMarkerText: { color: '#fff', fontSize: 12, fontWeight: '700' },
   myLocationDot: {
     width: 16,
     height: 16,
@@ -1033,6 +1171,49 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   directionsButtonText: { color: '#fff', fontWeight: '700', fontSize: 14 },
+  adjustButton: {
+    backgroundColor: '#0f766e',
+    borderRadius: 10,
+    paddingVertical: 12,
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  adjustButtonText: { color: '#fff', fontWeight: '700', fontSize: 14 },
+  adjustBar: {
+    position: 'absolute',
+    left: 12,
+    right: 12,
+    bottom: 16,
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    padding: 12,
+    gap: 10,
+    shadowColor: '#000',
+    shadowOpacity: 0.15,
+    shadowRadius: 8,
+    elevation: 6,
+  },
+  adjustHint: { fontSize: 12, color: '#334155', lineHeight: 17 },
+  adjustActions: { flexDirection: 'row', gap: 8 },
+  adjustCancel: {
+    flex: 1,
+    borderWidth: 1,
+    borderColor: '#cbd5e1',
+    borderRadius: 8,
+    paddingVertical: 10,
+    alignItems: 'center',
+  },
+  adjustCancelText: { fontWeight: '700', color: '#475569', fontSize: 13 },
+  adjustSave: {
+    flex: 1,
+    backgroundColor: '#2563eb',
+    borderRadius: 8,
+    paddingVertical: 10,
+    alignItems: 'center',
+  },
+  adjustSaveText: { fontWeight: '700', color: '#fff', fontSize: 13 },
   modalQrRow: {
     flexDirection: 'row',
     alignItems: 'center',
