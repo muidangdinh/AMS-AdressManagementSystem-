@@ -6,11 +6,16 @@ import PlatesScreen from '../screens/PlatesScreen';
 import InstallScreen from '../screens/InstallScreen';
 import { tabScreenOptions } from './tabHeader';
 import type { MainTabsParamList } from './MainTabs';
+import { PERMISSIONS } from '@tayninh/shared';
+import { useAuth } from '../lib/AuthContext';
 
 const Tab = createBottomTabNavigator<MainTabsParamList>();
 
 /** Phân hệ THI CÔNG: 3 tab (Thi công, Bản đồ, Tra cứu) — tab đầu là nhiệm vụ thi công. */
 export default function InstallTabs() {
+  const { user } = useAuth();
+  const canLookup = !!user?.permissions?.includes(PERMISSIONS.PLATE_LOOKUP);
+
   return (
     <Tab.Navigator initialRouteName="Install" screenOptions={tabScreenOptions('install')}>
       <Tab.Screen
@@ -31,15 +36,17 @@ export default function InstallTabs() {
           tabBarIcon: ({ color, size }) => <Icon name="map-search" color={color} size={size} />,
         }}
       />
-      <Tab.Screen
-        name="Plates"
-        component={PlatesScreen}
-        options={{
-          title: 'Tra Cứu',
-          tabBarLabel: 'Tra Cứu',
-          tabBarIcon: ({ color, size }) => <Icon name="magnify" color={color} size={size} />,
-        }}
-      />
+      {canLookup && (
+        <Tab.Screen
+          name="Plates"
+          component={PlatesScreen}
+          options={{
+            title: 'Tra Cứu',
+            tabBarLabel: 'Tra Cứu',
+            tabBarIcon: ({ color, size }) => <Icon name="magnify" color={color} size={size} />,
+          }}
+        />
+      )}
     </Tab.Navigator>
   );
 }

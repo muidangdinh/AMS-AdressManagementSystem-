@@ -43,9 +43,13 @@ export interface SurveyDraft {
   side?: NumberingSide;
   latitude: number;
   longitude: number;
-  /** Ảnh mặt tiền nhà — ô bắt buộc riêng (cảnh báo mềm nếu thiếu lúc gửi duyệt). */
+  /** Ảnh mặt tiền nhà — tối đa 2 ảnh; cảnh báo mềm nếu thiếu lúc gửi duyệt. */
+  facadePhotoUris?: string[];
+  /** Legacy drafts used a single URI per required photo. */
   facadePhotoUri?: string;
-  /** Ảnh biển số nhà — ô bắt buộc riêng (cảnh báo mềm nếu thiếu lúc gửi duyệt). */
+  /** Ảnh biển số nhà — tối đa 2 ảnh; cảnh báo mềm nếu thiếu lúc gửi duyệt. */
+  platePhotoUris?: string[];
+  /** Legacy drafts used a single URI per required photo. */
   platePhotoUri?: string;
   /** Đường dẫn file ảnh khác/hiện trạng cục bộ (file://... hoặc content://...) — tối đa 5 ảnh. */
   photoUris?: string[];
@@ -159,8 +163,14 @@ export async function syncDraft(draft: SurveyDraft): Promise<SurveyDraft> {
     // Upload tuần tự từng ảnh — API chỉ nhận 1 file/request (FileInterceptor đơn).
     // Gắn PhotoType tường minh theo ô người dùng đã chụp (không còn suy theo vị trí mảng).
     const uploads: { uri: string; type: PhotoType }[] = [
-      ...(draft.facadePhotoUri ? [{ uri: draft.facadePhotoUri, type: PhotoType.FACADE }] : []),
-      ...(draft.platePhotoUri ? [{ uri: draft.platePhotoUri, type: PhotoType.PLATE }] : []),
+      ...(draft.facadePhotoUris ?? (draft.facadePhotoUri ? [draft.facadePhotoUri] : [])).map((uri) => ({
+        uri,
+        type: PhotoType.FACADE,
+      })),
+      ...(draft.platePhotoUris ?? (draft.platePhotoUri ? [draft.platePhotoUri] : [])).map((uri) => ({
+        uri,
+        type: PhotoType.PLATE,
+      })),
       ...(draft.photoUris ?? []).map((uri) => ({ uri, type: PhotoType.CONDITION })),
     ];
     for (const [index, { uri, type }] of uploads.entries()) {

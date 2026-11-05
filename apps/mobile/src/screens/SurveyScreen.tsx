@@ -3,6 +3,7 @@ import {
   ActivityIndicator,
   Alert,
   FlatList,
+  KeyboardAvoidingView,
   Image,
   Modal,
   PermissionsAndroid,
@@ -19,6 +20,7 @@ import { useFocusEffect, useNavigation, useRoute } from '@react-navigation/nativ
 import type { NavigationProp, RouteProp } from '@react-navigation/native';
 import Geolocation from '@react-native-community/geolocation';
 import { launchCamera, launchImageLibrary } from 'react-native-image-picker';
+import NetInfo from '@react-native-community/netinfo';
 import {
   BUILDING_TYPE_LABELS,
   BuildingType,
@@ -55,6 +57,7 @@ import ImageViewer from '../components/ImageViewer';
 const BUILDING_TYPES = Object.values(BuildingType);
 const PLATE_NEEDS = Object.values(PlateNeed);
 const MAX_PHOTOS = 5;
+const MAX_REQUIRED_PHOTOS = 2;
 
 /** Tọa độ mặc định: trung tâm TP. Tây Ninh — dùng khi chưa lấy được GPS thật. */
 const DEFAULT_LAT = 11.3151;
@@ -102,8 +105,9 @@ function gpsErrorMessage(code: number): string {
   }
 }
 
-/** Mở action-sheet chụp/chọn 1 ảnh duy nhất — dùng cho các ô ảnh bắt buộc (mặt tiền/biển số). */
-function pickSinglePhoto(title: string, onPicked: (uri: string) => void) {
+/** Mở action-sheet chụp hoặc chọn ảnh, giới hạn theo số ô còn trống. */
+function pickPhotos(title: string, remainingSlots: number, onPicked: (uris: string[]) => void) {
+  if (remainingSlots <= 0) return;
   Alert.alert(title, 'Chọn nguồn ảnh', [
     {
       text: 'Chụp ảnh mới',
@@ -120,20 +124,25 @@ function pickSinglePhoto(title: string, onPicked: (uri: string) => void) {
           return;
         }
         const uri = result.assets?.[0]?.uri;
-        if (uri) onPicked(uri);
+        if (uri) onPicked([uri]);
       },
     },
     {
       text: 'Chọn từ thư viện',
       onPress: async () => {
-        const result = await launchImageLibrary({ ...PHOTO_PICKER_OPTIONS, selectionLimit: 1 });
+        const result = await launchImageLibrary({
+          ...PHOTO_PICKER_OPTIONS,
+          selectionLimit: remainingSlots,
+        });
         if (result.didCancel) return;
         if (result.errorCode) {
           Alert.alert('Lỗi thư viện ảnh', result.errorMessage ?? result.errorCode);
           return;
         }
-        const uri = result.assets?.[0]?.uri;
-        if (uri) onPicked(uri);
+        const uris = (result.assets ?? [])
+          .map((asset) => asset.uri)
+          .filter((uri): uri is string => !!uri);
+        if (uris.length) onPicked(uris);
       },
     },
     { text: 'Hủy', style: 'cancel' },
@@ -219,11 +228,11 @@ export default function SurveyScreen() {
   // thì bỏ qua lặng lẽ, form vẫn hoạt động tự do như trước.
   const [activeAssignment, setActiveAssignment] = useState<SurveyAssignment | null>(null);
 
-  // Nhân sự ấp/thôn chỉ ghi nhận nhà trong ấp của mình (API từ chối ấp khác): khóa Xã + Ấp theo tài khoản.
-  // Ngoại lệ: đang làm nhiệm vụ được giao (có thể ở ấp khác) hoặc đang sửa lại nhà của nhiệm vụ.
+  // Tài khoản được gán đủ xã và ấp thì dùng địa bàn đó cho hồ sơ nhà mới, không chọn lại trên form.
+  // Khảo sát lại giữ nguyên địa chỉ của hồ sơ hiện có.
   const { user } = useAuth();
   const hamletLock =
-    user?.level === 'HAMLET' && user.hamletId && user.wardId && !activeAssignment && !resurveyHouseId
+    user?.hamletId && user.wardId && !resurveyHouseId
       ? {
           wardId: user.wardId,
           wardName: user.ward?.name ?? '',
@@ -310,11 +319,13 @@ export default function SurveyScreen() {
   const [floors, setFloors] = useState('');
   const [area, setArea] = useState('');
   const [note, setNote] = useState('');
-  const [facadePhotoUri, setFacadePhotoUri] = useState<string | null>(null);
-  const [platePhotoUri, setPlatePhotoUri] = useState<string | null>(null);
+  const [facadePhotoUris, setFacadePhotoUris] = useState<string[]>([]);
+  const [platePhotoUris, setPlatePhotoUris] = useState<string[]>([]);
   const [photoUris, setPhotoUris] = useState<string[]>([]);
   const [viewer, setViewer] = useState<{ uris: string[]; index: number } | null>(null);
   const [saving, setSaving] = useState(false);
+  const scrollRef = useRef<ScrollView>(null);
+  const noteFocused = useRef(false);
 
   // Nguồn của tọa độ đang hiển thị — 'default' nghĩa là vẫn là tọa độ mặc định (chưa lấy GPS /
   // chưa chọn trên bản đồ); lưu nhà lúc này sẽ đặt nhà sai chỗ nên cần cảnh báo.
@@ -467,8 +478,8 @@ export default function SurveyScreen() {
     setFloors('');
     setArea('');
     setNote('');
-    setFacadePhotoUri(null);
-    setPlatePhotoUri(null);
+    setFacadePhotoUris([]);
+    setPlatePhotoUris([]);
     setPhotoUris([]);
     // Nhà kế tiếp ở vị trí khác — bỏ tọa độ cũ, tự lấy GPS lại (vẫn đang đứng ở hiện trường).
     setLocationSource('default');
@@ -605,8 +616,8 @@ export default function SurveyScreen() {
     setArea(h.area != null ? String(h.area) : '');
     setNote(h.note ?? '');
     // Ảnh cũ nằm trên server (chỉ hiện số lượng); ảnh chọn ở đây là ảnh BỔ SUNG.
-    setFacadePhotoUri(null);
-    setPlatePhotoUri(null);
+    setFacadePhotoUris([]);
+    setPlatePhotoUris([]);
     setPhotoUris([]);
     // Toạ độ của chính nhà này — coi như đã xác nhận, không cảnh báo "toạ độ mặc định".
     setLat(h.latitude);
@@ -668,8 +679,8 @@ export default function SurveyScreen() {
     setSaving(true);
     try {
       const uploads = [
-        ...(facadePhotoUri ? [{ uri: facadePhotoUri, type: PhotoType.FACADE }] : []),
-        ...(platePhotoUri ? [{ uri: platePhotoUri, type: PhotoType.PLATE }] : []),
+        ...facadePhotoUris.map((uri) => ({ uri, type: PhotoType.FACADE })),
+        ...platePhotoUris.map((uri) => ({ uri, type: PhotoType.PLATE })),
         ...photoUris.map((uri) => ({ uri, type: PhotoType.CONDITION })),
       ];
       for (const [index, photo] of uploads.entries()) {
@@ -702,18 +713,35 @@ export default function SurveyScreen() {
       Alert.alert('Đã gửi', `Nhà số ${houseNumber} đã được cập nhật.`);
       await exitResurvey(true);
     } catch (e) {
+      const network = await NetInfo.fetch();
       Alert.alert(
-        'Không gửi được',
-        e instanceof ApiError
-          ? e.message
-          : 'Cần có mạng để gửi bản sửa lại — kiểm tra kết nối rồi thử lại. Dữ liệu đang nhập vẫn được giữ.',
+        !network.isConnected || network.isInternetReachable === false ? 'Cần có mạng' : 'Cập nhật thất bại',
+        !network.isConnected || network.isInternetReachable === false
+          ? 'Không có kết nối mạng. Dữ liệu đang nhập vẫn được giữ, hãy thử lại khi có mạng.'
+          : e instanceof ApiError
+            ? e.message
+            : 'Không cập nhật được hồ sơ. Dữ liệu đang nhập vẫn được giữ.',
       );
     } finally {
       setSaving(false);
     }
   }
 
-  async function performSave(trySyncNow: boolean) {
+  async function performSave(saveTemporarily = false) {
+    const network = await NetInfo.fetch();
+    const isOffline = !network.isConnected || network.isInternetReachable === false;
+    if (isOffline && !saveTemporarily) {
+      Alert.alert(
+        'Không có kết nối mạng',
+        'Bạn có muốn lưu hồ sơ tạm trên thiết bị để đồng bộ khi có mạng không?',
+        [
+          { text: 'Hủy', style: 'cancel' },
+          { text: 'Xác nhận lưu tạm', onPress: async () => { await performSave(true); } },
+        ],
+      );
+      return;
+    }
+
     setSaving(true);
     try {
       const draft = await createDraft({
@@ -737,24 +765,31 @@ export default function SurveyScreen() {
         soThua: soThua || undefined,
         latitude: lat,
         longitude: lng,
-        facadePhotoUri: facadePhotoUri || undefined,
-        platePhotoUri: platePhotoUri || undefined,
+        facadePhotoUris,
+        platePhotoUris,
         photoUris,
         note: note || undefined,
       });
 
-      if (trySyncNow) {
+      if (isOffline) {
+        Alert.alert('Đã lưu tạm', 'Hồ sơ đã được lưu trên thiết bị và sẽ tự đồng bộ khi có mạng.');
+      } else {
         try {
           await syncDraft(draft);
           Alert.alert('Thành công', 'Đã gửi hồ sơ lên hệ thống.');
-        } catch {
-          Alert.alert(
-            'Đã lưu tạm',
-            'Không gửi được lên server lúc này (có thể do mất mạng) — hồ sơ đã lưu offline, sẽ tự đồng bộ khi có mạng.',
-          );
+        } catch (error) {
+          const currentNetwork = await NetInfo.fetch();
+          if (!currentNetwork.isConnected || currentNetwork.isInternetReachable === false) {
+            Alert.alert('Đã lưu tạm', 'Mất kết nối mạng khi gửi. Hồ sơ đã lưu trên máy và sẽ tự đồng bộ khi có mạng.');
+          } else {
+            Alert.alert(
+              'Gửi hồ sơ thất bại',
+              error instanceof ApiError
+                ? error.message
+                : 'Không gửi được hồ sơ lên hệ thống. Hồ sơ vẫn được giữ trên máy để thử lại.',
+            );
+          }
         }
-      } else {
-        Alert.alert('Đã lưu tạm', 'Hồ sơ đã lưu offline trên máy.');
       }
       await resetForm();
     } finally {
@@ -762,7 +797,7 @@ export default function SurveyScreen() {
     }
   }
 
-  async function handleSave(trySyncNow: boolean) {
+  async function handleSave() {
     if (!houseNumber || !street || !ward || !ownerName || !side) {
       Alert.alert('Thiếu thông tin', 'Vui lòng nhập đủ Số nhà, Đường, Phường/Xã, Chủ hộ, Phía đường.');
       return;
@@ -777,39 +812,48 @@ export default function SurveyScreen() {
           { text: 'Hủy', style: 'cancel' },
           { text: 'Lấy GPS', onPress: () => handleGetGps() },
           { text: 'Chọn trên bản đồ', onPress: () => setPickerVisible(true) },
-          { text: 'Vẫn lưu', onPress: () => confirmPhotosAndSave(trySyncNow) },
+          { text: 'Vẫn lưu', onPress: () => confirmPhotosAndSave() },
         ],
       );
       return;
     }
-    await confirmPhotosAndSave(trySyncNow);
+    await confirmPhotosAndSave();
   }
 
-  async function confirmPhotosAndSave(trySyncNow: boolean) {
+  async function confirmPhotosAndSave() {
     if (resurveyHouse) {
+      const network = await NetInfo.fetch();
+      if (!network.isConnected || network.isInternetReachable === false) {
+        Alert.alert('Cần có mạng', 'Khảo sát lại cần kết nối mạng để cập nhật hồ sơ. Dữ liệu đang nhập vẫn được giữ.');
+        return;
+      }
       await performResurvey();
       return;
     }
-    // Cảnh báo mềm — không chặn cứng, vì hiện trường nhiều khi không chụp được
-    // đủ ảnh (biển hỏng, chủ nhà từ chối...) và app này ưu tiên offline-first.
-    if (trySyncNow && (!facadePhotoUri || !platePhotoUri)) {
-      Alert.alert('Thiếu ảnh', 'Chưa có đủ ảnh mặt tiền/biển số nhà, vẫn gửi duyệt?', [
+    // Cảnh báo mềm — không chặn cứng, vì hiện trường nhiều khi không chụp được đủ ảnh.
+    if (!facadePhotoUris.length || !platePhotoUris.length) {
+      Alert.alert('Thiếu ảnh', 'Chưa có đủ ảnh mặt tiền/biển số nhà. Vẫn lưu hồ sơ?', [
         { text: 'Hủy', style: 'cancel' },
-        { text: 'Vẫn gửi', onPress: () => performSave(trySyncNow) },
+        { text: 'Vẫn lưu', onPress: () => performSave() },
       ]);
       return;
     }
-    await performSave(trySyncNow);
+    await performSave();
   }
 
   return (
-    // keyboardShouldPersistTaps: chạm dòng gợi ý chủ hộ khi bàn phím đang mở vẫn nhận ngay cú chạm đầu.
-    <ScrollView
-      style={styles.container}
-      contentContainerStyle={styles.content}
-      keyboardShouldPersistTaps="handled"
-      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />}
-    >
+    <KeyboardAvoidingView style={styles.container} behavior="padding">
+      {/* keyboardShouldPersistTaps: chạm dòng gợi ý chủ hộ khi bàn phím đang mở vẫn nhận ngay cú chạm đầu. */}
+      <ScrollView
+        ref={scrollRef}
+        style={styles.scroll}
+        contentContainerStyle={styles.content}
+        keyboardShouldPersistTaps="handled"
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />}
+        onLayout={() => {
+          if (noteFocused.current) scrollRef.current?.scrollToEnd({ animated: true });
+        }}
+      >
       {/* <WardSelectorBar /> */}
 
       {(resurveyHouseId || resurveyHouse) && (
@@ -990,7 +1034,11 @@ export default function SurveyScreen() {
           idValue={streetId}
           options={streets
             .filter((s) => !wardId || s.wardId === wardId)
-            .map((s) => ({ id: s.id, name: s.name }))}
+            .map((s) => ({
+              id: s.id,
+              name: s.name,
+              detail: wards.find((wardOption) => wardOption.id === s.wardId)?.name ?? 'Chưa gán Phường/Xã',
+            }))}
           onSelect={(opt) => {
             setStreetId(opt?.id ?? '');
             if (opt) setStreet(opt.name);
@@ -1007,7 +1055,7 @@ export default function SurveyScreen() {
               {hamletLock.wardName} · {hamletLock.hamletName}
             </Text>
             <Text style={{ fontSize: 11, color: '#64748b', marginTop: 2 }}>
-              Theo tài khoản ấp/thôn — chỉ ghi nhận nhà trong ấp của mình.
+              Địa bàn lấy theo tài khoản của bạn.
             </Text>
           </>
         ) : (
@@ -1073,28 +1121,29 @@ export default function SurveyScreen() {
 
       <View style={styles.card}>
         <Text style={styles.sectionTitle}>4. Công Trình & Hiện Trạng</Text>
-        <Text style={styles.label}>Loại công trình</Text>
-        <View style={styles.chipRow}>
-          {BUILDING_TYPES.map((t) => (
-            <TouchableOpacity
-              key={t}
-              onPress={() => {
-                // Hiện trạng là mục con của loại công trình — đổi sang loại khác thì bỏ chọn
-                // hiện trạng cũ để người khảo sát chọn lại cho đúng loại mới.
-                if (t !== buildingType) {
-                  setUsageStatusId('');
-                  setUsageStatusName('');
-                }
-                setBuildingType(t);
-              }}
-              style={[styles.chip, buildingType === t && styles.chipActive]}
-            >
-              <Text style={[styles.chipText, buildingType === t && styles.chipTextActive]}>
-                {BUILDING_TYPE_LABELS[t]}
-              </Text>
-            </TouchableOpacity>
-          ))}
-        </View>
+        <AddressPickerField
+          label="Loại công trình"
+          required
+          textValue={BUILDING_TYPE_LABELS[buildingType]}
+          idValue={buildingType}
+          options={BUILDING_TYPES.map((type) => ({
+            id: type,
+            name: BUILDING_TYPE_LABELS[type],
+          }))}
+          allowManual={false}
+          onSelect={(option) => {
+            if (!option) return;
+            const type = BUILDING_TYPES.find((buildingTypeOption) => buildingTypeOption === option.id);
+            if (!type) return;
+            // Hiện trạng là mục con của loại công trình — đổi loại thì yêu cầu chọn lại hiện trạng.
+            if (type !== buildingType) {
+              setUsageStatusId('');
+              setUsageStatusName('');
+            }
+            setBuildingType(type);
+          }}
+          onManualText={() => {}}
+        />
 
         <View style={styles.subGroup}>
           <AddressPickerField
@@ -1132,20 +1181,34 @@ export default function SurveyScreen() {
       <View style={styles.card}>
         <Text style={styles.sectionTitle}>5. Hình Ảnh Số Nhà</Text>
 
-        <Text style={styles.label}>Ảnh mặt tiền nhà</Text>
-        <PhotoSlot
-          uri={facadePhotoUri}
-          onPick={() => pickSinglePhoto('Ảnh mặt tiền nhà', setFacadePhotoUri)}
-          onView={() => facadePhotoUri && setViewer({ uris: [facadePhotoUri], index: 0 })}
-          onRemove={() => setFacadePhotoUri(null)}
+        <Text style={styles.label}>
+          Ảnh mặt tiền nhà ({facadePhotoUris.length}/{MAX_REQUIRED_PHOTOS})
+        </Text>
+        <PhotoGroup
+          uris={facadePhotoUris}
+          max={MAX_REQUIRED_PHOTOS}
+          onPick={() =>
+            pickPhotos('Ảnh mặt tiền nhà', MAX_REQUIRED_PHOTOS - facadePhotoUris.length, (uris) =>
+              setFacadePhotoUris((prev) => [...prev, ...uris].slice(0, MAX_REQUIRED_PHOTOS)),
+            )
+          }
+          onView={(index) => setViewer({ uris: facadePhotoUris, index })}
+          onRemove={(index) => setFacadePhotoUris((prev) => prev.filter((_, i) => i !== index))}
         />
 
-        <Text style={styles.label}>Ảnh biển số nhà</Text>
-        <PhotoSlot
-          uri={platePhotoUri}
-          onPick={() => pickSinglePhoto('Ảnh biển số nhà', setPlatePhotoUri)}
-          onView={() => platePhotoUri && setViewer({ uris: [platePhotoUri], index: 0 })}
-          onRemove={() => setPlatePhotoUri(null)}
+        <Text style={styles.label}>
+          Ảnh biển số nhà ({platePhotoUris.length}/{MAX_REQUIRED_PHOTOS})
+        </Text>
+        <PhotoGroup
+          uris={platePhotoUris}
+          max={MAX_REQUIRED_PHOTOS}
+          onPick={() =>
+            pickPhotos('Ảnh biển số nhà', MAX_REQUIRED_PHOTOS - platePhotoUris.length, (uris) =>
+              setPlatePhotoUris((prev) => [...prev, ...uris].slice(0, MAX_REQUIRED_PHOTOS)),
+            )
+          }
+          onView={(index) => setViewer({ uris: platePhotoUris, index })}
+          onRemove={(index) => setPlatePhotoUris((prev) => prev.filter((_, i) => i !== index))}
         />
 
         <Text style={styles.label}>
@@ -1172,29 +1235,32 @@ export default function SurveyScreen() {
 
       <View style={styles.card}>
         <Text style={styles.sectionTitle}>6. Ghi Chú</Text>
-        <Field label="Ghi chú khảo sát" value={note} onChangeText={setNote} multiline />
+        <Field
+          label="Ghi chú khảo sát"
+          value={note}
+          onChangeText={setNote}
+          multiline
+          onFocus={() => {
+            noteFocused.current = true;
+            scrollRef.current?.scrollToEnd({ animated: true });
+          }}
+          onBlur={() => {
+            noteFocused.current = false;
+          }}
+        />
       </View>
 
       <View style={styles.actions}>
-        {!resurveyHouseId && (
-        <TouchableOpacity
-          style={[styles.actionButton, styles.actionOffline]}
-          onPress={() => handleSave(false)}
-          disabled={saving}
-        >
-          <Text style={styles.actionOfflineText}>Lưu Tạm (Offline)</Text>
-        </TouchableOpacity>
-        )}
         <TouchableOpacity
           style={[styles.actionButton, styles.actionSubmit]}
-          onPress={() => handleSave(true)}
+          onPress={() => handleSave()}
           disabled={saving}
         >
           {saving ? (
             <ActivityIndicator color="#fff" />
           ) : (
             <Text style={styles.actionSubmitText}>
-              {resurveyHouseId ? 'Lưu & Gửi (sửa lại)' : 'Lưu & Gửi Duyệt'}
+              {resurveyHouseId ? 'Lưu khảo sát lại' : 'Lưu'}
             </Text>
           )}
         </TouchableOpacity>
@@ -1236,7 +1302,8 @@ export default function SurveyScreen() {
           onClose={() => setViewer(null)}
         />
       )}
-    </ScrollView>
+      </ScrollView>
+    </KeyboardAvoidingView>
   );
 }
 
@@ -1256,34 +1323,40 @@ function Field({
   );
 }
 
-/** 1 ô ảnh bắt buộc đơn (mặt tiền / biển số) — chụp/chọn 1 ảnh, có thể xóa để chụp lại. */
-function PhotoSlot({
-  uri,
+/** Nhóm ảnh mặt tiền/biển số — tối đa 2 ảnh, có thể xem, thêm hoặc xóa từng ảnh. */
+function PhotoGroup({
+  uris,
+  max,
   onPick,
   onView,
   onRemove,
 }: {
-  uri: string | null;
+  uris: string[];
+  max: number;
   onPick: () => void;
-  onView: () => void;
-  onRemove: () => void;
+  onView: (index: number) => void;
+  onRemove: (index: number) => void;
 }) {
-  if (uri) {
-    return (
-      <View style={styles.photoThumbWrap}>
-        <TouchableOpacity activeOpacity={0.85} onPress={onView}>
-          <Image source={{ uri }} style={styles.photoThumb} />
-        </TouchableOpacity>
-        <TouchableOpacity style={styles.photoRemoveBtn} onPress={onRemove}>
-          <Text style={styles.photoRemoveText}>×</Text>
-        </TouchableOpacity>
-      </View>
-    );
-  }
   return (
-    <TouchableOpacity style={styles.photoAddTile} onPress={onPick}>
-      <Text style={styles.photoAddText}>Bấm để Chụp ảnh hoặc Chọn từ máy</Text>
-    </TouchableOpacity>
+    <View style={styles.photoGrid}>
+      {uris.map((uri, index) => (
+        <View key={`${uri}-${index}`} style={styles.photoThumbWrap}>
+          <TouchableOpacity activeOpacity={0.85} onPress={() => onView(index)}>
+            <Image source={{ uri }} style={styles.photoThumb} />
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.photoRemoveBtn} onPress={() => onRemove(index)}>
+            <Text style={styles.photoRemoveText}>×</Text>
+          </TouchableOpacity>
+        </View>
+      ))}
+      {uris.length < max && (
+        <TouchableOpacity style={styles.photoAddTile} onPress={onPick}>
+          <Text style={styles.photoAddText}>
+            {uris.length ? '+ Thêm ảnh' : 'Bấm để Chụp ảnh hoặc Chọn từ máy'}
+          </Text>
+        </TouchableOpacity>
+      )}
+    </View>
   );
 }
 
@@ -1307,8 +1380,8 @@ function AddressPickerField({
   required?: boolean;
   textValue: string;
   idValue: string;
-  options: { id: string; name: string }[];
-  onSelect: (option: { id: string; name: string } | null) => void;
+  options: { id: string; name: string; detail?: string }[];
+  onSelect: (option: { id: string; name: string; detail?: string } | null) => void;
   onManualText: (text: string) => void;
   /**
    * TN-07 — tắt lối "dùng làm tên khác" khi field không có cột chữ tự do
@@ -1321,7 +1394,16 @@ function AddressPickerField({
   const [visible, setVisible] = useState(false);
   const [query, setQuery] = useState('');
 
-  const filtered = options.filter((o) => o.name.toLowerCase().includes(query.toLowerCase()));
+  const normalize = (value: string) =>
+    value
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/đ/gi, 'd')
+      .toLocaleLowerCase('vi');
+  const normalizedQuery = normalize(query.trim());
+  const filtered = options.filter((option) =>
+    normalize(`${option.name} ${option.detail ?? ''}`).includes(normalizedQuery),
+  );
 
   return (
     <View>
@@ -1375,7 +1457,10 @@ function AddressPickerField({
                   setVisible(false);
                 }}
               >
-                <Text style={styles.modalOptionText}>{item.name}</Text>
+                <View>
+                  <Text style={styles.modalOptionText}>{item.name}</Text>
+                  {!!item.detail && <Text style={styles.modalOptionDetail}>{item.detail}</Text>}
+                </View>
               </TouchableOpacity>
             )}
             ListEmptyComponent={
@@ -1412,6 +1497,7 @@ function AddressPickerField({
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#f8fafc' },
+  scroll: { flex: 1 },
   content: { padding: 16, gap: 12, paddingBottom: 40 },
   card: {
     backgroundColor: '#fff',
@@ -1552,8 +1638,6 @@ const styles = StyleSheet.create({
   photoAddText: { color: '#94a3b8', fontSize: 11, textAlign: 'center', fontWeight: '600' },
   actions: { flexDirection: 'row', gap: 10, marginTop: 4 },
   actionButton: { flex: 1, borderRadius: 10, paddingVertical: 14, alignItems: 'center' },
-  actionOffline: { backgroundColor: '#fbbf24' },
-  actionOfflineText: { color: '#1e293b', fontWeight: '700', fontSize: 13 },
   actionSubmit: { backgroundColor: '#1d4ed8' },
   actionSubmitText: { color: '#fff', fontWeight: '700', fontSize: 13 },
   pickerValue: { fontSize: 14, color: '#0f172a' },
@@ -1568,6 +1652,7 @@ const styles = StyleSheet.create({
   },
   modalOptionActive: { backgroundColor: '#eff6ff' },
   modalOptionText: { fontSize: 14, color: '#0f172a' },
+  modalOptionDetail: { fontSize: 12, color: '#64748b', marginTop: 3 },
   modalEmptyText: { fontSize: 13, color: '#94a3b8', paddingVertical: 12, textAlign: 'center' },
   modalManualBtn: {
     backgroundColor: '#eff6ff',

@@ -69,7 +69,11 @@ export const routesApi = {
   update: (id: string, dto: UpdateSurveyRouteRequest) =>
     apiFetch<SurveyRoute>(`/api/survey-routes/${id}`, { method: 'PATCH', body: JSON.stringify(dto) }),
   duplicate: (id: string) => apiFetch<SurveyRoute>(`/api/survey-routes/${id}/duplicate`, { method: 'POST' }),
-  remove: (id: string) => apiFetch<void>(`/api/survey-routes/${id}`, { method: 'DELETE' }),
+  remove: (id: string, confirmation: string) =>
+    apiFetch<void>(`/api/survey-routes/${id}`, {
+      method: 'DELETE',
+      body: JSON.stringify({ confirmation }),
+    }),
 };
 
 export const assignmentsApi = {

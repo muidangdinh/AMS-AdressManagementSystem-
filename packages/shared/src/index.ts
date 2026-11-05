@@ -144,6 +144,7 @@ export const PERMISSIONS = {
   PLATE_ISSUE: 'plate:issue',
   PLATE_INSTALL: 'plate:install',
   PLATE_REVOKE: 'plate:revoke',
+  PLATE_LOOKUP: 'plate:lookup',
   SURVEY_MANAGE: 'survey:manage',
   ASSIGNMENT_EXECUTE: 'assignment:execute',
   ASSIGNMENT_REVIEW: 'assignment:review',

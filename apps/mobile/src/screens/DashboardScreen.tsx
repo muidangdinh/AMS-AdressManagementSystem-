@@ -51,6 +51,7 @@ import {
   buildSchemeSlices,
   buildSurveySlices,
   CHART_COLORS,
+  PERMISSIONS,
   SLICE_KEY,
   toStackedBreakdown,
 } from '@tayninh/shared';
@@ -344,6 +345,7 @@ function DetailModal({
  */
 export default function DashboardScreen() {
   const { user, refreshUser } = useAuth();
+  const canLookup = !!user?.permissions?.includes(PERMISSIONS.PLATE_LOOKUP);
   const navigation = useNavigation<BottomTabNavigationProp<MainTabsParamList>>();
   const [data, setData] = useState<DashboardMine | null>(null);
   const [system, setSystem] = useState<DashboardSummary | null>(null);
@@ -1310,9 +1312,11 @@ export default function DashboardScreen() {
             <TouchableOpacity style={styles.navButton} onPress={() => navigation.navigate('Assignments')}>
               <Text style={styles.navButtonText}>Xem khảo sát →</Text>
             </TouchableOpacity>
-            <TouchableOpacity style={styles.navButton} onPress={() => navigation.navigate('Plates')}>
-              <Text style={styles.navButtonText}>Xem biển số →</Text>
-            </TouchableOpacity>
+            {canLookup && (
+              <TouchableOpacity style={styles.navButton} onPress={() => navigation.navigate('Plates')}>
+                <Text style={styles.navButtonText}>Xem biển số →</Text>
+              </TouchableOpacity>
+            )}
           </View>
         </>
       )}

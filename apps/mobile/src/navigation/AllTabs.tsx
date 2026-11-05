@@ -10,11 +10,16 @@ import InstallScreen from '../screens/InstallScreen';
 import HistoryScreen from '../screens/HistoryScreen';
 import { tabScreenOptions } from './tabHeader';
 import type { MainTabsParamList } from './MainTabs';
+import { PERMISSIONS } from '@tayninh/shared';
+import { useAuth } from '../lib/AuthContext';
 
 const Tab = createBottomTabNavigator<MainTabsParamList>();
 
 /** Người có cả quyền khảo sát lẫn thi công (admin, kiêm nhiệm): đủ 7 tab. */
 export default function AllTabs() {
+  const { user } = useAuth();
+  const canLookup = !!user?.permissions?.includes(PERMISSIONS.PLATE_LOOKUP);
+
   return (
     <Tab.Navigator
       screenOptions={tabScreenOptions('all')}
@@ -55,9 +60,6 @@ export default function AllTabs() {
           tabBarIcon: ({ color, size }) => <Icon name="map-marker-radius" color={color} size={size} />,
         }}
       />
-      {/* TN-19 — góp ý khách hàng 11/09/2026: đổi tên hiển thị thành "Tra Cứu" (thêm thanh tra
-          cứu ở PlatesScreen.tsx). Giữ nguyên route name "Plates" — không đổi để khỏi phải sửa
-          điều hướng ở nơi khác (vd DashboardScreen điều hướng theo tên route, không theo nhãn). */}
       <Tab.Screen
         name="Install"
         component={InstallScreen}
@@ -67,15 +69,17 @@ export default function AllTabs() {
           tabBarIcon: ({ color, size }) => <Icon name="hammer-wrench" color={color} size={size} />,
         }}
       />
-      <Tab.Screen
-        name="Plates"
-        component={PlatesScreen}
-        options={{
-          title: 'Tra Cứu',
-          tabBarLabel: 'Tra Cứu',
-          tabBarIcon: ({ color, size }) => <Icon name="magnify" color={color} size={size} />,
-        }}
-      />
+      {canLookup && (
+        <Tab.Screen
+          name="Plates"
+          component={PlatesScreen}
+          options={{
+            title: 'Tra Cứu',
+            tabBarLabel: 'Tra Cứu',
+            tabBarIcon: ({ color, size }) => <Icon name="magnify" color={color} size={size} />,
+          }}
+        />
+      )}
       <Tab.Screen
         name="History"
         component={HistoryScreen}

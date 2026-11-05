@@ -7,6 +7,7 @@ import { RoutesService } from './routes.service';
 import { CreateRouteDto } from './dto/create-route.dto';
 import { UpdateRouteDto } from './dto/update-route.dto';
 import { ListRoutesQueryDto } from './dto/list-routes-query.dto';
+import { DeleteRouteDto } from './dto/delete-route.dto';
 
 /**
  * Kho tuyến đường. Đọc mở cho mọi vai trò, ghi cần ROUTE_MANAGE vì thay đổi ảnh hưởng mọi đợt đang dùng
@@ -42,7 +43,7 @@ export class RoutesController {
   @RequirePermissions(PERMISSIONS.ROUTE_MANAGE)
   @HttpCode(204)
   @Delete(':id')
-  remove(@Param('id') id: string) {
-    return this.routesService.remove(id);
+  remove(@Param('id') id: string, @Body() dto: DeleteRouteDto) {
+    return this.routesService.remove(id, dto.confirmation);
   }
 }

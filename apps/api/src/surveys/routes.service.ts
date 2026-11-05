@@ -270,17 +270,24 @@ export class RoutesService {
     });
   }
 
-  /** Xóa khỏi kho. Tuyến đã dùng thì phải chuyển sang "ngừng sử dụng" để giữ dữ liệu các đợt. */
-  async remove(id: string) {
-    await this.findOneOrThrow(id);
-    const [zoneCount, surveyCount, installCount] = await Promise.all([
-      this.prisma.surveyZoneRoute.count({ where: { routeId: id } }),
-      this.prisma.surveyAssignment.count({ where: { routeId: id } }),
-      this.prisma.installAssignment.count({ where: { routeId: id } }),
-    ]);
-    if (zoneCount + surveyCount + installCount > 0) {
-      throw new ConflictException('Tuyến đang được sử dụng — hãy chuyển sang "Ngừng sử dụng" thay vì xóa');
-    }
-    await this.prisma.surveyRoute.delete({ where: { id } });
+  /** Xóa khỏi kho chỉ khi xác nhận khớp tên và tuyến chưa được sử dụng. */
+  async remove(id: string, confirmation: string) {
+    await this.prisma.$transaction(async (tx) => {
+      const route = await tx.surveyRoute.findUnique({ where: { id }, select: { id: true, name: true } });
+      if (!route) throw new NotFoundException('Không tìm thấy tuyến đường');
+      if (confirmation !== `DELETE ${route.name}`) {
+        throw new BadRequestException(`Xác nhận không chính xác — hãy nhập DELETE ${route.name}`);
+      }
+
+      const [zoneCount, surveyCount, installCount] = await Promise.all([
+        tx.surveyZoneRoute.count({ where: { routeId: id } }),
+        tx.surveyAssignment.count({ where: { routeId: id } }),
+        tx.installAssignment.count({ where: { routeId: id } }),
+      ]);
+      if (zoneCount + surveyCount + installCount > 0) {
+        throw new ConflictException('Tuyến đang được sử dụng — hãy chuyển sang "Ngừng sử dụng" thay vì xóa');
+      }
+      await tx.surveyRoute.delete({ where: { id } });
+    });
   }
 }

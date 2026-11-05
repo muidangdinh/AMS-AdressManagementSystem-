@@ -213,10 +213,12 @@ export default function RouteCatalogPanel() {
   }
 
   async function handleRemove(route: SurveyRoute) {
-    if (!confirm(`Xóa tuyến "${route.name}" khỏi kho?`)) return;
+    if (!confirm(`Xóa tuyến "${route.name}" khỏi kho? Thao tác này không thể hoàn tác.`)) return;
+    const confirmation = window.prompt(`Để xác nhận, nhập chính xác:\nDELETE ${route.name}`);
+    if (confirmation === null) return;
     setError(null);
     try {
-      await routesApi.remove(route.id);
+      await routesApi.remove(route.id, confirmation);
       setRoutes((prev) => prev.filter((r) => r.id !== route.id));
       if (selectedRouteId === route.id) setSelectedRouteId(null);
     } catch (err) {
