@@ -4,7 +4,17 @@ import { Suspense, useCallback, useEffect, useRef, useState } from 'react';
 import dynamic from 'next/dynamic';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
-import { ChevronUp, Filter, List, Map as MapIcon, Plus, Search, Zap } from 'lucide-react';
+import {
+  ChevronLeft,
+  ChevronRight,
+  ChevronUp,
+  Filter,
+  List,
+  Map as MapIcon,
+  Plus,
+  Search,
+  Zap,
+} from 'lucide-react';
 import {
   BUILDING_TYPE_LABELS,
   BuildingType,
@@ -372,6 +382,7 @@ export default function HousesPage() {
   // ấp chỉ hiển thị; hồ sơ mới mặc định thuộc ấp của họ.
   const hamletScoped = user?.level === UserLevel.HAMLET;
   const canEdit = hasPermission(PERMISSIONS.HOUSE_UPDATE);
+  const canDelete = hasPermission(PERMISSIONS.HOUSE_DELETE);
   const canAdjustLocation = hasPermission(PERMISSIONS.HOUSE_LOCATION_UPDATE);
   const canManageCases = hasPermission(PERMISSIONS.CASE_MANAGE);
   const apiUrl = getApiUrl();
@@ -406,6 +417,8 @@ export default function HousesPage() {
   const [data, setData] = useState<PaginatedResult<HouseSummary> | null>(null);
   const [loading, setLoading] = useState(false);
   const [listError, setListError] = useState<string | null>(null);
+  const [selectedHouseIds, setSelectedHouseIds] = useState<string[]>([]);
+  const [deleting, setDeleting] = useState(false);
 
   // Phase 6 — danh mục địa chỉ chuẩn hoá, dùng cho bộ lọc và dropdown trong form
   const [districts, setDistricts] = useState<District[]>([]);
@@ -441,10 +454,43 @@ export default function HousesPage() {
   // Popup xem ảnh phóng to (click vào ảnh hiện trạng hoặc ảnh trong lịch sử) —
   // kèm người upload + thời điểm upload để hiện chú thích dưới ảnh.
   const [lightbox, setLightbox] = useState<{
-    url: string;
-    uploadedBy: HouseUserRef | null;
-    uploadedAt: string | null;
+    images: {
+      url: string;
+      uploadedBy: HouseUserRef | null;
+      uploadedAt: string | null;
+    }[];
+    index: number;
   } | null>(null);
+
+  useEffect(() => {
+    if (!lightbox) return;
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setLightbox(null);
+      } else if (event.key === 'ArrowRight') {
+        event.preventDefault();
+        setLightbox((current) =>
+          current
+            ? { ...current, index: (current.index + 1) % current.images.length }
+            : current,
+        );
+      } else if (event.key === 'ArrowLeft') {
+        event.preventDefault();
+        setLightbox((current) =>
+          current
+            ? {
+                ...current,
+                index: (current.index - 1 + current.images.length) % current.images.length,
+              }
+            : current,
+        );
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [lightbox]);
 
   // Modal thêm/sửa
   const [modalOpen, setModalOpen] = useState(false);
@@ -457,6 +503,9 @@ export default function HousesPage() {
 
   // Bản đồ (Phase 3)
   const [viewMode, setViewMode] = useState<'table' | 'map'>('table');
+  useEffect(() => {
+    setSelectedHouseIds([]);
+  }, [page, search, wardId, hamletId, streetId, status, viewMode]);
   // Tham chiếu ổn định cho ResetToTableFromQuery — truyền hàm inline mỗi render sẽ khiến
   // effect của nó chạy lại liên tục và ép viewMode về 'table' ngay cả khi vừa chuyển sang 'map'.
   const [flyToRequest, setFlyToRequest] = useState<FlyToRequest | null>(null);
@@ -1002,6 +1051,53 @@ export default function HousesPage() {
     return entry?.changedBy ?? null;
   }
 
+  function openLightbox(
+    photoUrl: string,
+    metadata?: { uploadedBy: HouseUserRef | null; uploadedAt: string | null },
+  ) {
+    const imagesByUrl = new Map<
+      string,
+      { url: string; uploadedBy: HouseUserRef | null; uploadedAt: string | null }
+    >();
+
+    for (const photo of detail?.photos ?? []) {
+      const url = `${apiUrl}${photo.url}`;
+      imagesByUrl.set(url, {
+        url,
+        uploadedBy: findUploader(photo.url),
+        uploadedAt: photo.createdAt,
+      });
+    }
+
+    for (const entry of history) {
+      if (entry.action !== 'PHOTO_ADD' || !Array.isArray(entry.changes)) continue;
+      for (const change of entry.changes) {
+        const photo = (change.new ?? change.old) as HousePhotoChangeValue | null;
+        if (!photo) continue;
+        const url = `${apiUrl}${photo.url}`;
+        if (!imagesByUrl.has(url)) {
+          imagesByUrl.set(url, {
+            url,
+            uploadedBy: entry.changedBy,
+            uploadedAt: entry.createdAt,
+          });
+        }
+      }
+    }
+
+    if (!imagesByUrl.has(photoUrl)) {
+      imagesByUrl.set(photoUrl, {
+        url: photoUrl,
+        uploadedBy: metadata?.uploadedBy ?? null,
+        uploadedAt: metadata?.uploadedAt ?? null,
+      });
+    }
+
+    const images = [...imagesByUrl.values()];
+    const index = images.findIndex((image) => image.url === photoUrl);
+    if (index >= 0) setLightbox({ images, index });
+  }
+
   async function handleUpload(e: React.ChangeEvent<HTMLInputElement>, type: PhotoType) {
     if (!selectedId || !e.target.files?.[0]) return;
     const file = e.target.files[0];
@@ -1031,7 +1127,74 @@ export default function HousesPage() {
     }
   }
 
+  async function refreshAfterHouseDelete(deletedCount = 1) {
+    if (page > 1 && (data?.items.length ?? 0) <= deletedCount) {
+      setPage((current) => current - 1);
+    } else {
+      await fetchHouses({ force: true });
+    }
+    await fetchStats();
+    if (viewMode === 'map' && mapBounds) await fetchMapHouses(mapBounds);
+  }
+
+  async function handleDeleteHouse(house: HouseSummary) {
+    const label = `số ${house.houseNumber} ${house.street}`;
+    if (
+      !confirm(
+        `Xóa hẳn hồ sơ ${label}? Ảnh, biển số, lịch sử và dòng trong phương án đánh số sẽ bị xóa. Hồ sơ hành chính liên quan chỉ mất liên kết.`,
+      )
+    )
+      return;
+    const confirmation = window.prompt(`Để xác nhận, nhập chính xác:\nDELETE ${house.houseNumber} ${house.street}`);
+    if (confirmation === null) return;
+    setDeleting(true);
+    try {
+      await apiFetch(`/api/houses/${house.id}`, {
+        method: 'DELETE',
+        body: JSON.stringify({ confirmation }),
+      });
+      closeDetail();
+      await refreshAfterHouseDelete();
+    } catch (err) {
+      alert(err instanceof ApiError ? err.message : 'Xóa hồ sơ thất bại');
+    } finally {
+      setDeleting(false);
+    }
+  }
+
+  async function handleBulkDelete() {
+    const ids = selectedHouseIds;
+    if (ids.length === 0) return;
+    if (
+      !confirm(
+        `Xóa hẳn ${ids.length} hồ sơ đã chọn? Ảnh, biển số, lịch sử và dòng trong phương án đánh số sẽ bị xóa. Hồ sơ hành chính liên quan chỉ mất liên kết.`,
+      )
+    )
+      return;
+    const confirmation = window.prompt('Để xác nhận xóa hàng loạt, nhập chính xác:\nDELETE ALL');
+    if (confirmation === null) return;
+    setDeleting(true);
+    try {
+      await apiFetch('/api/houses', {
+        method: 'DELETE',
+        body: JSON.stringify({ ids, confirmation }),
+      });
+      if (selectedId && ids.includes(selectedId)) closeDetail();
+      setSelectedHouseIds([]);
+      await refreshAfterHouseDelete(ids.length);
+    } catch (err) {
+      alert(err instanceof ApiError ? err.message : 'Xóa hồ sơ thất bại');
+    } finally {
+      setDeleting(false);
+    }
+  }
+
   const totalPages = data ? Math.max(1, Math.ceil(data.total / data.pageSize)) : 1;
+  const pageHouseIds = data?.items.map((house) => house.id) ?? [];
+  const selectedHouseIdSet = new Set(selectedHouseIds);
+  const allPageSelected =
+    pageHouseIds.length > 0 && pageHouseIds.every((id) => selectedHouseIdSet.has(id));
+  const activeLightboxImage = lightbox?.images[lightbox.index] ?? null;
 
   // Nút chuyển Bảng/Bản đồ — dùng ở cả thanh bộ lọc đầy đủ lẫn dòng thu gọn.
   // Ctrl/⌘ + K: nhảy tới ô tìm kiếm (mở lại thanh bộ lọc nếu đang thu gọn ở chế độ Bản đồ).
@@ -1193,6 +1356,11 @@ export default function HousesPage() {
           <Zap className="w-4 h-4" />
           {exporting ? 'Đang xuất…' : 'Xuất Excel'}
         </Button>
+        {canDelete && selectedHouseIds.length > 0 && (
+          <Button variant="danger" onClick={handleBulkDelete} disabled={deleting}>
+            {deleting ? 'Đang xóa…' : `Xóa đã chọn (${selectedHouseIds.length})`}
+          </Button>
+        )}
         {canEdit && (
           <Button variant="primary" onClick={() => openCreateModal()}>
             <Plus className="w-4 h-4" />
@@ -1231,6 +1399,22 @@ export default function HousesPage() {
           <table className="w-full text-sm">
             <thead className="bg-surface-2/60 text-fg-subtle text-[11px] uppercase tracking-wider">
               <tr>
+                {canDelete && (
+                  <th className="w-10 px-4 py-3">
+                    <input
+                      type="checkbox"
+                      checked={allPageSelected}
+                      onChange={(e) => {
+                        if (e.target.checked) {
+                          setSelectedHouseIds((prev) => [...new Set([...prev, ...pageHouseIds])]);
+                        } else {
+                          setSelectedHouseIds((prev) => prev.filter((id) => !pageHouseIds.includes(id)));
+                        }
+                      }}
+                      aria-label="Chọn tất cả hồ sơ trên trang"
+                    />
+                  </th>
+                )}
                 <th className="text-left px-4 py-3">
                   <button
                     type="button"
@@ -1260,14 +1444,14 @@ export default function HousesPage() {
             <tbody className="divide-y divide-line">
               {loading && (
                 <tr>
-                  <td colSpan={8} className="text-center py-8 text-fg-subtle">
+                  <td colSpan={canDelete ? 8 : 7} className="text-center py-8 text-fg-subtle">
                     Đang tải…
                   </td>
                 </tr>
               )}
               {!loading && data?.items.length === 0 && (
                 <tr>
-                  <td colSpan={8} className="text-center py-8 text-fg-subtle">
+                  <td colSpan={canDelete ? 8 : 7} className="text-center py-8 text-fg-subtle">
                     Không có hồ sơ nào phù hợp
                   </td>
                 </tr>
@@ -1279,6 +1463,25 @@ export default function HousesPage() {
                     onClick={() => openDetail(house.id)}
                     className="cursor-pointer transition-colors duration-200 hover:bg-surface-2/50"
                   >
+                    {canDelete && (
+                      <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
+                        <input
+                          type="checkbox"
+                          checked={selectedHouseIdSet.has(house.id)}
+                          onChange={(e) => {
+                            const checked = e.target.checked;
+                            setSelectedHouseIds((prev) =>
+                              checked
+                                ? prev.includes(house.id)
+                                  ? prev
+                                  : [...prev, house.id]
+                                : prev.filter((id) => id !== house.id),
+                            );
+                          }}
+                          aria-label={`Chọn hồ sơ số ${house.houseNumber}`}
+                        />
+                      </td>
+                    )}
                     <td className="px-4 py-3 font-bold text-fg">{house.houseNumber}</td>
                     <td className="px-4 py-3">{house.ownerName}</td>
                     <td className="px-4 py-3 text-xs">
@@ -1739,13 +1942,7 @@ export default function HousesPage() {
                                   <img
                                     src={`${apiUrl}${photo.url}`}
                                     alt="Ảnh công trình"
-                                    onClick={() =>
-                                      setLightbox({
-                                        url: `${apiUrl}${photo.url}`,
-                                        uploadedBy: findUploader(photo.url),
-                                        uploadedAt: photo.createdAt,
-                                      })
-                                    }
+                                    onClick={() => openLightbox(`${apiUrl}${photo.url}`)}
                                     className="w-full h-20 object-cover rounded-lg border border-line cursor-pointer hover:opacity-90 transition"
                                   />
                                   {canEdit && (
@@ -1855,11 +2052,15 @@ export default function HousesPage() {
                                 </div>
                               </div>
                               {activePlate.installPhotoUrl && (
-                                <a
-                                  href={`${apiUrl}${activePlate.installPhotoUrl}`}
-                                  target="_blank"
-                                  rel="noreferrer"
-                                  className="block"
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    openLightbox(`${apiUrl}${activePlate.installPhotoUrl}`, {
+                                      uploadedBy: null,
+                                      uploadedAt: activePlate.installedAt ?? null,
+                                    })
+                                  }
+                                  className="block w-full text-left"
                                   title="Ảnh gắn biển — bấm để xem lớn"
                                 >
                                   <p className="text-[10px] text-fg-subtle mb-1">
@@ -1874,7 +2075,7 @@ export default function HousesPage() {
                                     alt="Ảnh gắn biển số nhà"
                                     className="w-full max-h-48 object-cover rounded-lg border border-line"
                                   />
-                                </a>
+                                </button>
                               )}
                               {!!user && activePlate.status === PlateStatus.ISSUED && (
                                 <button
@@ -1994,13 +2195,7 @@ export default function HousesPage() {
                                       <img
                                         src={`${apiUrl}${value.url}`}
                                         alt=""
-                                        onClick={() =>
-                                          setLightbox({
-                                            url: `${apiUrl}${value.url}`,
-                                            uploadedBy: h.changedBy,
-                                            uploadedAt: h.createdAt,
-                                          })
-                                        }
+                                        onClick={() => openLightbox(`${apiUrl}${value.url}`)}
                                         className="w-10 h-10 object-cover rounded border border-line cursor-pointer hover:opacity-90 transition"
                                       />
                                     )}
@@ -2017,21 +2212,32 @@ export default function HousesPage() {
             </div>
 
             {detail && (
-              <div className="p-4 bg-surface-2 border-t border-line shrink-0 flex gap-2">
-                <a
-                  href={`/houses/${detail.id}/label`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="flex-1 bg-surface-2 hover:bg-line text-fg border border-line py-2 rounded-lg text-sm font-bold text-center"
-                >
-                  In Tem QR
-                </a>
-                {canEdit && (
-                  <button
-                    onClick={() => openEditModal(detail)}
-                    className="flex-1 bg-brand hover:bg-brand/90 text-white py-2 rounded-lg text-sm font-bold"
+              <div className="p-4 bg-surface-2 border-t border-line shrink-0 space-y-2">
+                <div className="flex gap-2">
+                  <a
+                    href={`/houses/${detail.id}/label`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex-1 bg-surface-2 hover:bg-line text-fg border border-line py-2 rounded-lg text-sm font-bold text-center"
                   >
-                    Cập Nhật Thông Tin
+                    In Tem QR
+                  </a>
+                  {canEdit && (
+                    <button
+                      onClick={() => openEditModal(detail)}
+                      className="flex-1 bg-brand hover:bg-brand/90 text-white py-2 rounded-lg text-sm font-bold"
+                    >
+                      Cập Nhật Thông Tin
+                    </button>
+                  )}
+                </div>
+                {canDelete && (
+                  <button
+                    onClick={() => handleDeleteHouse(detail)}
+                    disabled={deleting}
+                    className="w-full bg-danger/10 hover:bg-danger/20 text-danger border border-danger/30 py-2 rounded-lg text-sm font-bold disabled:opacity-60"
+                  >
+                    {deleting ? 'Đang xóa…' : 'Xóa hồ sơ'}
                   </button>
                 )}
               </div>
@@ -2402,31 +2608,85 @@ export default function HousesPage() {
             onClick={() => setLightbox(null)}
             className="absolute top-4 right-4 text-white text-3xl leading-none hover:text-fg-subtle"
             aria-label="Đóng"
+            title="Đóng (Esc)"
           >
             ×
           </button>
+          {lightbox.images.length > 1 && (
+            <>
+              <button
+                type="button"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  setLightbox((current) =>
+                    current
+                      ? {
+                          ...current,
+                          index:
+                            (current.index - 1 + current.images.length) % current.images.length,
+                        }
+                      : current,
+                  );
+                }}
+                className="absolute left-3 top-1/2 -translate-y-1/2 rounded-full bg-black/60 p-2 text-white hover:bg-black/80"
+                aria-label="Ảnh trước"
+                title="Ảnh trước (←)"
+              >
+                <ChevronLeft size={28} />
+              </button>
+              <button
+                type="button"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  setLightbox((current) =>
+                    current
+                      ? { ...current, index: (current.index + 1) % current.images.length }
+                      : current,
+                  );
+                }}
+                className="absolute right-3 top-1/2 -translate-y-1/2 rounded-full bg-black/60 p-2 text-white hover:bg-black/80"
+                aria-label="Ảnh tiếp theo"
+                title="Ảnh tiếp theo (→)"
+              >
+                <ChevronRight size={28} />
+              </button>
+            </>
+          )}
           <div
             className="flex flex-col items-center gap-3 max-h-full"
             onClick={(e) => e.stopPropagation()}
           >
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src={lightbox.url}
-              alt="Ảnh phóng to"
-              className="max-w-full min-h-0 flex-1 rounded-lg shadow-2xl object-contain"
-            />
-            {(lightbox.uploadedBy || lightbox.uploadedAt) && (
+            {activeLightboxImage && (
+              <>
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={activeLightboxImage.url}
+                  alt="Ảnh phóng to"
+                  className="max-w-full min-h-0 flex-1 rounded-lg shadow-2xl object-contain"
+                />
+              </>
+            )}
+            {(activeLightboxImage?.uploadedBy || activeLightboxImage?.uploadedAt) && (
               <div className="shrink-0 bg-black/70 text-white/80 rounded-lg px-4 py-2 text-xs text-center">
                 Tải lên bởi{' '}
                 <span className="font-semibold text-white">
-                  {lightbox.uploadedBy
-                    ? `${lightbox.uploadedBy.fullName} (${USER_ROLE_LABELS[lightbox.uploadedBy.role]})`
+                  {activeLightboxImage.uploadedBy
+                    ? `${activeLightboxImage.uploadedBy.fullName} (${USER_ROLE_LABELS[activeLightboxImage.uploadedBy.role]})`
                     : 'không rõ'}
                 </span>
-                {lightbox.uploadedAt && (
-                  <> — {new Date(lightbox.uploadedAt).toLocaleString('vi-VN')}</>
+                {activeLightboxImage.uploadedAt && (
+                  <>
+                    {' '}
+                    —{' '}
+                    {new Date(activeLightboxImage.uploadedAt).toLocaleString('vi-VN')}
+                  </>
                 )}
               </div>
+            )}
+            {lightbox.images.length > 1 && (
+              <span className="shrink-0 rounded bg-black/60 px-3 py-1 text-xs text-white">
+                {lightbox.index + 1} / {lightbox.images.length} · Dùng ←/→ để chuyển ảnh
+              </span>
             )}
           </div>
         </div>

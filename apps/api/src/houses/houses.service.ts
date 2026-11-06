@@ -889,6 +889,74 @@ export class HousesService {
     return photo;
   }
 
+  async remove(id: string, confirmation: string, user: AuthenticatedUser) {
+    await this.deleteHouses([id], confirmation, false, user);
+  }
+
+  async removeMany(ids: string[], confirmation: string, user: AuthenticatedUser) {
+    await this.deleteHouses(ids, confirmation, true, user);
+  }
+
+  /** Xóa hẳn nhà + file ảnh đính kèm. Ảnh/biển/lịch sử/phương án cascade theo schema. */
+  private async deleteHouses(
+    ids: string[],
+    confirmation: string,
+    bulk: boolean,
+    user: AuthenticatedUser,
+  ) {
+    const uniqueIds = [...new Set(ids)];
+    const fileUrls = await this.prisma.$transaction(async (tx) => {
+      const houses = await tx.house.findMany({
+        where: { id: { in: uniqueIds }, ...houseScopeWhere(user) },
+        select: { id: true, houseNumber: true, street: true },
+      });
+      if (houses.length !== uniqueIds.length) throw new NotFoundException(OUT_OF_SCOPE_HOUSE);
+      if (bulk && confirmation !== 'DELETE ALL') {
+        throw new BadRequestException('Xác nhận không chính xác — hãy nhập DELETE ALL');
+      }
+      if (!bulk) {
+        const house = houses[0];
+        const expected = `DELETE ${house.houseNumber} ${house.street}`;
+        if (confirmation !== expected) {
+          throw new BadRequestException(`Xác nhận không chính xác — hãy nhập ${expected}`);
+        }
+      }
+
+      const [photos, plates] = await Promise.all([
+        tx.housePhoto.findMany({
+          where: { houseId: { in: uniqueIds } },
+          select: { url: true },
+        }),
+        tx.housePlate.findMany({
+          where: { houseId: { in: uniqueIds }, installPhotoUrl: { not: null } },
+          select: { installPhotoUrl: true },
+        }),
+      ]);
+
+      await tx.house.deleteMany({ where: { id: { in: uniqueIds } } });
+
+      return [
+        ...photos.map((photo) => photo.url),
+        ...plates.map((plate) => plate.installPhotoUrl as string),
+      ];
+    });
+
+    await Promise.all([...new Set(fileUrls)].map((url) => this.deleteUploadedFile(url)));
+  }
+
+  private async deleteUploadedFile(url: string) {
+    const relativePath = url.replace(/^\/uploads\//, '');
+    const absolutePath = path.join(getUploadRoot(), relativePath);
+    try {
+      await fs.promises.unlink(absolutePath);
+    } catch (err) {
+      const code = (err as NodeJS.ErrnoException).code;
+      if (code !== 'ENOENT') {
+        this.logger.warn(`Không xóa được file ảnh trên host: ${absolutePath} (${(err as Error).message})`);
+      }
+    }
+  }
+
   /** Sinh ảnh QR (PNG buffer) từ chuỗi định danh qrCode đã lưu. */
   async getQrPngBuffer(house: Pick<House, 'qrCode'>): Promise<Buffer> {
     return QRCode.toBuffer(house.qrCode, {

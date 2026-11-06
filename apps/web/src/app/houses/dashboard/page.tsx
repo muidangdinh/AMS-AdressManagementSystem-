@@ -40,7 +40,6 @@ import {
   buildSurveySlices,
   CHART_COLORS,
   SLICE_KEY,
-  toStackedBreakdown,
   UserLevel,
 } from '@tayninh/shared';
 import { ApiError, apiFetch } from '@/lib/api';
@@ -83,14 +82,11 @@ import type { ChartBar } from '@/components/DashboardCharts';
 const ColumnChart = dynamic(() => import('@/components/DashboardCharts').then((m) => m.ColumnChart), { ssr: false });
 const BarChartH = dynamic(() => import('@/components/DashboardCharts').then((m) => m.BarChartH), { ssr: false });
 const ProgressStat = dynamic(() => import('@/components/DashboardCharts').then((m) => m.ProgressStat), { ssr: false });
-const StackedBarChart = dynamic(() => import('@/components/DashboardCharts').then((m) => m.StackedBarChart), { ssr: false });
-
 /** 10 khối số liệu chi tiết — mỗi khối mở trong ngăn chi tiết khi bấm tile tương ứng. */
 type SectionId =
   | 'houses'
   | 'reviewStages'
   | 'hamlets'
-  | 'wards'
   | 'streets'
   | 'duplicates'
   | 'plates'
@@ -106,7 +102,6 @@ const SECTION_META: Record<SectionId, { title: string; color: MetroColor }> = {
   surveys: { title: 'Báo cáo tiến độ khảo sát', color: 'orange' },
   numbering: { title: 'Báo cáo tiến độ đánh số', color: 'purple' },
   cases: { title: 'Hồ sơ – quy trình', color: 'crimson' },
-  wards: { title: 'Theo xã/phường', color: 'green' },
   hamlets: { title: 'Ấp/thôn', color: 'green' },
   streets: { title: 'Báo cáo theo tuyến đường', color: 'green' },
 };
@@ -762,12 +757,9 @@ export default function DashboardPage() {
     });
   }
 
-  // `byWard` chỉ có khi gọi summary không kèm wardId, và trả về ĐỦ danh mục xã/phường
-  // (kể cả xã 0 nhà) — nên phải cắt top 10 theo tổng số hộ dân, không vẽ hết được.
-  const topWardBreakdown = toStackedBreakdown(data?.byWard, 10);
   const topHamletBreakdown = [...(data?.byHamlet ?? [])]
     .sort((a, b) => b.approved + b.withoutNumber - (a.approved + a.withoutNumber))
-    .slice(0, 5);
+    .slice(0, 10);
 
   // ---- Ngăn chi tiết: bấm tile mở khối tương ứng; đóng thì trả focus về tile đã bấm.
   const [openSection, setOpenSection] = useState<SectionId | null>(null);
@@ -926,35 +918,23 @@ export default function DashboardPage() {
             </TileGroup>
 
             <TileGroup title="Địa bàn">
-              {topWardBreakdown.length > 0 && (
+              {topHamletBreakdown.length > 0 && (
                 <Tile
                   size="wide"
                   color="green"
-                  label="Theo xã/phường — nhiều nhà nhất"
+                  label="Theo ấp/thôn — nhiều nhà nhất"
                   icon={MapPin}
-                  onClick={openDrawer('wards')}
+                  onClick={openDrawer('hamlets')}
                   content={
                     <MiniList
-                      items={topWardBreakdown.slice(0, 3).map((w) => ({ name: w.name, value: w.approved + w.withoutNumber }))}
+                      items={topHamletBreakdown.slice(0, 3).map((hamlet) => ({
+                        name: hamlet.name,
+                        value: hamlet.approved + hamlet.withoutNumber,
+                      }))}
                     />
                   }
                 />
               )}
-              <Tile
-                size="wide"
-                color="green"
-                label="Ấp/thôn — nhiều nhà nhất"
-                icon={MapPin}
-                onClick={openDrawer('hamlets')}
-                content={
-                  <MiniList
-                    items={topHamletBreakdown.slice(0, 3).map((hamlet) => ({
-                      name: hamlet.name,
-                      value: hamlet.approved + hamlet.withoutNumber,
-                    }))}
-                  />
-                }
-              />
               <Tile
                 size="wide"
                 color="green"
@@ -1263,7 +1243,7 @@ export default function DashboardPage() {
 
           <DrawerSection
             id="hamlets"
-            subtitle="10.2 — top 5 ấp/thôn nhiều nhà nhất"
+            subtitle="Top 10 ấp/thôn nhiều nhà nhất — tách rõ đã có số / chưa có số"
             chart={
               <BarChartH
                 data={
@@ -1305,46 +1285,6 @@ export default function DashboardPage() {
           />
             }
           />
-
-          {topWardBreakdown.length > 0 && (
-            <DrawerSection
-              id="wards"
-              subtitle="Top 10 xã/phường nhiều nhà nhất — tách rõ đã có số / chưa có số"
-              chart={
-                <StackedBarChart
-                  data={topWardBreakdown}
-                  onBarClick={(key) => openHouses(`Nhà ở ${key}`, undefined, { ward: key })}
-                />
-              }
-              details={
-                <RankedList
-                  items={topWardBreakdown}
-                  emptyText="Chưa có dữ liệu"
-                  renderItem={(w, i) => (
-                    <li key={w.key}>
-                      <button
-                        onClick={() => openHouses(`Nhà ở ${w.name}`, undefined, { ward: w.name })}
-                        className="w-full flex items-center justify-between px-4 py-2.5 text-sm hover:bg-accent/10 text-left"
-                      >
-                        <span className="flex items-center gap-2.5">
-                          <span className="w-5 h-5 rounded-full bg-surface-2 text-fg-muted text-[11px] font-bold flex items-center justify-center">
-                            {i + 1}
-                          </span>
-                          <span className="text-fg font-medium">{w.name}</span>
-                        </span>
-                        <span className="text-xs">
-                          <span className="font-bold text-ok">{w.approved}</span>
-                          <span className="text-fg-subtle"> đã có số · </span>
-                          <span className="font-bold text-warn">{w.withoutNumber}</span>
-                          <span className="text-fg-subtle"> chưa có số</span>
-                        </span>
-                      </button>
-                    </li>
-                  )}
-                />
-              }
-            />
-          )}
 
           <DrawerSection
             id="streets"

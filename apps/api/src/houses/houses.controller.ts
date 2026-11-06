@@ -3,6 +3,7 @@ import {
   Controller,
   Delete,
   Get,
+  HttpCode,
   Param,
   Patch,
   Post,
@@ -26,6 +27,8 @@ import { ResurveyHouseDto } from './dto/resurvey-house.dto';
 import { ListHousesQueryDto } from './dto/list-houses-query.dto';
 import { GeoJsonQueryDto } from './dto/geojson-query.dto';
 import { NearbyQueryDto } from './dto/nearby-query.dto';
+import { DeleteHouseDto } from './dto/delete-house.dto';
+import { DeleteHousesDto } from './dto/delete-houses.dto';
 import { housePhotoMulterOptions } from './multer.config';
 
 /**
@@ -177,6 +180,24 @@ export class HousesController {
     @CurrentUser() user: AuthenticatedUser,
   ) {
     return this.housesService.addPhoto(id, file, type, user);
+  }
+
+  @RequirePermissions(PERMISSIONS.HOUSE_DELETE)
+  @Delete()
+  @HttpCode(204)
+  removeMany(@Body() dto: DeleteHousesDto, @CurrentUser() user: AuthenticatedUser) {
+    return this.housesService.removeMany(dto.ids, dto.confirmation, user);
+  }
+
+  @RequirePermissions(PERMISSIONS.HOUSE_DELETE)
+  @Delete(':id')
+  @HttpCode(204)
+  remove(
+    @Param('id') id: string,
+    @Body() dto: DeleteHouseDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.housesService.remove(id, dto.confirmation, user);
   }
 
   @RequirePermissions(PERMISSIONS.HOUSE_PHOTO_DELETE)

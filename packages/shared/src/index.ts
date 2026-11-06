@@ -135,6 +135,7 @@ export const PERMISSIONS = {
   ROUTE_MANAGE: 'route:manage',
   HOUSE_CREATE: 'house:create',
   HOUSE_UPDATE: 'house:update',
+  HOUSE_DELETE: 'house:delete',
   HOUSE_LOCATION_UPDATE: 'house:location:update',
   HOUSE_RESURVEY: 'house:resurvey',
   HOUSE_PHOTO_ADD: 'house:photo:add',
