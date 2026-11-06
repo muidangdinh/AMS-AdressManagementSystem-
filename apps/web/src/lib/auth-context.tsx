@@ -25,7 +25,7 @@ type CurrentUser = LoginResponse['user'];
 interface AuthContextValue {
   user: CurrentUser | null;
   isLoading: boolean;
-  login: (credentials: LoginRequest) => Promise<void>;
+  login: (credentials: LoginRequest, redirectTo?: string) => Promise<void>;
   logout: () => void;
   /** Tự đổi mật khẩu — server xác minh `currentPassword`, ném lỗi nếu sai. */
   changePassword: (dto: ChangePasswordRequest) => Promise<void>;
@@ -52,7 +52,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     if (sessionExpiredNotified.current) return;
     sessionExpiredNotified.current = true;
     window.alert('Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.');
-    router.push('/login');
+    const path = window.location.pathname + window.location.search;
+    router.push(path.startsWith('/login') ? '/login' : `/login?next=${encodeURIComponent(path)}`);
   }, [router]);
 
   useEffect(() => {
@@ -94,7 +95,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [handleSessionExpired]);
 
   const login = useCallback(
-    async (credentials: LoginRequest) => {
+    async (credentials: LoginRequest, redirectTo?: string) => {
       const res = await apiFetch<LoginResponse>('/api/auth/login', {
         method: 'POST',
         body: JSON.stringify(credentials),
@@ -103,7 +104,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       window.localStorage.setItem(USER_KEY, JSON.stringify(res.user));
       sessionExpiredNotified.current = false;
       setUser(res.user);
-      router.push('/houses/dashboard');
+      let target = '/houses/dashboard';
+      if (redirectTo) {
+        try {
+          const url = new URL(redirectTo, window.location.origin);
+          if (url.origin === window.location.origin) target = url.pathname + url.search + url.hash;
+        } catch {
+          // giữ trang mặc định
+        }
+      }
+      router.push(target);
     },
     [router],
   );

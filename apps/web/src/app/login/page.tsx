@@ -18,7 +18,7 @@ export default function LoginPage() {
     setError(null);
     setLoading(true);
     try {
-      await login({ username, password });
+      await login({ username, password }, new URLSearchParams(window.location.search).get('next') ?? undefined);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Đăng nhập thất bại');
     } finally {
