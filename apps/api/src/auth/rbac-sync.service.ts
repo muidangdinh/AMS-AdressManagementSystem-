@@ -1,4 +1,6 @@
 import { Injectable, Logger, OnApplicationBootstrap } from '@nestjs/common';
+import { Role } from '@prisma/client';
+import * as bcrypt from 'bcryptjs';
 import { PrismaService } from '../prisma/prisma.service';
 import { DEFAULT_ROLES, PERMISSION_CATALOG } from './permissions';
 
@@ -10,6 +12,7 @@ import { DEFAULT_ROLES, PERMISSION_CATALOG } from './permissions';
  *  - Vai trò hệ thống CHƯA có: tạo + gán toàn bộ quyền mặc định.
  *  - Vai trò hệ thống ĐÃ có: chỉ gán các quyền MỚI xuất hiện lần đồng bộ này (admin luôn nhận mọi quyền);
  *    quyền cũ mà admin đã gỡ khỏi vai trò sẽ không bị gán lại.
+ *  - DB chưa có người dùng nào (hạ tầng mới): tạo tài khoản admin khởi tạo từ SEED_ADMIN_USERNAME/PASSWORD.
  *  - Người dùng chưa có vai trò động: gán theo cột `role` cũ (như prisma/seed.ts).
  */
 @Injectable()
@@ -65,6 +68,8 @@ export class RbacSyncService implements OnApplicationBootstrap {
       if (res.count > 0) this.logger.log(`Vai trò "${def.code}": thêm ${res.count} quyền`);
     }
 
+    await this.ensureInitialAdmin();
+
     // Backfill: người dùng chưa có vai trò động → gán theo cột `role` cũ.
     const orphans = await this.prisma.user.findMany({ where: { roleLinks: { none: {} } } });
     if (orphans.length > 0) {
@@ -76,5 +81,27 @@ export class RbacSyncService implements OnApplicationBootstrap {
       }
       this.logger.log(`Đã gán vai trò cho ${orphans.length} người dùng chưa có vai trò`);
     }
+  }
+
+  /**
+   * Hạ tầng mới (bảng app_user trống) → tạo admin khởi tạo, giống `seedAdmin()` trong prisma/seed.ts.
+   * Chỉ chạy khi CHƯA có user nào: admin bị xóa/đổi tên sau này sẽ không tự sinh lại với mật khẩu mặc định.
+   * Vai trò động `admin` được gán ở bước backfill ngay sau (theo cột role = ADMIN).
+   */
+  private async ensureInitialAdmin() {
+    if ((await this.prisma.user.count()) > 0) return;
+
+    const username = process.env.SEED_ADMIN_USERNAME || 'admin';
+    const password = process.env.SEED_ADMIN_PASSWORD || 'Admin@123456';
+    await this.prisma.user.create({
+      data: {
+        username,
+        passwordHash: await bcrypt.hash(password, 10),
+        fullName: 'Quản trị viên hệ thống',
+        role: Role.ADMIN,
+        unit: 'Sở Xây dựng Tây Ninh',
+      },
+    });
+    this.logger.warn(`DB chưa có người dùng: đã tạo tài khoản admin khởi tạo "${username}". Hãy đổi mật khẩu ngay sau khi đăng nhập.`);
   }
 }

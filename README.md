@@ -97,6 +97,9 @@ docker compose --profile full up -d --build
 
 Cấu trúc theo mẫu triển khai chung của các dự án trên server tỉnh (giống EDMS):
 - `postgres`, `api`, `web` đọc chung biến môi trường qua `env_file: .env`.
+- **Tài khoản admin tự tạo:** lần đầu API khởi động trên DB chưa có người dùng nào, hệ thống tự tạo
+  admin từ `SEED_ADMIN_USERNAME`/`SEED_ADMIN_PASSWORD` (mặc định `admin` / `Admin@123456`), không cần chạy
+  seed. Đã có người dùng thì bỏ qua. **Đổi mật khẩu ngay sau khi đăng nhập lần đầu.**
 - `api`/`web` **không** mở port trực tiếp ra host — chạy trong mạng nội bộ `tayninh`
   (nói chuyện với `postgres`) và mạng `proxy` (**mạng ngoài**, tên `web_server_default`)
   để dùng chung 1 reverse proxy với các dự án khác đã có trên server.
