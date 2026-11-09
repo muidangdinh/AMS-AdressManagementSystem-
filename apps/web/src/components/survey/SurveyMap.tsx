@@ -12,17 +12,20 @@ import {
   Loader2,
   MapPin,
   Navigation,
+  Pencil,
   Phone,
   Search,
   X,
 } from 'lucide-react';
 import {
   BUILDING_TYPE_LABELS,
+  HOUSE_NUMBER_EDIT_WINDOW_MS,
   HOUSE_STATUS_LABELS,
   PERMISSIONS,
   PHOTO_TYPE_LABELS,
   formatFullAddress,
   HouseStatus,
+  UserRole,
   type Hamlet,
   type HouseSummary,
   type NearbyHouseItem,
@@ -33,6 +36,7 @@ import { ApiError, apiFetch, getApiUrl } from '@/lib/api';
 import { hamletsApi, streetsApi, wardsApi } from '@/lib/addresses-api';
 import { useAppConfig } from '@/lib/app-config';
 import { useAuth } from '@/lib/auth-context';
+import { updateHouseNumber } from '@/lib/survey-field-api';
 import { ButtonSpinner, FIELD_CLASS, StatusBadge } from '@/components/ui';
 import type {
   FlyToRequest,
@@ -113,8 +117,10 @@ function photoUrl(url: string) {
 
 export default function SurveyMap() {
   const { config } = useAppConfig();
-  const { hasPermission } = useAuth();
+  const { user, hasPermission } = useAuth();
   const canAdjustLocation = hasPermission(PERMISSIONS.HOUSE_LOCATION_UPDATE);
+  const canUpdateNumber = hasPermission(PERMISSIONS.HOUSE_NUMBER_UPDATE);
+  const isAdminUser = user?.role === UserRole.ADMIN || !!user?.roles?.some((r) => r.code === 'admin');
 
   const [houses, setHouses] = useState<HouseMapPoint[]>([]);
   const [bounds, setBounds] = useState<MapBounds | null>(null);
@@ -142,6 +148,9 @@ export default function SurveyMap() {
   const [detail, setDetail] = useState<HouseSummary | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailError, setDetailError] = useState('');
+  const [editingNumber, setEditingNumber] = useState(false);
+  const [numberDraft, setNumberDraft] = useState('');
+  const [savingNumber, setSavingNumber] = useState(false);
 
   const [nearby, setNearby] = useState<NearbyHouseItem[] | null>(null);
   const [nearbyLoading, setNearbyLoading] = useState(false);
@@ -275,6 +284,7 @@ export default function SurveyMap() {
     setDetail(null);
     setDetailError('');
     setDetailLoading(true);
+    setEditingNumber(false);
     setNearby(null);
     setNearbyLoading(false);
 
@@ -295,7 +305,31 @@ export default function SurveyMap() {
     setDetail(null);
     setDetailError('');
     setDetailLoading(false);
+    setEditingNumber(false);
     setPhotoIndex(null);
+  }
+
+  async function saveHouseNumber() {
+    if (!detail || savingNumber) return;
+    const next = numberDraft.trim();
+    if (!next) {
+      setToast('Vui lòng nhập số nhà.');
+      return;
+    }
+    setSavingNumber(true);
+    try {
+      const updated = await updateHouseNumber(detail.id, next);
+      setDetail((prev) => (prev ? { ...prev, houseNumber: updated.houseNumber } : prev));
+      setHouses((prev) =>
+        prev.map((h) => (h.id === updated.id ? { ...h, houseNumber: updated.houseNumber } : h)),
+      );
+      setEditingNumber(false);
+      setToast(`Đã cập nhật số nhà thành ${updated.houseNumber}.`);
+    } catch (error) {
+      setToast(errorMessage(error, 'Không lưu được số nhà mới.'));
+    } finally {
+      setSavingNumber(false);
+    }
   }
 
   async function handleMapClick(lat: number, lng: number) {
@@ -863,6 +897,57 @@ export default function SurveyMap() {
                   </button>
                 )}
               </div>
+
+              {canUpdateNumber &&
+                (isAdminUser ||
+                  Date.now() - new Date(detail.createdAt).getTime() < HOUSE_NUMBER_EDIT_WINDOW_MS) && (
+                  <div className="space-y-2">
+                    {!editingNumber ? (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setNumberDraft(detail.houseNumber);
+                          setEditingNumber(true);
+                        }}
+                        className="w-full inline-flex items-center justify-center gap-2 rounded-xl border border-line bg-surface-2/50 px-3 py-2.5 text-sm font-semibold text-fg hover:border-accent/50"
+                      >
+                        <Pencil className="w-4 h-4 text-accent" />
+                        Sửa số nhà (trong 48 giờ)
+                      </button>
+                    ) : (
+                      <div className="rounded-xl border border-line bg-surface-2/40 p-3 space-y-2">
+                        <label className="text-[11px] font-bold uppercase tracking-wider text-fg-subtle">
+                          Số nhà mới
+                        </label>
+                        <input
+                          value={numberDraft}
+                          onChange={(event) => setNumberDraft(event.target.value)}
+                          className={FIELD_CLASS}
+                          placeholder="VD: 12A"
+                          autoFocus
+                        />
+                        <div className="flex gap-2">
+                          <button
+                            type="button"
+                            onClick={() => setEditingNumber(false)}
+                            disabled={savingNumber}
+                            className="flex-1 rounded-lg border border-line bg-surface px-3 py-2 text-sm font-semibold"
+                          >
+                            Hủy
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => void saveHouseNumber()}
+                            disabled={savingNumber}
+                            className="flex-1 rounded-lg bg-brand-gradient px-3 py-2 text-sm font-bold text-white"
+                          >
+                            {savingNumber ? 'Đang lưu…' : 'Lưu'}
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
 
               <div className="flex items-center gap-3 rounded-xl border border-line bg-surface-2/40 p-3">
                 {/* eslint-disable-next-line @next/next/no-img-element */}

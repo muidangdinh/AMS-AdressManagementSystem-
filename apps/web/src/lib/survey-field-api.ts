@@ -79,6 +79,13 @@ export function createHouse(body: CreateHouseRequest): Promise<HouseSummary> {
   });
 }
 
+export function updateHouseNumber(id: string, houseNumber: string): Promise<HouseSummary> {
+  return apiFetch<HouseSummary>(`/api/houses/${id}/number`, {
+    method: 'PATCH',
+    body: JSON.stringify({ houseNumber }),
+  });
+}
+
 export function uploadHousePhoto(houseId: string, file: File, type: PhotoType): Promise<void> {
   const formData = new FormData();
   formData.append('file', file);

@@ -24,8 +24,6 @@ import NetInfo from '@react-native-community/netinfo';
 import {
   BUILDING_TYPE_LABELS,
   BuildingType,
-  PlateNeed,
-  PLATE_NEED_LABELS,
   NumberingSide,
   NUMBERING_SIDE_LABELS,
   PhotoType,
@@ -55,7 +53,6 @@ import NearbyOwnersCard from '../components/NearbyOwnersCard';
 import ImageViewer from '../components/ImageViewer';
 
 const BUILDING_TYPES = Object.values(BuildingType);
-const PLATE_NEEDS = Object.values(PlateNeed);
 const MAX_PHOTOS = 5;
 const MAX_REQUIRED_PHOTOS = 2;
 
@@ -312,7 +309,6 @@ export default function SurveyScreen() {
     }
     return opts;
   }, [usageStatuses, usageStatusId, usageStatusName]);
-  const [plateNeed, setPlateNeed] = useState<PlateNeed | ''>('');
   const [soTo, setSoTo] = useState('');
   const [soThua, setSoThua] = useState('');
   const [buildingType, setBuildingType] = useState<BuildingType>(BuildingType.SINGLE_HOUSE);
@@ -471,7 +467,6 @@ export default function SurveyScreen() {
     setOwnerIdNumber('');
     setUsageStatusId('');
     setUsageStatusName('');
-    setPlateNeed('');
     setSoTo('');
     setSoThua('');
     setBuildingType(BuildingType.SINGLE_HOUSE);
@@ -608,7 +603,6 @@ export default function SurveyScreen() {
     setOwnerIdNumber(h.ownerIdNumber ?? '');
     setUsageStatusId(h.usageStatusId ?? '');
     setUsageStatusName(h.usageStatus?.name ?? '');
-    setPlateNeed(h.plateNeed ?? '');
     setSoTo(h.soTo ?? '');
     setSoThua(h.soThua ?? '');
     setBuildingType(h.buildingType);
@@ -700,7 +694,6 @@ export default function SurveyScreen() {
         ownerPhone: ownerPhone || undefined,
         ownerIdNumber: ownerIdNumber || undefined,
         usageStatusId: usageStatusId || undefined,
-        plateNeed: plateNeed || undefined,
         buildingType,
         floors: floors ? Number(floors) : undefined,
         area: area ? Number(area) : undefined,
@@ -757,7 +750,6 @@ export default function SurveyScreen() {
         ownerPhone: ownerPhone || undefined,
         ownerIdNumber: ownerIdNumber || undefined,
         usageStatusId: usageStatusId || undefined,
-        plateNeed: plateNeed || undefined,
         buildingType,
         floors: floors ? Number(floors) : undefined,
         area: area ? Number(area) : undefined,
@@ -997,21 +989,6 @@ export default function SurveyScreen() {
           keyboardType="phone-pad"
         />
 
-        <Text style={styles.label}>Nhu cầu gắn/lắp biển số nhà</Text>
-        <View style={styles.chipRow}>
-          {PLATE_NEEDS.map((p) => (
-            <TouchableOpacity
-              key={p}
-              onPress={() => setPlateNeed(plateNeed === p ? '' : p)}
-              style={[styles.chip, plateNeed === p && styles.chipActive]}
-            >
-              <Text style={[styles.chipText, plateNeed === p && styles.chipTextActive]}>
-                {PLATE_NEED_LABELS[p]}
-              </Text>
-            </TouchableOpacity>
-          ))}
-        </View>
-
         <Field
           label="Số định danh cá nhân (CCCD)"
           value={ownerIdNumber}
@@ -1101,19 +1078,19 @@ export default function SurveyScreen() {
         <Text style={styles.label}>Phía đường *</Text>
         <View style={styles.chipRow}>
           <TouchableOpacity
-            onPress={() => setSide(NumberingSide.EVEN)}
-            style={[styles.chip, side === NumberingSide.EVEN && styles.chipActive]}
-          >
-            <Text style={[styles.chipText, side === NumberingSide.EVEN && styles.chipTextActive]}>
-              Bên phải ({NUMBERING_SIDE_LABELS[NumberingSide.EVEN]})
-            </Text>
-          </TouchableOpacity>
-          <TouchableOpacity
             onPress={() => setSide(NumberingSide.ODD)}
             style={[styles.chip, side === NumberingSide.ODD && styles.chipActive]}
           >
             <Text style={[styles.chipText, side === NumberingSide.ODD && styles.chipTextActive]}>
               Bên trái ({NUMBERING_SIDE_LABELS[NumberingSide.ODD]})
+            </Text>
+          </TouchableOpacity>
+                    <TouchableOpacity
+            onPress={() => setSide(NumberingSide.EVEN)}
+            style={[styles.chip, side === NumberingSide.EVEN && styles.chipActive]}
+          >
+            <Text style={[styles.chipText, side === NumberingSide.EVEN && styles.chipTextActive]}>
+              Bên phải ({NUMBERING_SIDE_LABELS[NumberingSide.EVEN]})
             </Text>
           </TouchableOpacity>
         </View>

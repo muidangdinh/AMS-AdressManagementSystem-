@@ -136,6 +136,7 @@ export const PERMISSIONS = {
   HOUSE_CREATE: 'house:create',
   HOUSE_UPDATE: 'house:update',
   HOUSE_DELETE: 'house:delete',
+  HOUSE_NUMBER_UPDATE: 'house:number:update',
   HOUSE_LOCATION_UPDATE: 'house:location:update',
   HOUSE_RESURVEY: 'house:resurvey',
   HOUSE_PHOTO_ADD: 'house:photo:add',
@@ -158,6 +159,9 @@ export const PERMISSIONS = {
 } as const;
 
 export type PermissionCode = (typeof PERMISSIONS)[keyof typeof PERMISSIONS];
+
+/** Cửa sổ cho phép cán bộ (non-admin) sửa số nhà kể từ lúc hồ sơ được tạo trên hệ thống. */
+export const HOUSE_NUMBER_EDIT_WINDOW_MS = 48 * 60 * 60 * 1000;
 
 /**
  * Cấp tổ chức của tài khoản — khớp enum UserLevel trong Prisma schema.

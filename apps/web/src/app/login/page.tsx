@@ -40,11 +40,12 @@ export default function LoginPage() {
         <div className="px-7 pt-8 pb-6 text-center">
           <div className="w-16 h-16 mx-auto flex items-center justify-center mb-3">
             <img 
-              src="/ams-symbol-128.png" 
+              src="/ams-symbol-1024.png" 
               alt="AMS Logo" 
               className="w-full h-full object-contain" 
             />
           </div>
+          <h1 className="text-lg font-bold text-fg">AMS</h1>
           <p className="text-xs text-fg-muted mt-1">Hệ thống Đánh số &amp; Gắn biển số nhà</p>
           <p className="text-xs italic text-fg-subtle mt-1">“Mỗi ngôi nhà một địa chỉ”</p>
         </div>

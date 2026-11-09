@@ -36,11 +36,13 @@ import {
   BUILDING_TYPE_LABELS,
   DEFAULT_PROVINCE_NAME,
   formatFullAddress,
+  HOUSE_NUMBER_EDIT_WINDOW_MS,
   HOUSE_STATUS_LABELS,
   HouseStatus,
   HouseSummary,
   PERMISSIONS,
   PHOTO_TYPE_LABELS,
+  UserRole,
   type Hamlet,
   type Street,
   type Ward,
@@ -48,14 +50,14 @@ import {
 import { API_URL, apiFetch, ApiError } from '../lib/api';
 import { fetchAppConfig } from '../lib/appConfig';
 import { fetchHamlets, fetchStreets, fetchWards } from '../lib/addressCatalog';
-import { updateHouseLocation } from '../lib/housesApi';
+import { updateHouseLocation, updateHouseNumber } from '../lib/housesApi';
 import { useAuth } from '../lib/AuthContext';
 import type { MainTabsParamList } from '../navigation/MainTabs';
 
 /** Trung tâm mặc định: TP. Tây Ninh — dùng khi chưa lấy được GPS thật. */
-// const TAYNINH_CENTER: [number, number] = [106.18222, 10.65528]; //Thạnh Hóa
+const TAYNINH_CENTER: [number, number] = [106.18222, 10.65528]; //Thạnh Hóa
 // const TAYNINH_CENTER: [number, number] = [106.341, 10.5762]; //Mỹ An
-const TAYNINH_CENTER: [number, number] = [106.442222, 10.529167]; //Tân An
+// const TAYNINH_CENTER: [number, number] = [106.442222, 10.529167]; //Tân An
 
 const MAP_ZOOM = 12;
 
@@ -142,6 +144,8 @@ export default function MapScreen() {
   const { refresh } = useAppConfig();
   const { user } = useAuth();
   const canAdjustLocation = !!user?.permissions?.includes(PERMISSIONS.HOUSE_LOCATION_UPDATE);
+  const canUpdateNumber = !!user?.permissions?.includes(PERMISSIONS.HOUSE_NUMBER_UPDATE);
+  const isAdminUser = user?.role === UserRole.ADMIN;
   useFocusEffect(
     useCallback(() => {
       void refresh();
@@ -241,6 +245,9 @@ export default function MapScreen() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [detail, setDetail] = useState<HouseSummary | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
+  const [numberDraft, setNumberDraft] = useState('');
+  const [editingNumber, setEditingNumber] = useState(false);
+  const [savingNumber, setSavingNumber] = useState(false);
   const [viewer, setViewer] = useState<{ uris: string[]; index: number } | null>(null);
   // TN-21 — tên tỉnh cho địa chỉ đầy đủ 5 cấp ở bottom sheet chi tiết hồ sơ.
   const [provinceName, setProvinceName] = useState(DEFAULT_PROVINCE_NAME);
@@ -369,6 +376,39 @@ export default function MapScreen() {
       Alert.alert('Lỗi', err instanceof ApiError ? err.message : 'Không lưu được vị trí mới');
     } finally {
       setSavingAdjust(false);
+    }
+  }
+
+  function openNumberEditor() {
+    if (!detail) return;
+    setNumberDraft(detail.houseNumber);
+    setEditingNumber(true);
+  }
+
+  async function saveHouseNumber() {
+    if (!detail || savingNumber) return;
+    const next = numberDraft.trim();
+    if (!next) {
+      Alert.alert('Thiếu số nhà', 'Vui lòng nhập số nhà.');
+      return;
+    }
+    setSavingNumber(true);
+    try {
+      const updated = await updateHouseNumber(detail.id, next);
+      setDetail((prev) => (prev ? { ...prev, houseNumber: updated.houseNumber } : prev));
+      setHouses((prev) =>
+        prev.map((h) => (h.id === updated.id ? { ...h, houseNumber: updated.houseNumber } : h)),
+      );
+      setNearby((prev) =>
+        prev
+          ? prev.map((h) => (h.id === updated.id ? { ...h, houseNumber: updated.houseNumber } : h))
+          : prev,
+      );
+      setEditingNumber(false);
+    } catch (err) {
+      Alert.alert('Lỗi', err instanceof ApiError ? err.message : 'Không lưu được số nhà mới');
+    } finally {
+      setSavingNumber(false);
     }
   }
 
@@ -906,6 +946,15 @@ export default function MapScreen() {
                   </TouchableOpacity>
                 )}
 
+                {canUpdateNumber &&
+                  (isAdminUser ||
+                    Date.now() - new Date(detail.createdAt).getTime() <
+                      HOUSE_NUMBER_EDIT_WINDOW_MS) && (
+                    <TouchableOpacity style={styles.numberButton} onPress={openNumberEditor}>
+                      <Text style={styles.numberButtonText}>✏️ Sửa số nhà</Text>
+                    </TouchableOpacity>
+                  )}
+
                 <View style={styles.modalQrRow}>
                   <Image
                     source={{ uri: `${API_URL}/api/houses/${detail.id}/qrcode.png` }}
@@ -971,6 +1020,48 @@ export default function MapScreen() {
                 )}
               </ScrollView>
             )}
+          </View>
+        </View>
+      </Modal>
+
+      {/* Modal sửa số nhà */}
+      <Modal
+        visible={editingNumber}
+        animationType="fade"
+        transparent
+        onRequestClose={() => setEditingNumber(false)}
+      >
+        <View style={styles.numberModalBackdrop}>
+          <View style={styles.numberModalCard}>
+            <Text style={styles.numberModalTitle}>Sửa số nhà</Text>
+            <TextInput
+              style={styles.numberInput}
+              value={numberDraft}
+              onChangeText={setNumberDraft}
+              autoFocus
+              placeholder="VD: 12A"
+              placeholderTextColor="#94a3b8"
+            />
+            <View style={styles.numberActions}>
+              <TouchableOpacity
+                style={styles.adjustCancel}
+                onPress={() => setEditingNumber(false)}
+                disabled={savingNumber}
+              >
+                <Text style={styles.adjustCancelText}>Hủy</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.adjustSave}
+                onPress={saveHouseNumber}
+                disabled={savingNumber}
+              >
+                {savingNumber ? (
+                  <ActivityIndicator color="#fff" size="small" />
+                ) : (
+                  <Text style={styles.adjustSaveText}>Lưu</Text>
+                )}
+              </TouchableOpacity>
+            </View>
           </View>
         </View>
       </Modal>
@@ -1286,6 +1377,32 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   adjustButtonText: { color: '#fff', fontWeight: '700', fontSize: 14 },
+  numberButton: {
+    backgroundColor: '#b45309',
+    borderRadius: 10,
+    paddingVertical: 12,
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  numberButtonText: { color: '#fff', fontWeight: '700', fontSize: 14 },
+  numberModalBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(15,23,42,0.5)',
+    justifyContent: 'center',
+    padding: 24,
+  },
+  numberModalCard: { backgroundColor: '#fff', borderRadius: 14, padding: 16, gap: 12 },
+  numberModalTitle: { fontSize: 16, fontWeight: '700', color: '#0f172a' },
+  numberInput: {
+    borderWidth: 1,
+    borderColor: '#cbd5e1',
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    fontSize: 15,
+    color: '#0f172a',
+  },
+  numberActions: { flexDirection: 'row', gap: 8 },
   adjustBar: {
     position: 'absolute',
     left: 12,

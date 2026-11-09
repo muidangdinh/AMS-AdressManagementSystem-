@@ -12,6 +12,14 @@ export async function findHouseByQrCode(code: string): Promise<HouseSummary | nu
   return res.items.find((house) => house.qrCode.toLowerCase() === qrCode.toLowerCase()) ?? null;
 }
 
+/** Sửa riêng số nhà (non-admin chỉ trong 48 giờ kể từ lúc tạo hồ sơ). */
+export function updateHouseNumber(id: string, houseNumber: string): Promise<HouseSummary> {
+  return apiFetch<HouseSummary>(`/api/houses/${id}/number`, {
+    method: 'PATCH',
+    body: JSON.stringify({ houseNumber }),
+  });
+}
+
 /** Chỉnh riêng tọa độ GPS (kéo chấm nhà trên bản đồ). */
 export function updateHouseLocation(
   id: string,

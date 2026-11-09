@@ -23,6 +23,7 @@ import { HousesService } from './houses.service';
 import { CreateHouseDto } from './dto/create-house.dto';
 import { UpdateHouseDto } from './dto/update-house.dto';
 import { UpdateHouseLocationDto } from './dto/update-house-location.dto';
+import { UpdateHouseNumberDto } from './dto/update-house-number.dto';
 import { ResurveyHouseDto } from './dto/resurvey-house.dto';
 import { ListHousesQueryDto } from './dto/list-houses-query.dto';
 import { GeoJsonQueryDto } from './dto/geojson-query.dto';
@@ -142,6 +143,17 @@ export class HousesController {
     @CurrentUser() user: AuthenticatedUser,
   ) {
     return this.housesService.update(id, dto, user);
+  }
+
+  /** Sửa riêng số nhà — non-admin chỉ được trong 48 giờ kể từ lúc tạo hồ sơ. */
+  @RequirePermissions(PERMISSIONS.HOUSE_NUMBER_UPDATE)
+  @Patch(':id/number')
+  updateNumber(
+    @Param('id') id: string,
+    @Body() dto: UpdateHouseNumberDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.housesService.update(id, { houseNumber: dto.houseNumber }, user);
   }
 
   /** Chỉnh riêng tọa độ GPS sau khi đối chiếu thực địa (mobile kéo chấm nhà). */

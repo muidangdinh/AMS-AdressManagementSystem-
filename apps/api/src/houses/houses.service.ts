@@ -21,6 +21,7 @@ import {
   HouseReviewStage,
   PhotoType,
   Prisma,
+  Role,
 } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import {
@@ -29,6 +30,7 @@ import {
   OUT_OF_SCOPE_HOUSE,
   resolveHamletForWrite,
 } from '../auth/data-scope';
+import { PERMISSIONS } from '../auth/permissions';
 import type { AuthenticatedUser } from '../auth/types/authenticated-user';
 import { getUploadRoot } from '../config/upload.config';
 import { CreateHouseDto } from './dto/create-house.dto';
@@ -44,6 +46,8 @@ const HISTORY_PAGE_SIZE = 20;
 const MAX_GEOJSON_FEATURES = 2000;
 /** Giới hạn an toàn cho xuất Excel — tránh tải toàn bộ CSDL nếu không lọc. */
 const MAX_EXPORT_ROWS = 5000;
+/** Non-admin chỉ được sửa số nhà trong 48 giờ kể từ lúc hồ sơ được tạo. */
+const HOUSE_NUMBER_EDIT_WINDOW_MS = 48 * 60 * 60 * 1000;
 
 /**
  * Nhãn tiếng Việt cho xuất Excel — định nghĩa cục bộ (không import
@@ -733,9 +737,24 @@ export class HousesService {
     return newStatus === HouseStatus.APPROVED ? new Date() : null;
   }
 
+  /** Admin theo vai trò động mới hoặc cột `role` legacy — được bỏ qua giới hạn 48 giờ. */
+  private isAdmin(user: AuthenticatedUser): boolean {
+    return user.role === Role.ADMIN || user.roles.some((r) => r.code === 'admin');
+  }
+
   async update(id: string, dto: UpdateHouseDto, user: AuthenticatedUser) {
     const userId = user.id;
     const existing = await this.findInScopeOrThrow(id, user);
+    if (dto.houseNumber !== undefined && dto.houseNumber !== existing.houseNumber && !this.isAdmin(user)) {
+      if (!user.permissions.includes(PERMISSIONS.HOUSE_NUMBER_UPDATE)) {
+        throw new ForbiddenException('Bạn không có quyền sửa số nhà');
+      }
+      if (Date.now() - existing.createdAt.getTime() >= HOUSE_NUMBER_EDIT_WINDOW_MS) {
+        throw new ForbiddenException(
+          'Đã quá 48 giờ kể từ khi hồ sơ lên hệ thống — chỉ Quản trị viên được sửa số nhà',
+        );
+      }
+    }
     // Cán bộ ấp không được chuyển nhà sang ấp khác (hay bỏ trống ấp).
     if (dto.hamletId !== undefined && dto.hamletId !== existing.hamletId) {
       resolveHamletForWrite(user, dto.hamletId ?? '', false);

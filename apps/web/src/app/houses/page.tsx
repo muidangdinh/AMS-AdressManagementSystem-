@@ -21,6 +21,7 @@ import {
   CreateHouseRequest,
   DEFAULT_PROVINCE_NAME,
   District,
+  HOUSE_NUMBER_EDIT_WINDOW_MS,
   PERMISSIONS,
   formatFullAddress,
   Hamlet,
@@ -48,6 +49,7 @@ import {
   Street,
   USER_ROLE_LABELS,
   UserLevel,
+  UserRole,
   Ward,
 } from '@tayninh/shared';
 import { useAuth } from '@/lib/auth-context';
@@ -384,7 +386,9 @@ export default function HousesPage() {
   const canEdit = hasPermission(PERMISSIONS.HOUSE_UPDATE);
   const canDelete = hasPermission(PERMISSIONS.HOUSE_DELETE);
   const canAdjustLocation = hasPermission(PERMISSIONS.HOUSE_LOCATION_UPDATE);
+  const canUpdateNumber = hasPermission(PERMISSIONS.HOUSE_NUMBER_UPDATE);
   const canManageCases = hasPermission(PERMISSIONS.CASE_MANAGE);
+  const isAdminUser = user?.role === UserRole.ADMIN || !!user?.roles?.some((r) => r.code === 'admin');
   const apiUrl = getApiUrl();
 
   // Bộ lọc
@@ -395,6 +399,7 @@ export default function HousesPage() {
   const [wardId, setWardId] = useState('');
   const [hamletId, setHamletId] = useState('');
   const [streetId, setStreetId] = useState('');
+  const [streetSearch, setStreetSearch] = useState('');
   const [status, setStatus] = useState<HouseStatus | ''>('');
   const [page, setPage] = useState(1);
 
@@ -427,6 +432,11 @@ export default function HousesPage() {
   // TN-09 — danh mục Ấp/Thôn (góp ý khách hàng 11/09/2026), lọc theo xã ở nơi dùng (giống streets/wardId).
   const [hamlets, setHamlets] = useState<Hamlet[]>([]);
   const [usageStatuses, setUsageStatuses] = useState<UsageStatusItem[]>([]);
+
+  // Gợi ý cho ô lọc "Đường" — chỉ hiện tên đường.
+  const streetFilterOptions = streets
+    .filter((s) => !wardId || s.wardId === wardId)
+    .map((s) => ({ id: s.id, label: s.name }));
 
   useEffect(() => {
     districtsApi.list().then(setDistricts).catch(() => {});
@@ -495,9 +505,23 @@ export default function HousesPage() {
   // Modal thêm/sửa
   const [modalOpen, setModalOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [editingCreatedAt, setEditingCreatedAt] = useState<string | null>(null);
+  const [editingOriginalNumber, setEditingOriginalNumber] = useState<string | null>(null);
   const [form, setForm] = useState<FormState>(emptyForm);
   const [formError, setFormError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+
+  // Non-admin chỉ sửa được số nhà trong 48 giờ đầu kể từ lúc hồ sơ lên hệ thống.
+  const numberExpired =
+    !!editingCreatedAt &&
+    Date.now() - new Date(editingCreatedAt).getTime() >= HOUSE_NUMBER_EDIT_WINDOW_MS;
+  const numberLocked = !!editingId && !isAdminUser && (!canUpdateNumber || numberExpired);
+  const numberLockMessage = !numberLocked
+    ? ''
+    : !canUpdateNumber
+      ? 'Bạn không có quyền sửa số nhà.'
+      : 'Đã quá 48 giờ kể từ khi hồ sơ lên hệ thống — chỉ Quản trị viên được sửa số nhà.';
+  const numberChanged = !!editingId && form.houseNumber !== editingOriginalNumber;
 
   const [uploading, setUploading] = useState(false);
 
@@ -920,6 +944,8 @@ export default function HousesPage() {
 
   function openCreateModal(preset?: { lat: number; lng: number }) {
     setEditingId(null);
+    setEditingCreatedAt(null);
+    setEditingOriginalNumber(null);
     const base: FormState =
       hamletScoped && user?.hamletId
         ? {
@@ -944,6 +970,8 @@ export default function HousesPage() {
 
   function openEditModal(house: HouseSummary) {
     setEditingId(house.id);
+    setEditingCreatedAt(house.createdAt);
+    setEditingOriginalNumber(house.houseNumber);
     setForm({
       houseNumber: house.houseNumber,
       street: house.street,
@@ -980,8 +1008,12 @@ export default function HousesPage() {
 
   async function handleFormSubmit(e: React.FormEvent) {
     e.preventDefault();
-    setSaving(true);
     setFormError(null);
+    if (numberLocked && numberChanged) {
+      setFormError(numberLockMessage);
+      return;
+    }
+    setSaving(true);
 
     const payload: CreateHouseRequest & { reviewStage?: HouseReviewStage } = {
       houseNumber: form.houseNumber,
@@ -1309,27 +1341,31 @@ export default function HousesPage() {
               ))}
           </select>
         </div>
-        <div className="w-44">
+        <div className="w-52">
           <label className="block text-[11px] font-bold text-fg-subtle uppercase tracking-wider mb-1">
             Đường
           </label>
-          <select
-            value={streetId}
+          <input
+            list="house-street-filter-options"
+            value={streetSearch}
             onChange={(e) => {
+              const value = e.target.value;
               setPage(1);
-              setStreetId(e.target.value);
+              setStreetSearch(value);
+              const match = streetFilterOptions.find(
+                (o) => o.label.toLocaleLowerCase('vi') === value.trim().toLocaleLowerCase('vi'),
+              );
+              setStreetId(match?.id ?? '');
             }}
+            placeholder="Tìm đường…"
+            aria-label="Lọc theo đường"
             className={FILTER_FIELD}
-          >
-            <option value="">-- Tất cả --</option>
-            {streets
-              .filter((s) => !wardId || s.wardId === wardId)
-              .map((s) => (
-                <option key={s.id} value={s.id}>
-                  {s.name}
-                </option>
-              ))}
-          </select>
+          />
+          <datalist id="house-street-filter-options">
+            {streetFilterOptions.map((o) => (
+              <option key={o.id} value={o.label} />
+            ))}
+          </datalist>
         </div>
         <div className="w-48">
           <label className="block text-[11px] font-bold text-fg-subtle uppercase tracking-wider mb-1">
@@ -2389,10 +2425,18 @@ export default function HousesPage() {
                     <input
                       id="house-form-houseNumber"
                       required
+                      disabled={numberLocked}
                       value={form.houseNumber}
                       onChange={(e) => setForm((f) => ({ ...f, houseNumber: e.target.value }))}
-                      className={FIELD_CLASS}
+                      className={numberLocked ? `${FIELD_CLASS} opacity-60 cursor-not-allowed` : FIELD_CLASS}
                     />
+                    {numberLocked ? (
+                      <p className="text-danger text-xs mt-1">{numberLockMessage}</p>
+                    ) : editingId ? (
+                      <p className="text-fg-subtle text-xs mt-1">
+                        Chỉ được sửa số nhà trong 48 giờ đầu.
+                      </p>
+                    ) : null}
                   </FormField>
                   <AddressComboField
                     label="Đường/Phố"

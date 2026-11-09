@@ -30,6 +30,20 @@ Mục tiêu: thêm tab **Bản đồ** vào `/survey`, thứ tự **Bản đồ 
 - [x] Xác nhận style Goong `goong_map_web.json` và `goong_satellite.json` trả `200`
 - [ ] Kiểm tra máy thật/emulator: đổi lớp giữ camera/marker, popup không đè nút GPS/panel nearby
 
+## Sửa số nhà trong 48 giờ
+
+- [x] Thêm quyền `house:number:update` (`HOUSE_NUMBER_UPDATE`) vào API + mirror `packages/shared`
+- [x] Gán quyền mặc định cho `admin`, `cadastral`, `surveyor` (RBAC tự đồng bộ khi API khởi động)
+- [x] Endpoint `PATCH /api/houses/:id/number` (chỉ sửa số nhà, dùng lại lịch sử cập nhật)
+- [x] Chặn non-admin sửa số nhà quá 48 giờ kể từ `House.createdAt`, admin được bỏ qua
+- [x] Chặn cả đường bypass qua `PATCH /api/houses/:id` khi non-admin đổi `houseNumber`
+- [x] Backend yêu cầu quyền `house:number:update` khi đổi số nhà qua `PATCH /api/houses/:id`
+- [x] Modal "Cập Nhật Thông Tin" (`/houses`): khóa ô số nhà + hiện cảnh báo 48h cho non-admin; chặn submit trước khi gọi API
+- [x] Mobile `MapScreen`: nút + modal "Sửa số nhà" trong chi tiết hồ sơ
+- [x] Web `SurveyMap`: khối "Sửa số nhà (trong 48 giờ)" trong bottom sheet chi tiết
+- [x] `npx tsc --noEmit` pass cho API, web, mobile
+- [ ] Kiểm tra thủ công: cadastral trong hạn (OK) / quá hạn (403), surveyor qua endpoint mới, admin quá hạn (OK), luồng khảo sát lại vẫn sửa được
+
 ## Ghi chú
 
 - Không làm: thêm nhà trên bản đồ, vẽ vùng, offline, deep-link focus, push notification.

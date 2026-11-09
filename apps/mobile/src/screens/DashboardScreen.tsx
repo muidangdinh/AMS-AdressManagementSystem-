@@ -716,7 +716,6 @@ export default function DashboardScreen() {
 
   // ---- Dựng dữ liệu biểu đồ (logic dùng chung với web ở @tayninh/shared) ----
   // `byWard` trả ĐỦ danh mục xã/phường (kể cả xã 0 nhà) — cắt top 10 theo tổng số nhà, giống web.
-  const topWardBreakdown = toStackedBreakdown(system?.byWard, 10);
 
 
   if (loading) {
@@ -917,27 +916,6 @@ export default function DashboardScreen() {
           </ChartSection>
 
           {/* Theo xã/phường — giống web: top 10 xã/phường nhiều nhà nhất, tách đã có số / chưa có số. */}
-          {topWardBreakdown.length > 0 && (
-            <ChartSection
-              title="Theo xã/phường"
-              subtitle="Top 10 xã/phường nhiều nhà nhất — tách rõ đã có số / chưa có số"
-              details={
-                <RankedCard
-                  emptyText="Chưa có dữ liệu"
-                  items={topWardBreakdown.map((w) => ({
-                    label: w.name,
-                    value: `${w.approved} đã có số · ${w.withoutNumber} chưa có số`,
-                    onPress: () => openHouses(`Nhà ở ${w.name}`, undefined, { ward: w.name }),
-                  }))}
-                />
-              }
-            >
-              <StackedBarList
-                data={topWardBreakdown}
-                onBarPress={(key) => openHouses(`Nhà ở ${key}`, undefined, { ward: key })}
-              />
-            </ChartSection>
-          )}
 
           {/* Báo cáo theo tuyến đường — giống web 10.3: top 5 tuyến đường nhiều nhà nhất. */}
           <ChartSection
