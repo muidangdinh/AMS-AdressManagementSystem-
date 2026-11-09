@@ -957,7 +957,7 @@ export default function SurveyScreen() {
       </View>
 
       {/* Nhà/chủ hộ quanh vị trí GPS — tránh khảo sát trùng, chạm để tự điền (không hiện khi sửa lại nhà có sẵn). */}
-      {!resurveyHouseId && (
+      {false && !resurveyHouseId && (
         <NearbyOwnersCard
           lat={lat}
           lng={lng}

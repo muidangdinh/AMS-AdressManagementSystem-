@@ -3,7 +3,13 @@
 import { useEffect, useRef, useState } from 'react';
 import maplibregl, { type GeoJSONSource, type MapMouseEvent } from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
-import { STATUS_COLOR, DEFAULT_MAP_CENTER, type HouseMapPoint, type HouseMapProps } from './map-types';
+import {
+  STATUS_COLOR,
+  DEFAULT_MAP_CENTER,
+  type HouseMapLayer,
+  type HouseMapPoint,
+  type HouseMapProps,
+} from './map-types';
 import { useAppConfig } from '@/lib/app-config';
 import {
   GOONG_MAPTILES_KEY,
@@ -11,7 +17,6 @@ import {
   goongStyleUrl,
   removeLayers,
   setPoiLayersVisible,
-  type GoongLayer,
 } from '@/lib/goong';
 
 const SOURCE_ID = 'houses';
@@ -74,6 +79,9 @@ export default function HouseMapGoong({
   adjustLocation,
   onAdjustLocationChange,
   onBoundsChange,
+  layer: layerProp,
+  onLayerChange,
+  showLayerToggle = true,
 }: HouseMapProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
@@ -89,14 +97,19 @@ export default function HouseMapGoong({
   const adjustRef = useRef(adjustLocation);
   const onAdjustLocationChangeRef = useRef(onAdjustLocationChange);
   const onBoundsChangeRef = useRef(onBoundsChange);
-  const [layer, setLayerState] = useState<GoongLayer>('street');
+  const [internalLayer, setInternalLayer] = useState<HouseMapLayer>('street');
+  const layer = layerProp ?? internalLayer;
+  const appliedLayerRef = useRef<HouseMapLayer>('street');
   const [loadError, setLoadError] = useState<string | null>(null);
   // Hệ thống → Cấu hình bản đồ: ẩn icon địa điểm của nền, chỉ còn marker số nhà.
   const { config } = useAppConfig();
   const hidePoiRef = useRef(config.mapHidePoi);
   hidePoiRef.current = config.mapHidePoi;
 
-  housesRef.current = houses;
+  const visibleHouses = adjustLocation
+    ? houses.filter((house) => house.id !== adjustLocation.id)
+    : houses;
+  housesRef.current = visibleHouses;
   selectedHouseIdRef.current = selectedHouseId;
   onSelectRef.current = onSelectHouse;
   onMapClickRef.current = onMapClick;
@@ -275,6 +288,7 @@ export default function HouseMapGoong({
     });
 
     mapRef.current = map;
+    appliedLayerRef.current = 'street';
     justCreatedRef.current = true;
 
     // MapLibre chỉ tự theo dõi resize của cửa sổ, không theo khung chứa (sidebar co giãn…).
@@ -288,11 +302,18 @@ export default function HouseMapGoong({
     };
   }, []);
 
+  useEffect(() => {
+    if (layerProp) applyLayer(layerProp);
+  }, [layerProp]);
+
   // Đồng bộ dữ liệu số nhà — chỉ thay data của nguồn, không dựng lại lớp.
   useEffect(() => {
     const source = mapRef.current?.getSource(SOURCE_ID) as GeoJSONSource | undefined;
-    source?.setData(toFeatureCollection(houses, selectedHouseId));
-  }, [houses, selectedHouseId]);
+    const visibleHouses = adjustLocation
+      ? houses.filter((house) => house.id !== adjustLocation.id)
+      : houses;
+    source?.setData(toFeatureCollection(visibleHouses, selectedHouseId));
+  }, [houses, selectedHouseId, adjustLocation?.id]);
 
   useEffect(() => {
     popupRef.current?.remove();
@@ -357,12 +378,18 @@ export default function HouseMapGoong({
     }
   }, [flyToRequest]);
 
-  function setLayer(type: GoongLayer) {
+  function applyLayer(type: HouseMapLayer) {
     const map = mapRef.current;
-    if (!map || type === layer) return;
+    if (!map || appliedLayerRef.current === type) return;
     // diff:false — nạp lại style hoàn toàn để chắc chắn `style.load` chạy và dựng lại lớp số nhà.
     map.setStyle(goongStyleUrl(type), { diff: false });
-    setLayerState(type);
+    appliedLayerRef.current = type;
+  }
+
+  function changeLayer(type: HouseMapLayer) {
+    applyLayer(type);
+    if (layerProp === undefined) setInternalLayer(type);
+    onLayerChange?.(type);
   }
 
   if (!GOONG_MAPTILES_KEY) {
@@ -382,22 +409,24 @@ export default function HouseMapGoong({
           {loadError}
         </div>
       )}
-      <div className="absolute top-3 right-3 z-[500] glass !rounded-lg !bg-surface/80 p-1 flex space-x-1 text-xs">
-        <button
-          onClick={() => setLayer('street')}
-          className={`px-2.5 py-1.5 rounded font-semibold transition ${layer === 'street' ? 'bg-brand text-white' : 'text-fg-muted hover:bg-surface-2'
-            }`}
-        >
-          Giao thông
-        </button>
-        <button
-          onClick={() => setLayer('satellite')}
-          className={`px-2.5 py-1.5 rounded font-semibold transition ${layer === 'satellite' ? 'bg-brand text-white' : 'text-fg-muted hover:bg-surface-2'
-            }`}
-        >
-          Vệ tinh
-        </button>
-      </div>
+      {showLayerToggle && (
+        <div className="absolute top-3 right-3 z-[500] glass !rounded-lg !bg-surface/80 p-1 flex space-x-1 text-xs">
+          <button
+            onClick={() => changeLayer('street')}
+            className={`px-2.5 py-1.5 rounded font-semibold transition ${layer === 'street' ? 'bg-brand text-white' : 'text-fg-muted hover:bg-surface-2'
+              }`}
+          >
+            Giao thông
+          </button>
+          <button
+            onClick={() => changeLayer('satellite')}
+            className={`px-2.5 py-1.5 rounded font-semibold transition ${layer === 'satellite' ? 'bg-brand text-white' : 'text-fg-muted hover:bg-surface-2'
+              }`}
+          >
+            Vệ tinh
+          </button>
+        </div>
+      )}
     </div>
   );
 }

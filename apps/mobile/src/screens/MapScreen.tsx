@@ -26,7 +26,7 @@ import {
 } from '@maplibre/maplibre-react-native';
 import GoongMap from '../components/GoongMap';
 import ImageViewer from '../components/ImageViewer';
-import { GOONG_TEXT_FONT } from '../lib/goong';
+import { GOONG_TEXT_FONT, type GoongLayer } from '../lib/goong';
 import { useAppConfig } from '../lib/AppConfigContext';
 import Geolocation from '@react-native-community/geolocation';
 import { RouteProp, useFocusEffect, useRoute } from '@react-navigation/native';
@@ -53,7 +53,10 @@ import { useAuth } from '../lib/AuthContext';
 import type { MainTabsParamList } from '../navigation/MainTabs';
 
 /** Trung tâm mặc định: TP. Tây Ninh — dùng khi chưa lấy được GPS thật. */
-const TAYNINH_CENTER: [number, number] = [106.18222, 10.65528];
+// const TAYNINH_CENTER: [number, number] = [106.18222, 10.65528]; //Thạnh Hóa
+// const TAYNINH_CENTER: [number, number] = [106.341, 10.5762]; //Mỹ An
+const TAYNINH_CENTER: [number, number] = [106.442222, 10.529167]; //Tân An
+
 const MAP_ZOOM = 12;
 
 /** Bán kính mặc định khi bấm vào chỗ trống trên bản đồ để tra cứu số nhà xung quanh (mét). */
@@ -70,6 +73,11 @@ const STATUS_FILTERS: { value: HouseStatus | ''; label: string }[] = [
   { value: HouseStatus.APPROVED, label: 'Đã cấp biển' },
   { value: HouseStatus.PENDING, label: 'Chờ duyệt' },
   { value: HouseStatus.NEEDS_ADJUST, label: 'Cần hiệu chỉnh' },
+];
+
+const LAYER_OPTIONS: { value: GoongLayer; label: string }[] = [
+  { value: 'street', label: 'Giao thông' },
+  { value: 'satellite', label: 'Vệ tinh' },
 ];
 
 interface HouseGeoPoint {
@@ -151,6 +159,8 @@ export default function MapScreen() {
 
   const [search, setSearch] = useState('');
   const [status, setStatus] = useState<HouseStatus | ''>('');
+  const [mapLayer, setMapLayer] = useState<GoongLayer>('street');
+  const [layerMenuVisible, setLayerMenuVisible] = useState(false);
   const [houses, setHouses] = useState<HouseGeoPoint[]>([]);
   const [loading, setLoading] = useState(false);
   const [locating, setLocating] = useState(false);
@@ -460,6 +470,7 @@ export default function MapScreen() {
   return (
     <View style={styles.container}>
       <GoongMap
+        layer={mapLayer}
         onReady={() => setMapReady(true)}
         onPress={(latitude, longitude) => {
           if (adjust) return;
@@ -719,6 +730,57 @@ export default function MapScreen() {
           <Text style={styles.locateButtonText}>📍</Text>
         )}
       </TouchableOpacity>
+
+      {/* Đổi lớp nền Giao thông / Vệ tinh */}
+      {!adjust && !nearby && !nearbyLoading && (
+        <>
+          {layerMenuVisible && (
+            <TouchableOpacity
+              activeOpacity={1}
+              style={styles.layerMenuBackdrop}
+              onPress={() => setLayerMenuVisible(false)}
+            />
+          )}
+          {layerMenuVisible && (
+            <View style={styles.layerMenu}>
+              <Text style={styles.layerMenuTitle}>Lớp bản đồ</Text>
+              {LAYER_OPTIONS.map((option) => {
+                const active = mapLayer === option.value;
+                return (
+                  <TouchableOpacity
+                    key={option.value}
+                    style={[styles.layerMenuItem, active && styles.layerMenuItemActive]}
+                    onPress={() => {
+                      setMapLayer(option.value);
+                      setLayerMenuVisible(false);
+                    }}
+                  >
+                    <Text
+                      style={[styles.layerMenuItemText, active && styles.layerMenuItemTextActive]}
+                    >
+                      {option.label}
+                    </Text>
+                    {active && <Icon name="check" size={18} color="#2563eb" />}
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          )}
+          <TouchableOpacity
+            style={[styles.locateButton, styles.layerButton]}
+            onPress={() => setLayerMenuVisible((visible) => !visible)}
+            accessibilityRole="button"
+            accessibilityLabel="Lớp bản đồ"
+            accessibilityState={{ expanded: layerMenuVisible }}
+          >
+            <Icon
+              name="layers"
+              size={22}
+              color={mapLayer === 'satellite' ? '#2563eb' : '#475569'}
+            />
+          </TouchableOpacity>
+        </>
+      )}
 
       {/* Kết quả tra cứu theo tọa độ (bấm chỗ trống trên bản đồ) */}
       {(nearby !== null || nearbyLoading) && (
@@ -1100,6 +1162,51 @@ const styles = StyleSheet.create({
     elevation: 4,
   },
   locateButtonText: { fontSize: 20 },
+  layerButton: { bottom: 80, zIndex: 22 },
+  layerMenuBackdrop: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    zIndex: 20,
+  },
+  layerMenu: {
+    position: 'absolute',
+    right: 14,
+    bottom: 132,
+    width: 170,
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    paddingVertical: 4,
+    zIndex: 21,
+    shadowColor: '#000',
+    shadowOpacity: 0.15,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: -2 },
+    elevation: 8,
+  },
+  layerMenuTitle: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#64748b',
+    textTransform: 'uppercase',
+    paddingHorizontal: 12,
+    paddingTop: 8,
+    paddingBottom: 4,
+  },
+  layerMenuItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+  },
+  layerMenuItemActive: { backgroundColor: '#eff6ff' },
+  layerMenuItemText: { fontSize: 13, fontWeight: '600', color: '#334155' },
+  layerMenuItemTextActive: { color: '#2563eb' },
   nearbyPanel: {
     position: 'absolute',
     left: 12,

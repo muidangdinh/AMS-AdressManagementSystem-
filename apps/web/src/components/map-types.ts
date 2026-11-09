@@ -28,6 +28,9 @@ export interface MapBounds {
   north: number;
 }
 
+/** Lớp nền bản đồ — đường phố hoặc vệ tinh. */
+export type HouseMapLayer = 'street' | 'satellite';
+
 /** Nhà đang được kéo để chỉnh GPS trên bản đồ web. */
 export interface HouseLocationAdjustment {
   id: string;
@@ -58,6 +61,11 @@ export interface HouseMapProps {
   onAdjustLocationChange?: (lat: number, lng: number) => void;
   /** Phát khung nhìn sau khi bản đồ load hoặc người dùng pan/zoom. */
   onBoundsChange?: (bounds: MapBounds) => void;
+  /** Lớp nền khi component cha điều khiển; bỏ trống để tự quản lý. */
+  layer?: HouseMapLayer;
+  onLayerChange?: (layer: HouseMapLayer) => void;
+  /** Mặc định true; tắt khi cha đã có nút đổi lớp riêng. */
+  showLayerToggle?: boolean;
 }
 
 export const STATUS_COLOR: Record<HouseStatus, string> = {

@@ -3,7 +3,12 @@
 import { useEffect, useRef, useState } from 'react';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
-import { STATUS_COLOR, DEFAULT_MAP_CENTER, type HouseMapProps } from './map-types';
+import {
+  STATUS_COLOR,
+  DEFAULT_MAP_CENTER,
+  type HouseMapLayer,
+  type HouseMapProps,
+} from './map-types';
 import { createSatelliteLayer, createStreetLayer } from '@/lib/map-tiles';
 
 /**
@@ -23,6 +28,9 @@ export default function HouseMapLeaflet({
   adjustLocation,
   onAdjustLocationChange,
   onBoundsChange,
+  layer: layerProp,
+  onLayerChange,
+  showLayerToggle = true,
 }: HouseMapProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<L.Map | null>(null);
@@ -40,7 +48,8 @@ export default function HouseMapLeaflet({
   const adjustRef = useRef(adjustLocation);
   const onAdjustLocationChangeRef = useRef(onAdjustLocationChange);
   const onBoundsChangeRef = useRef(onBoundsChange);
-  const [layer, setLayerState] = useState<'street' | 'satellite'>('street');
+  const [internalLayer, setInternalLayer] = useState<HouseMapLayer>('street');
+  const layer = layerProp ?? internalLayer;
 
   onSelectRef.current = onSelectHouse;
   onMapClickRef.current = onMapClick;
@@ -108,6 +117,10 @@ export default function HouseMapLeaflet({
     };
   }, []);
 
+  useEffect(() => {
+    if (layerProp) applyLayer(layerProp);
+  }, [layerProp]);
+
   // Đồng bộ marker mỗi khi danh sách số nhà thay đổi.
   // Luôn xóa sạch rồi tạo lại toàn bộ (thay vì diff tăng dần): ở React 18
   // Strict Mode (dev), effect khởi tạo map chạy 2 lần (mount giả lập →
@@ -128,36 +141,38 @@ export default function HouseMapLeaflet({
     });
     markersRef.current = {};
 
-    houses.forEach((h) => {
-      const color = STATUS_COLOR[h.status] ?? '#64748b';
-      const selected = h.id === selectedHouseId;
-      const size = selected ? 36 : 28;
-      const center = size / 2;
-      const icon = L.divIcon({
-        className: 'custom-house-marker',
-        html: `<div style="width:${size}px;height:${size}px;border-radius:50%;background:${color};color:white;font-weight:bold;font-size:${selected ? 12 : 11}px;display:flex;align-items:center;justify-content:center;border:${selected ? 4 : 2}px solid ${selected ? '#a855f7' : 'rgba(255,255,255,0.9)'};box-shadow:${selected ? '0 0 0 3px #fff,0 0 22px 8px rgba(168,85,247,0.85)' : `0 0 0 2px rgba(11,17,32,0.55),0 0 14px ${color}`};">${h.houseNumber}</div>`,
-        iconSize: [size, size],
-        iconAnchor: [center, center],
-      });
+    houses
+      .filter((house) => !adjustLocation || house.id !== adjustLocation.id)
+      .forEach((h) => {
+        const color = STATUS_COLOR[h.status] ?? '#64748b';
+        const selected = h.id === selectedHouseId;
+        const size = selected ? 36 : 28;
+        const center = size / 2;
+        const icon = L.divIcon({
+          className: 'custom-house-marker',
+          html: `<div style="width:${size}px;height:${size}px;border-radius:50%;background:${color};color:white;font-weight:bold;font-size:${selected ? 12 : 11}px;display:flex;align-items:center;justify-content:center;border:${selected ? 4 : 2}px solid ${selected ? '#a855f7' : 'rgba(255,255,255,0.9)'};box-shadow:${selected ? '0 0 0 3px #fff,0 0 22px 8px rgba(168,85,247,0.85)' : `0 0 0 2px rgba(11,17,32,0.55),0 0 14px ${color}`};">${h.houseNumber}</div>`,
+          iconSize: [size, size],
+          iconAnchor: [center, center],
+        });
 
-      const marker = L.marker([h.latitude, h.longitude], {
-        icon,
-        zIndexOffset: selected ? 2000 : 0,
-      }).addTo(map);
-      marker.on('click', () => {
-        if (!adjustRef.current) onSelectRef.current(h.id);
+        const marker = L.marker([h.latitude, h.longitude], {
+          icon,
+          zIndexOffset: selected ? 2000 : 0,
+        }).addTo(map);
+        marker.on('click', () => {
+          if (!adjustRef.current) onSelectRef.current(h.id);
+        });
+        marker.bindPopup(
+          `<div style="font-size:12px;min-width:160px">` +
+            `<div style="font-weight:bold;color:#1d4ed8;text-transform:uppercase;font-size:10px">${h.street}</div>` +
+            `<div style="font-weight:800;font-size:14px">Số ${h.houseNumber}</div>` +
+            `<div style="color:#475569;margin-top:2px">${h.ownerName}</div>` +
+            `<div style="font-family:monospace;color:#94a3b8;font-size:10px;margin-top:2px">${h.qrCode}</div>` +
+            `</div>`,
+        );
+        markersRef.current[h.id] = marker;
       });
-      marker.bindPopup(
-        `<div style="font-size:12px;min-width:160px">` +
-        `<div style="font-weight:bold;color:#1d4ed8;text-transform:uppercase;font-size:10px">${h.street}</div>` +
-        `<div style="font-weight:800;font-size:14px">Số ${h.houseNumber}</div>` +
-        `<div style="color:#475569;margin-top:2px">${h.ownerName}</div>` +
-        `<div style="font-family:monospace;color:#94a3b8;font-size:10px;margin-top:2px">${h.qrCode}</div>` +
-        `</div>`,
-      );
-      markersRef.current[h.id] = marker;
-    });
-  }, [houses, selectedHouseId]);
+  }, [houses, selectedHouseId, adjustLocation?.id]);
 
   // Chế độ chỉnh GPS: marker kéo được, tách khỏi danh sách marker bị dựng lại mỗi khi houses đổi.
   // Chỉ phụ thuộc id — cập nhật lat/lng sau dragend không được dựng lại marker đang kéo.
@@ -247,40 +262,47 @@ export default function HouseMapLeaflet({
     };
   }, [flyToRequest]);
 
-  function setLayer(type: 'street' | 'satellite') {
+  function applyLayer(type: HouseMapLayer) {
     const map = mapRef.current;
     if (!map || !streetLayerRef.current || !satelliteLayerRef.current) return;
     if (type === 'satellite') {
-      map.removeLayer(streetLayerRef.current);
-      map.addLayer(satelliteLayerRef.current);
+      if (map.hasLayer(streetLayerRef.current)) map.removeLayer(streetLayerRef.current);
+      if (!map.hasLayer(satelliteLayerRef.current)) map.addLayer(satelliteLayerRef.current);
     } else {
-      map.removeLayer(satelliteLayerRef.current);
-      map.addLayer(streetLayerRef.current);
+      if (map.hasLayer(satelliteLayerRef.current)) map.removeLayer(satelliteLayerRef.current);
+      if (!map.hasLayer(streetLayerRef.current)) map.addLayer(streetLayerRef.current);
       // Lớp đường phố chỉ có dữ liệu tới zoom 17 — đang zoom sâu hơn (từ vệ tinh) thì lùi lại để khỏi xám.
       if (map.getZoom() > map.getMaxZoom()) map.setZoom(map.getMaxZoom());
     }
-    setLayerState(type);
+  }
+
+  function changeLayer(type: HouseMapLayer) {
+    applyLayer(type);
+    if (layerProp === undefined) setInternalLayer(type);
+    onLayerChange?.(type);
   }
 
   return (
     <div className="relative h-full w-full">
       <div ref={containerRef} className="h-full w-full" />
-      <div className="absolute top-3 right-3 z-[500] glass !rounded-lg !bg-surface/80 p-1 flex space-x-1 text-xs">
-        <button
-          onClick={() => setLayer('street')}
-          className={`px-2.5 py-1.5 rounded font-semibold transition ${layer === 'street' ? 'bg-brand text-white' : 'text-fg-muted hover:bg-surface-2'
-            }`}
-        >
-          Giao thông
-        </button>
-        <button
-          onClick={() => setLayer('satellite')}
-          className={`px-2.5 py-1.5 rounded font-semibold transition ${layer === 'satellite' ? 'bg-brand text-white' : 'text-fg-muted hover:bg-surface-2'
-            }`}
-        >
-          Vệ tinh
-        </button>
-      </div>
+      {showLayerToggle && (
+        <div className="absolute top-3 right-3 z-[500] glass !rounded-lg !bg-surface/80 p-1 flex space-x-1 text-xs">
+          <button
+            onClick={() => changeLayer('street')}
+            className={`px-2.5 py-1.5 rounded font-semibold transition ${layer === 'street' ? 'bg-brand text-white' : 'text-fg-muted hover:bg-surface-2'
+              }`}
+          >
+            Giao thông
+          </button>
+          <button
+            onClick={() => changeLayer('satellite')}
+            className={`px-2.5 py-1.5 rounded font-semibold transition ${layer === 'satellite' ? 'bg-brand text-white' : 'text-fg-muted hover:bg-surface-2'
+              }`}
+          >
+            Vệ tinh
+          </button>
+        </div>
+      )}
     </div>
   );
 }

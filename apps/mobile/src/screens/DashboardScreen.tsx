@@ -883,24 +883,36 @@ export default function DashboardScreen() {
             </ChartSection>
           )}
 
-          {/* Ấp/thôn — top 5 nhiều nhà nhất (giống web 10.2). */}
+          {/* Ấp/thôn — số nhà theo từng ấp/thôn. */}
           <ChartSection
             title="Ấp/thôn"
-            subtitle="10.2 — top 5 ấp/thôn nhiều nhà nhất"
+            subtitle="Số nhà theo từng ấp/thôn"
             details={
               <RankedCard
                 emptyText="Chưa có dữ liệu"
-                items={system.topWards.map((w) => ({
-                  label: w.ward,
-                  value: `${w.houseCount} nhà`,
-                  onPress: () => openHouses(`Nhà ở ${w.ward}`, undefined, { ward: w.ward }),
+                items={(system.byHamlet ?? []).map((h) => ({
+                  label: h.name,
+                  value: `${h.approved + h.withoutNumber} nhà`,
+                  onPress: () =>
+                    openHouses(`Nhà ở ấp/thôn ${h.name}`, undefined, { hamletId: h.id ?? undefined }),
                 }))}
               />
             }
           >
             <BarList
-              data={system.topWards.map((w) => ({ key: w.ward, name: w.ward, value: w.houseCount }))}
-              onBarPress={(key) => openHouses(`Nhà ở ${key}`, undefined, { ward: key })}
+              data={(system.byHamlet ?? []).map((h) => ({
+                key: h.id ?? h.name,
+                name: h.name,
+                value: h.approved + h.withoutNumber,
+              }))}
+              onBarPress={(key) => {
+                const hamlet = system.byHamlet?.find((h) => (h.id ?? h.name) === key);
+                if (hamlet) {
+                  openHouses(`Nhà ở ấp/thôn ${hamlet.name}`, undefined, {
+                    hamletId: hamlet.id ?? undefined,
+                  });
+                }
+              }}
             />
           </ChartSection>
 

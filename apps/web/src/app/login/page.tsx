@@ -2,7 +2,6 @@
 
 import { useState } from 'react';
 import { useAuth } from '@/lib/auth-context';
-import { Globe } from 'lucide-react';
 import { ApiError } from '@/lib/api';
 
 export default function LoginPage() {
@@ -39,10 +38,13 @@ export default function LoginPage() {
 
       <div className="w-full max-w-sm glass !rounded-2xl overflow-hidden relative">
         <div className="px-7 pt-8 pb-6 text-center">
-          <div className="w-12 h-12 mx-auto rounded-2xl bg-brand-gradient flex items-center justify-center shadow-glow-accent mb-4">
-            <Globe className="w-6 h-6 text-white" strokeWidth={1.8} />
+          <div className="w-16 h-16 mx-auto flex items-center justify-center mb-3">
+            <img 
+              src="/ams-symbol-128.png" 
+              alt="AMS Logo" 
+              className="w-full h-full object-contain" 
+            />
           </div>
-          <h1 className="text-lg font-bold text-fg">AMS</h1>
           <p className="text-xs text-fg-muted mt-1">Hệ thống Đánh số &amp; Gắn biển số nhà</p>
           <p className="text-xs italic text-fg-subtle mt-1">“Mỗi ngôi nhà một địa chỉ”</p>
         </div>

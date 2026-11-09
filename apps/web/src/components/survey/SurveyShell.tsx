@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
-import { ClipboardList, Download, LogOut, MapPin, Share, X } from 'lucide-react';
+import { ClipboardList, Download, LogOut, Map as MapIcon, MapPin, Share, X } from 'lucide-react';
 import { PERMISSIONS } from '@tayninh/shared';
 import { useAuth } from '@/lib/auth-context';
 import { getApiUrl } from '@/lib/api';
@@ -15,6 +15,7 @@ interface InstallPromptEvent extends Event {
 }
 
 const TABS = [
+  { href: '/survey/map', label: 'Bản đồ', icon: MapIcon },
   { href: '/survey/assignments', label: 'Nhiệm vụ', icon: ClipboardList },
   { href: '/survey/field', label: 'Khảo sát', icon: MapPin },
 ];
@@ -83,6 +84,7 @@ export default function SurveyShell({ children }: { children: React.ReactNode })
   }
 
   const canSurvey = hasPermission(PERMISSIONS.ASSIGNMENT_EXECUTE);
+  const isMap = pathname.startsWith('/survey/map');
 
   return (
     <div className="h-[100dvh] flex flex-col bg-canvas text-fg">
@@ -124,11 +126,17 @@ export default function SurveyShell({ children }: { children: React.ReactNode })
 
       {canSurvey ? (
         <>
-          <main className="flex-1 min-h-0 overflow-y-auto overscroll-contain pb-[calc(4rem_+_env(safe-area-inset-bottom))]">
+          <main
+            className={
+              isMap
+                ? 'flex-1 min-h-0 overflow-hidden'
+                : 'flex-1 min-h-0 overflow-y-auto overscroll-contain pb-[calc(4rem_+_env(safe-area-inset-bottom))]'
+            }
+          >
             {children}
           </main>
           <nav className="fixed inset-x-0 bottom-0 z-40 border-t border-line bg-shell/95 pb-[env(safe-area-inset-bottom)] backdrop-blur-md">
-            <div className="grid h-16 grid-cols-2 max-w-lg mx-auto">
+            <div className="grid h-16 grid-cols-3 max-w-lg mx-auto">
               {TABS.map(({ href, label, icon: Icon }) => {
                 const active = pathname.startsWith(href);
                 return (

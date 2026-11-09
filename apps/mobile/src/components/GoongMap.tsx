@@ -2,11 +2,13 @@ import React, { type ReactNode, useEffect, useState } from 'react';
 import { ActivityIndicator, StyleSheet, Text, View, type StyleProp, type ViewStyle } from 'react-native';
 import { Map, type StyleSpecification } from '@maplibre/maplibre-react-native';
 import { useAppConfig } from '../lib/AppConfigContext';
-import { loadGoongStyle } from '../lib/goong';
+import { loadGoongStyle, type GoongLayer } from '../lib/goong';
 
 interface GoongMapProps {
   children?: ReactNode;
   style?: StyleProp<ViewStyle>;
+  /** Lớp nền: đường phố hoặc vệ tinh. */
+  layer?: GoongLayer;
   /** Toạ độ theo thứ tự (lat, lng) cho dễ dùng với dữ liệu hiện có. */
   onPress?: (latitude: number, longitude: number) => void;
   onReady?: () => void;
@@ -14,20 +16,27 @@ interface GoongMapProps {
 }
 
 /** Nền bản đồ Goong (MapLibre) dùng chung cho các màn hình mobile. */
-export default function GoongMap({ children, style, onPress, onReady, onRegionDidChange }: GoongMapProps) {
+export default function GoongMap({
+  children,
+  style,
+  layer = 'street',
+  onPress,
+  onReady,
+  onRegionDidChange,
+}: GoongMapProps) {
   const { config } = useAppConfig();
   const [loaded, setLoaded] = useState<{ mapStyle: string | StyleSpecification } | null>(null);
   const [failed, setFailed] = useState(false);
 
   useEffect(() => {
     let active = true;
-    loadGoongStyle(config.mapHidePoi).then((mapStyle) => {
+    loadGoongStyle(config.mapHidePoi, layer).then((mapStyle) => {
       if (active) setLoaded({ mapStyle });
     });
     return () => {
       active = false;
     };
-  }, [config.mapHidePoi]);
+  }, [config.mapHidePoi, layer]);
 
   if (!loaded) {
     return (

@@ -776,12 +776,12 @@ export default function SurveyForm() {
             Chọn bản đồ
           </button>
         </div>
-        <NearbyOwners
+        {false && <NearbyOwners
           enabled={form.locationSource !== 'default'}
           lat={form.lat}
           lng={form.lng}
           onPick={handlePickNearby}
-        />
+        />}
       </Section>
 
       <Section step="2" title="Chủ hộ">

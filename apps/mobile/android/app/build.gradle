@@ -80,11 +80,11 @@ android {
 
     namespace "com.tayninh.gis"
     defaultConfig {
-        applicationId "com.tayninh.gis.thanhhoa"
+        applicationId "com.tayninh.gis.tanan"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 14
-        versionName "1.13"
+        versionCode 15     // Tăng lên (bắt buộc phải tăng so với bản cũ)
+        versionName "1.14" // Tăng tên phiên bản cho dễ quản lý
     }
     splits {
         abi {

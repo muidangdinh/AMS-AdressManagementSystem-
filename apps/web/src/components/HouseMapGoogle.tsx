@@ -3,7 +3,12 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { GoogleMap, InfoWindowF, MarkerF, useJsApiLoader } from '@react-google-maps/api';
 import type { Libraries } from '@react-google-maps/api';
-import { STATUS_COLOR, DEFAULT_MAP_CENTER, type HouseMapProps } from './map-types';
+import {
+  STATUS_COLOR,
+  DEFAULT_MAP_CENTER,
+  type HouseMapLayer,
+  type HouseMapProps,
+} from './map-types';
 import { useAppConfig } from '@/lib/app-config';
 
 const DEFAULT_CENTER_OBJ = { lat: DEFAULT_MAP_CENTER[0], lng: DEFAULT_MAP_CENTER[1] };
@@ -56,6 +61,9 @@ export default function HouseMapGoogle({
   adjustLocation,
   onAdjustLocationChange,
   onBoundsChange,
+  layer: layerProp,
+  onLayerChange,
+  showLayerToggle = true,
 }: HouseMapProps) {
   const apiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY ?? '';
   const { isLoaded, loadError } = useJsApiLoader({
@@ -65,7 +73,10 @@ export default function HouseMapGoogle({
   });
 
   const mapRef = useRef<google.maps.Map | null>(null);
-  const [layer, setLayer] = useState<'street' | 'satellite'>('street');
+  const [internalLayer, setInternalLayer] = useState<HouseMapLayer>('street');
+  const layer = layerProp ?? internalLayer;
+  const layerRef = useRef(layer);
+  layerRef.current = layer;
   const { config } = useAppConfig();
   const [activeHouseId, setActiveHouseId] = useState<string | null>(null);
   const [myLocation, setMyLocation] = useState<{ lat: number; lng: number } | null>(null);
@@ -83,6 +94,7 @@ export default function HouseMapGoogle({
 
   const onLoad = useCallback((map: google.maps.Map) => {
     mapRef.current = map;
+    map.setMapTypeId(layerRef.current === 'satellite' ? 'satellite' : 'roadmap');
   }, []);
 
   const onUnmount = useCallback(() => {
@@ -124,9 +136,21 @@ export default function HouseMapGoogle({
     }
   }, [flyToRequest]);
 
-  function toggleLayer(type: 'street' | 'satellite') {
-    mapRef.current?.setMapTypeId(type === 'satellite' ? 'satellite' : 'roadmap');
-    setLayer(type);
+  useEffect(() => {
+    if (layerProp) applyLayer(layerProp);
+  }, [layerProp]);
+
+  function applyLayer(type: HouseMapLayer) {
+    const map = mapRef.current;
+    if (!map) return;
+    const mapType = type === 'satellite' ? 'satellite' : 'roadmap';
+    if (map.getMapTypeId() !== mapType) map.setMapTypeId(mapType);
+  }
+
+  function changeLayer(type: HouseMapLayer) {
+    applyLayer(type);
+    if (layerProp === undefined) setInternalLayer(type);
+    onLayerChange?.(type);
   }
 
   const activeHouse = adjustLocation ? null : houses.find((h) => h.id === activeHouseId) ?? null;
@@ -167,11 +191,13 @@ export default function HouseMapGoogle({
             zoomControl: true,
             zoomControlOptions: { position: google.maps.ControlPosition.RIGHT_BOTTOM },
             clickableIcons: false,
-            mapTypeId: 'roadmap',
+            mapTypeId: layer === 'satellite' ? 'satellite' : 'roadmap',
             styles: config.mapHidePoi ? HIDE_POI_STYLES : undefined,
           }}
         >
-          {houses.map((h) => (
+          {houses
+            .filter((house) => !adjustLocation || house.id !== adjustLocation.id)
+            .map((h) => (
             <MarkerF
               key={h.id}
               position={{ lat: h.latitude, lng: h.longitude }}
@@ -240,22 +266,24 @@ export default function HouseMapGoogle({
         </GoogleMap>
       )}
 
-      <div className="absolute top-3 right-3 z-[500] bg-surface rounded-lg shadow-md p-1 border border-line flex space-x-1 text-xs">
-        <button
-          onClick={() => toggleLayer('street')}
-          className={`px-2.5 py-1.5 rounded font-semibold transition ${layer === 'street' ? 'bg-brand text-white' : 'text-fg-muted hover:bg-surface-2'
-            }`}
-        >
-          Giao thông
-        </button>
-        <button
-          onClick={() => toggleLayer('satellite')}
-          className={`px-2.5 py-1.5 rounded font-semibold transition ${layer === 'satellite' ? 'bg-brand text-white' : 'text-fg-muted hover:bg-surface-2'
-            }`}
-        >
-          Vệ tinh
-        </button>
-      </div>
+      {showLayerToggle && (
+        <div className="absolute top-3 right-3 z-[500] bg-surface rounded-lg shadow-md p-1 border border-line flex space-x-1 text-xs">
+          <button
+            onClick={() => changeLayer('street')}
+            className={`px-2.5 py-1.5 rounded font-semibold transition ${layer === 'street' ? 'bg-brand text-white' : 'text-fg-muted hover:bg-surface-2'
+              }`}
+          >
+            Giao thông
+          </button>
+          <button
+            onClick={() => changeLayer('satellite')}
+            className={`px-2.5 py-1.5 rounded font-semibold transition ${layer === 'satellite' ? 'bg-brand text-white' : 'text-fg-muted hover:bg-surface-2'
+              }`}
+          >
+            Vệ tinh
+          </button>
+        </div>
+      )}
     </div>
   );
 }

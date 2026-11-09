@@ -19,6 +19,7 @@ import {
   Route,
   Settings,
   ShieldCheck,
+  Smartphone,
   Sun,
   UserCheck,
   type LucideIcon,
@@ -45,6 +46,7 @@ const NAV_ICONS: Record<string, LucideIcon> = {
   roles: ShieldCheck,
   branding: Settings,
   mapSettings: Layers,
+  surveyPwa: Smartphone,
 };
 
 function NavIcon({ name, large }: { name: string; large?: boolean }) {
@@ -553,6 +555,13 @@ export default function HousesLayout({ children }: { children: React.ReactNode }
                     </NavLink>
                   </NavItem>
                 )}
+                {hasPermission(PERMISSIONS.ASSIGNMENT_EXECUTE) && (
+                  <NavItem index={10}>
+                    <NavLink href="/survey/assignments" icon="surveyPwa" block touch onNavigate={closeNav}>
+                      Mở App
+                    </NavLink>
+                  </NavItem>
+                )}
                 {canSeeHouses && (
                   <NavItem index={8}>
                     <LocateButton block touch onNavigate={closeNav} />
@@ -636,6 +645,11 @@ export default function HousesLayout({ children }: { children: React.ReactNode }
           {canSeeBranding && (
             <NavLink href="/houses/map-settings" icon="mapSettings" block>
               Cấu hình bản đồ
+            </NavLink>
+          )}
+          {hasPermission(PERMISSIONS.ASSIGNMENT_EXECUTE) && (
+            <NavLink href="/survey/assignments" icon="surveyPwa" block>
+              Mở App
             </NavLink>
           )}
         </nav>
