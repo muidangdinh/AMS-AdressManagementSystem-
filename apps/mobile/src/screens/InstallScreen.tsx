@@ -25,6 +25,7 @@ import { ASSIGNMENT_STATUS_LABELS, AssignmentStatus, PlateStatus } from '@taynin
 import GoongMap from '../components/GoongMap';
 import { PHOTO_PICKER_OPTIONS } from '../lib/imageOptions';
 import { ApiError } from '../lib/api';
+import { MAP_CENTER } from '../lib/appVariant';
 import { installPlate, markPlateNotInstalled } from '../lib/platesApi';
 import {
   fetchInstallPlates,
@@ -46,7 +47,6 @@ const NOT_INSTALLED_REASONS = [
   'Sai địa chỉ / không tìm thấy nhà',
 ];
 
-const TAYNINH_CENTER: [number, number] = [106.098, 11.3151];
 const MAP_ZOOM = 12;
 
 const STATUS_COLOR: Record<AssignmentStatus, { bg: string; text: string }> = {
@@ -645,7 +645,7 @@ function InstallDetail({ assignmentId, onBack }: { assignmentId: string; onBack:
       ) : (
         <View style={{ flex: 1 }}>
           <GoongMap onReady={fitMap} onPress={() => setSelectedPlateId(null)}>
-            <Camera ref={cameraRef} initialViewState={{ center: TAYNINH_CENTER, zoom: MAP_ZOOM }} />
+            <Camera ref={cameraRef} initialViewState={{ center: MAP_CENTER, zoom: MAP_ZOOM }} />
 
             {routeCoords.length >= 2 && (
               <GeoJSONSource

@@ -1,4 +1,5 @@
 import { HttpException, HttpStatus, Injectable } from '@nestjs/common';
+import { isLoginThrottleEnabled } from './auth.config';
 
 const MAX_FAILURES = 5;
 const WINDOW_MS = 15 * 60 * 1000;
@@ -16,6 +17,8 @@ interface Attempt {
  * Đếm theo TÊN ĐĂNG NHẬP (kể cả tên không tồn tại, để không lộ tài khoản nào có thật), không theo IP
  * vì sau reverse proxy và NAT cơ quan nhiều người dùng chung 1 IP. Lưu trong bộ nhớ: API chạy 1 instance,
  * khởi động lại thì đếm lại từ đầu.
+ *
+ * Tạm tắt mặc định (chưa cần dùng); bật lại bằng biến môi trường LOGIN_THROTTLE_ENABLED=true.
  */
 @Injectable()
 export class LoginThrottleService {
@@ -26,6 +29,7 @@ export class LoginThrottleService {
   }
 
   assertAllowed(username: string, now = Date.now()) {
+    if (!isLoginThrottleEnabled()) return;
     const attempt = this.attempts.get(this.key(username));
     if (!attempt || attempt.lockedUntil <= now) return;
     const minutes = Math.ceil((attempt.lockedUntil - now) / 60_000);
@@ -36,6 +40,7 @@ export class LoginThrottleService {
   }
 
   recordFailure(username: string, now = Date.now()) {
+    if (!isLoginThrottleEnabled()) return;
     const key = this.key(username);
     const current = this.attempts.get(key);
     const attempt: Attempt =

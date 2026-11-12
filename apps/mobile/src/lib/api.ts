@@ -1,16 +1,11 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import type { AuthTokens } from '@tayninh/shared';
 
-// Đổi thành IP LAN của máy chạy backend khi test trên điện thoại thật/emulator
-// (Android emulator dùng 10.0.2.2 để trỏ về localhost máy host; iOS simulator
-// dùng thẳng localhost). Xem README.md phần "Cấu hình API_URL".
-// TẠM THỜI cho test qua USB (adb reverse tcp:3001 tcp:3001) — đổi lại
-// 'https://rv.librasoft.vn' khi build bản thật/không còn cắm dây debug.
-// export const API_URL = 'http://localhost:4002';
-export const API_URL = 'https://ams.librasoft.vn';//Thạnh Hóa 
-// export const API_URL = 'https://myan.amstn.vn';//Mỹ An
-// export const API_URL = 'https://tanan.amstn.vn';//Tân An
-// export const API_URL = ' http://10.0.2.2:3001';
+// API_URL được sinh theo từng xã từ variants.json (xem scripts/generate-variant.mjs).
+// Không sửa trực tiếp: đổi xã thì chạy npm run apk:<flavor>.
+import { API_URL } from './appVariant';
+
+export { API_URL };
 
 
 const TOKEN_KEY = 'tayninh_token';

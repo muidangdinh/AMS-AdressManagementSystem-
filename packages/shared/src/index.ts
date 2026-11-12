@@ -690,6 +690,26 @@ export interface Street {
 export type CreateStreetRequest = { name: string; wardId?: string };
 export type UpdateStreetRequest = Partial<CreateStreetRequest>;
 
+/** Tên đường đã dùng trong House.street nhưng chưa có trong danh mục Street. */
+export interface UnmatchedStreet {
+  name: string;
+  wardId: string | null;
+  wardName: string | null;
+  houseCount: number;
+}
+
+export type ResolveUnmatchedStreetRequest = {
+  name: string;
+  wardId?: string;
+  action: 'create' | 'merge';
+  targetStreetId?: string;
+};
+
+export interface ResolveUnmatchedStreetResult {
+  street: Street;
+  updatedHouses: number;
+}
+
 export interface Alley {
   id: string;
   name: string;

@@ -12,6 +12,7 @@ import {
   PERMISSIONS,
 } from '@tayninh/shared';
 import { useAuth } from '@/lib/auth-context';
+import { useConfirmDialog } from '@/components/ConfirmDialogProvider';
 import { ApiError, apiFetch } from '@/lib/api';
 import { casesApi } from '@/lib/cases-api';
 import { ButtonSpinner, EmptyState, FIELD_CLASS } from '@/components/ui';
@@ -48,6 +49,7 @@ function formatFileSize(bytes: number): string {
 }
 
 export default function CaseDetailPage() {
+  const { confirm } = useConfirmDialog();
   const params = useParams<{ id: string }>();
   const caseId = params.id;
   const { user, hasPermission } = useAuth();
@@ -248,7 +250,7 @@ export default function CaseDetailPage() {
   }
 
   async function handleDeleteAttachment(attachment: CaseAttachment) {
-    if (!confirm(`Xoá tệp "${attachment.fileName}"?`)) return;
+    if (!(await confirm(`Xoá tệp "${attachment.fileName}"?`))) return;
     setActionError(null);
     try {
       await casesApi.deleteAttachment(caseId, attachment.id);

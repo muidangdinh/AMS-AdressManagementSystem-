@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { PERMISSIONS } from '@tayninh/shared';
 import type { PermissionDef, RoleSummary } from '@tayninh/shared';
 import { useAuth } from '@/lib/auth-context';
+import { useConfirmDialog } from '@/components/ConfirmDialogProvider';
 import { ApiError } from '@/lib/api';
 import { rolesApi } from '@/lib/roles-api';
 import { ButtonSpinner, EmptyState, FIELD_CLASS, FormField, PageHeader, ToggleSwitch } from '@/components/ui';
@@ -28,6 +29,7 @@ const EMPTY_FORM: RoleForm = {
 /** PHASE 17 — Quản trị vai trò động + gán quyền. Cần quyền role:manage. */
 export default function RolesAdminPage() {
   const { user, hasPermission } = useAuth();
+  const { confirm } = useConfirmDialog();
   const router = useRouter();
   const canManage = hasPermission(PERMISSIONS.ROLE_MANAGE);
 
@@ -131,7 +133,7 @@ export default function RolesAdminPage() {
   }
 
   async function handleDelete(r: RoleSummary) {
-    if (!window.confirm(`Xóa vai trò "${r.name}"?`)) return;
+    if (!(await confirm(`Xóa vai trò "${r.name}"?`))) return;
     try {
       await rolesApi.remove(r.id);
       await load();

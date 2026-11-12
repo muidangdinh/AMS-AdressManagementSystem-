@@ -1,6 +1,6 @@
 import { IsString, MaxLength, MinLength } from 'class-validator';
 
-/** Body DELETE /api/houses/:id — yêu cầu nhập chính xác `DELETE <số nhà> <tên đường>`. */
+/** Body DELETE /api/houses/:id — yêu cầu nhập chính xác `DELETE`. */
 export class DeleteHouseDto {
   @IsString()
   @MinLength(1)

@@ -28,6 +28,7 @@ import { ResurveyHouseDto } from './dto/resurvey-house.dto';
 import { ListHousesQueryDto } from './dto/list-houses-query.dto';
 import { GeoJsonQueryDto } from './dto/geojson-query.dto';
 import { NearbyQueryDto } from './dto/nearby-query.dto';
+import { StreetSuggestionsQueryDto } from './dto/street-suggestions-query.dto';
 import { DeleteHouseDto } from './dto/delete-house.dto';
 import { DeleteHousesDto } from './dto/delete-houses.dto';
 import { housePhotoMulterOptions } from './multer.config';
@@ -64,6 +65,15 @@ export class HousesController {
   @Get('owners')
   searchOwners(@CurrentUser() user: AuthenticatedUser, @Query('q') q?: string) {
     return this.housesService.searchOwners(q, user);
+  }
+
+  /** Gợi ý tên đường đã dùng (form khảo sát) — cũng phải đặt trước ':id'. */
+  @Get('street-suggestions')
+  streetSuggestions(
+    @CurrentUser() user: AuthenticatedUser,
+    @Query() query: StreetSuggestionsQueryDto,
+  ) {
+    return this.housesService.findStreetSuggestions(user, query.wardId);
   }
 
   /** Thống kê dashboard (Phase 5 — IX) — cũng phải đặt trước ':id'. */

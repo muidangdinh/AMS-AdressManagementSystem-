@@ -1,0 +1,20 @@
+{
+  "thanhhoa": {
+    "appName": "AMS-ThanhHoa",
+    "applicationId": "com.tayninh.gis.thanhhoa",
+    "apiUrl": "https://ams.librasoft.vn",
+    "mapCenter": [106.18222, 10.65528]
+  },
+  "myan": {
+    "appName": "AMS-MyAn",
+    "applicationId": "com.tayninh.gis.myan",
+    "apiUrl": "https://myan.amstn.vn",
+    "mapCenter": [106.341, 10.5762]
+  },
+  "tanan": {
+    "appName": "AMS-TanAn",
+    "applicationId": "com.tayninh.gis.tanan",
+    "apiUrl": "https://tanan.amstn.vn",
+    "mapCenter": [106.442222, 10.529167]
+  }
+}

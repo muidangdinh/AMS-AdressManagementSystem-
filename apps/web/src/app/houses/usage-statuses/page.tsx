@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { PERMISSIONS } from '@tayninh/shared';
 import type { UsageStatusItem } from '@tayninh/shared';
 import { useAuth } from '@/lib/auth-context';
+import { useConfirmDialog } from '@/components/ConfirmDialogProvider';
 import { ApiError } from '@/lib/api';
 import { usageStatusesApi } from '@/lib/addresses-api';
 import { FIELD_CLASS, PageHeader, EmptyState, ButtonSpinner } from '@/components/ui';
@@ -15,6 +16,7 @@ import { FIELD_CLASS, PageHeader, EmptyState, ButtonSpinner } from '@/components
  */
 export default function UsageStatusesPage() {
   const { user, hasPermission } = useAuth();
+  const { confirm } = useConfirmDialog();
   const router = useRouter();
   const canManage = hasPermission(PERMISSIONS.ADDRESS_WRITE);
 
@@ -74,7 +76,7 @@ export default function UsageStatusesPage() {
   }
 
   async function handleDelete(item: UsageStatusItem) {
-    if (!confirm(`Xóa hiện trạng "${item.name}"?`)) return;
+    if (!(await confirm(`Xóa hiện trạng "${item.name}"?`))) return;
     try {
       await usageStatusesApi.remove(item.id);
       setItems((prev) => prev.filter((u) => u.id !== item.id));

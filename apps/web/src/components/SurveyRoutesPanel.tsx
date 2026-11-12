@@ -5,6 +5,7 @@ import dynamic from 'next/dynamic';
 import type { Street, SurveyAssignment, SurveyCampaign, SurveyRoute } from '@tayninh/shared';
 import { ASSIGNMENT_STATUS_LABELS, AssignmentStatus, PERMISSIONS } from '@tayninh/shared';
 import { ApiError } from '@/lib/api';
+import { useConfirmDialog } from '@/components/ConfirmDialogProvider';
 import { useAuth } from '@/lib/auth-context';
 import { assignmentsApi, routesApi, zonesApi } from '@/lib/surveys-api';
 import { streetsApi } from '@/lib/addresses-api';
@@ -66,6 +67,7 @@ export default function SurveyRoutesPanel({
   /** Gọi sau khi giao/đổi người để trang tải lại đợt (danh sách nhiệm vụ bên dưới). */
   onAssignmentsChanged: () => Promise<void> | void;
 }) {
+  const { confirm } = useConfirmDialog();
   const zones = useMemo(() => campaign.zones ?? [], [campaign.zones]);
   const { hasPermission } = useAuth();
   const canEditCatalog = hasPermission(PERMISSIONS.ROUTE_MANAGE);
@@ -387,7 +389,7 @@ export default function SurveyRoutesPanel({
   }
 
   async function handleUnlink(route: ZoneRoute) {
-    if (!confirm(`Gỡ tuyến "${route.name}" khỏi phân vùng? Tuyến vẫn còn trong kho tuyến đường.`)) return;
+    if (!(await confirm(`Gỡ tuyến "${route.name}" khỏi phân vùng? Tuyến vẫn còn trong kho tuyến đường.`, 'Gỡ'))) return;
     setError(null);
     try {
       await zonesApi.unlinkRoute(route.zoneId, route.id);

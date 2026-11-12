@@ -23,6 +23,7 @@ import {
   PlateStatus,
 } from '@tayninh/shared';
 import { useAuth } from '@/lib/auth-context';
+import { useConfirmDialog } from '@/components/ConfirmDialogProvider';
 import { ApiError, getApiUrl } from '@/lib/api';
 import { installAssignmentsApi, installCampaignsApi, installZonesApi } from '@/lib/installs-api';
 import { campaignsApi as surveyCampaignsApi } from '@/lib/surveys-api';
@@ -94,6 +95,7 @@ export default function InstallCampaignDetailPage() {
   const params = useParams<{ id: string }>();
   const campaignId = params.id;
   const { hasPermission } = useAuth();
+  const { confirm } = useConfirmDialog();
   const canManage = hasPermission(PERMISSIONS.INSTALL_MANAGE);
   const canReview = hasPermission(PERMISSIONS.INSTALL_REVIEW);
 
@@ -298,7 +300,7 @@ export default function InstallCampaignDetailPage() {
   }
 
   async function handleRemoveZone(zoneId: string) {
-    if (!confirm('Xóa phân vùng này? (chỉ xóa được khi chưa giao nhiệm vụ nào)')) return;
+    if (!(await confirm('Xóa phân vùng này? (chỉ xóa được khi chưa giao nhiệm vụ nào)'))) return;
     try {
       await installZonesApi.remove(zoneId);
       await load(true);
@@ -415,7 +417,7 @@ export default function InstallCampaignDetailPage() {
   }
 
   async function handleRemoveAssignment(id: string) {
-    if (!confirm('Xóa nhiệm vụ này? Biển trong nhiệm vụ sẽ trở về trạng thái ngoài nhiệm vụ.')) return;
+    if (!(await confirm('Xóa nhiệm vụ này? Biển trong nhiệm vụ sẽ trở về trạng thái ngoài nhiệm vụ.'))) return;
     try {
       await installAssignmentsApi.remove(id);
       await load(true);

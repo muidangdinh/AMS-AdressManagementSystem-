@@ -12,6 +12,7 @@ import {
   PERMISSIONS,
 } from '@tayninh/shared';
 import { useAuth } from '@/lib/auth-context';
+import { useConfirmDialog } from '@/components/ConfirmDialogProvider';
 import { ApiError, apiFetch } from '@/lib/api';
 import { numberingSchemesApi } from '@/lib/numbering-api';
 import { ButtonSpinner, EmptyState, FIELD_CLASS, FormField, ToggleSwitch } from '@/components/ui';
@@ -28,6 +29,7 @@ export default function NumberingSchemeDetailPage() {
   const schemeId = params.id;
   const router = useRouter();
   const { hasPermission } = useAuth();
+  const { confirm } = useConfirmDialog();
   const isAdmin = hasPermission(PERMISSIONS.SCHEME_APPROVE);
   const isEditorRole = hasPermission(PERMISSIONS.SCHEME_MANAGE);
 
@@ -144,7 +146,7 @@ export default function NumberingSchemeDetailPage() {
   }
 
   async function handleRemoveItem(itemId: string) {
-    if (!confirm('Bỏ nhà này khỏi phương án?')) return;
+    if (!(await confirm('Bỏ nhà này khỏi phương án?', 'Bỏ'))) return;
     try {
       await numberingSchemesApi.removeItem(schemeId, itemId);
       await load();
@@ -223,7 +225,7 @@ export default function NumberingSchemeDetailPage() {
   }
 
   async function handleDelete() {
-    if (!confirm('Xóa hẳn phương án nháp này?')) return;
+    if (!(await confirm('Xóa hẳn phương án nháp này?'))) return;
     try {
       await numberingSchemesApi.remove(schemeId);
       router.push('/houses/numbering');

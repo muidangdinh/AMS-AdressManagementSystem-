@@ -21,8 +21,6 @@ import {
   AssignmentStatus,
   NUMBERING_SIDE_LABELS,
   NumberingSide,
-  PLATE_NEED_LABELS,
-  PlateNeed,
   PhotoType,
   distanceToPathM,
   type Hamlet,
@@ -44,6 +42,7 @@ import {
   createHouse,
   fetchHouse,
   fetchNearbyHouses,
+  fetchStreetSuggestions,
   getAssignment,
   resurveyHouse as resurveyHouseApi,
   searchOwners,
@@ -56,8 +55,7 @@ import MapPickerModal from './MapPickerModal';
 const DEFAULT_LAT = 11.3151;
 const DEFAULT_LNG = 106.098;
 const BUILDING_TYPES = Object.values(BuildingType);
-const PLATE_NEEDS = Object.values(PlateNeed);
-const SIDES = [NumberingSide.EVEN, NumberingSide.ODD];
+const SIDES = [NumberingSide.ODD, NumberingSide.EVEN];
 
 type LocationSource = 'default' | 'gps' | 'map';
 
@@ -75,7 +73,6 @@ interface FormState {
   ownerIdNumber: string;
   usageStatusId: string;
   usageStatusName: string;
-  plateNeed: PlateNeed | '';
   soTo: string;
   soThua: string;
   buildingType: BuildingType;
@@ -124,7 +121,6 @@ function emptyForm(ward?: { id: string; name: string } | null): FormState {
     ownerIdNumber: '',
     usageStatusId: '',
     usageStatusName: '',
-    plateNeed: '',
     soTo: '',
     soThua: '',
     buildingType: BuildingType.SINGLE_HOUSE,
@@ -157,7 +153,6 @@ function houseToForm(house: HouseSummary): FormState {
     ownerIdNumber: house.ownerIdNumber ?? '',
     usageStatusId: house.usageStatusId ?? '',
     usageStatusName: house.usageStatus?.name ?? '',
-    plateNeed: house.plateNeed ?? '',
     soTo: house.soTo ?? '',
     soThua: house.soThua ?? '',
     buildingType: house.buildingType,
@@ -181,6 +176,45 @@ function errorMessage(error: unknown, fallback: string) {
   return error instanceof ApiError ? error.message : fallback;
 }
 
+const RECENT_STREET_KEY = 'tayninh_recent_street_v1';
+
+function streetKey(name: string) {
+  return name.trim().toLowerCase();
+}
+
+function readRecentStreet(wardId: string) {
+  if (!wardId) return '';
+  try {
+    return localStorage.getItem(`${RECENT_STREET_KEY}:${wardId}`) ?? '';
+  } catch {
+    return '';
+  }
+}
+
+function writeRecentStreet(wardId: string, name: string) {
+  if (!wardId) return;
+  try {
+    localStorage.setItem(`${RECENT_STREET_KEY}:${wardId}`, name);
+  } catch {
+    // Trình duyệt chặn localStorage — bỏ qua, gợi ý vẫn dùng được trong phiên.
+  }
+}
+
+function mergeStreetNames(...lists: string[][]): string[] {
+  const seen = new Set<string>();
+  const names: string[] = [];
+  for (const list of lists) {
+    for (const raw of list) {
+      const name = raw.trim();
+      const key = streetKey(name);
+      if (!name || seen.has(key)) continue;
+      seen.add(key);
+      names.push(name);
+    }
+  }
+  return names;
+}
+
 export default function SurveyForm() {
   const { user } = useAuth();
   const router = useRouter();
@@ -190,6 +224,10 @@ export default function SurveyForm() {
   const [ownerFill, setOwnerFill] = useState<OwnerFill | null>(null);
   const [wards, setWards] = useState<Ward[]>([]);
   const [streets, setStreets] = useState<Street[]>([]);
+  const [streetSuggestions, setStreetSuggestions] = useState<string[]>([]);
+  const [recentStreet, setRecentStreet] = useState<{ wardId: string; name: string } | null>(
+    null,
+  );
   const [hamlets, setHamlets] = useState<Hamlet[]>([]);
   const [usageStatuses, setUsageStatuses] = useState<UsageStatusItem[]>([]);
   const [activeAssignment, setActiveAssignment] = useState<SurveyAssignment | null>(null);
@@ -234,6 +272,21 @@ export default function SurveyForm() {
       cancelled = true;
     };
   }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    setStreetSuggestions([]);
+    const storedRecent = readRecentStreet(form.wardId);
+    if (storedRecent) setRecentStreet({ wardId: form.wardId, name: storedRecent });
+    fetchStreetSuggestions(form.wardId || undefined)
+      .then((names) => {
+        if (!cancelled) setStreetSuggestions(names);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [form.wardId]);
 
   useEffect(() => {
     if (!form.wardId) {
@@ -369,6 +422,15 @@ export default function SurveyForm() {
     if (autoGps) getGps(true);
   }
 
+  function rememberStreet(name: string) {
+    if (!name.trim()) return;
+    if (form.wardId) {
+      setRecentStreet({ wardId: form.wardId, name: name.trim() });
+      writeRecentStreet(form.wardId, name.trim());
+    }
+    setStreetSuggestions((prev) => mergeStreetNames([name], prev));
+  }
+
   function applyOwner(owner: OwnerSearchResult, withArea: boolean) {
     setOwnerFill((current) => ({
       name: owner.ownerName,
@@ -478,7 +540,6 @@ export default function SurveyForm() {
       ownerPhone: form.ownerPhone.trim() || undefined,
       ownerIdNumber: form.ownerIdNumber.trim() || undefined,
       usageStatusId: form.usageStatusId || undefined,
-      plateNeed: form.plateNeed || undefined,
       buildingType: form.buildingType,
       floors: form.floors ? Number(form.floors) : undefined,
       area: form.area ? Number(form.area) : undefined,
@@ -521,6 +582,7 @@ export default function SurveyForm() {
         uploadedRef.current.add(photo.key);
       }
       await resurveyHouseApi(resurveyHouse.id, buildBody());
+      rememberStreet(form.street);
       window.alert(`Đã cập nhật nhà số ${form.houseNumber}.`);
       exitResurvey(true);
     } catch (err) {
@@ -554,6 +616,7 @@ export default function SurveyForm() {
         await uploadHousePhoto(houseId, photo.file, photo.type);
         uploadedRef.current.add(photo.key);
       }
+      rememberStreet(form.street);
       resetForm();
       setNotice(`Đã gửi hồ sơ nhà số ${form.houseNumber}.`);
     } catch (err) {
@@ -622,6 +685,33 @@ export default function SurveyForm() {
     () => (form.wardId ? streets.filter((street) => street.wardId === form.wardId) : streets),
     [streets, form.wardId],
   );
+
+  const streetNames = useMemo(() => {
+    const names: string[] = [];
+    const seen = new Set<string>();
+    const push = (name: string) => {
+      const key = streetKey(name);
+      if (!key || seen.has(key)) return;
+      seen.add(key);
+      names.push(name.trim());
+    };
+
+    if (recentStreet && recentStreet.wardId === form.wardId) {
+      const match = streetOptions.find(
+        (street) => streetKey(street.name) === streetKey(recentStreet.name),
+      );
+      push(match?.name ?? recentStreet.name);
+    }
+
+    const newest = [...streetOptions]
+      .sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt))
+      .slice(0, 5);
+    for (const street of newest) push(street.name);
+
+    for (const street of streetOptions) push(street.name);
+    for (const name of streetSuggestions) push(name);
+    return names;
+  }, [streetOptions, streetSuggestions, recentStreet, form.wardId]);
 
   const wardOptions = useMemo(() => {
     const options = wards.map((ward) => ({ id: ward.id, name: ward.name }));
@@ -822,25 +912,6 @@ export default function SurveyForm() {
             />
           </FormField>
         </div>
-        <div>
-          <p className="text-xs font-bold text-fg-muted uppercase tracking-wide mb-1">Nhu cầu gắn biển</p>
-          <div className="flex flex-wrap gap-1.5">
-            {PLATE_NEEDS.map((need) => (
-              <button
-                key={need}
-                type="button"
-                onClick={() => update('plateNeed', form.plateNeed === need ? '' : need)}
-                className={`rounded-full border px-3 py-1.5 text-xs font-semibold ${
-                  form.plateNeed === need
-                    ? 'border-accent bg-accent text-white'
-                    : 'border-line bg-surface-2 text-fg-muted'
-                }`}
-              >
-                {PLATE_NEED_LABELS[need]}
-              </button>
-            ))}
-          </div>
-        </div>
         <div className="grid grid-cols-2 gap-2">
           <FormField label="Số tờ">
             <input
@@ -876,12 +947,15 @@ export default function SurveyForm() {
                 const match = streetOptions.find((street) => street.name === value);
                 setForm((current) => ({ ...current, street: value, streetId: match?.id ?? '' }));
               }}
+              onFocus={() => {
+                streetsApi.list().then(setStreets).catch(() => {});
+              }}
               list="survey-streets"
               className={FIELD_CLASS}
             />
             <datalist id="survey-streets">
-              {streetOptions.map((street) => (
-                <option key={street.id} value={street.name} />
+              {streetNames.map((name) => (
+                <option key={name} value={name} />
               ))}
             </datalist>
           </FormField>

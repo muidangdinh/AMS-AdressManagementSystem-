@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation';
 import { DEPARTMENT_LEVEL_LABELS, PERMISSIONS } from '@tayninh/shared';
 import type { Department, DepartmentLevel, Hamlet, Ward } from '@tayninh/shared';
 import { useAuth } from '@/lib/auth-context';
+import { useConfirmDialog } from '@/components/ConfirmDialogProvider';
 import { ApiError } from '@/lib/api';
 import { departmentsApi } from '@/lib/departments-api';
 import { hamletsApi, wardsApi } from '@/lib/addresses-api';
@@ -49,6 +50,7 @@ function placeOf(d: Department): string {
  */
 export default function DepartmentsPage() {
   const { user, hasPermission } = useAuth();
+  const { confirm } = useConfirmDialog();
   const router = useRouter();
   const canManage = hasPermission(PERMISSIONS.USER_MANAGE);
 
@@ -168,7 +170,7 @@ export default function DepartmentsPage() {
   }
 
   async function handleDelete(d: Department) {
-    if (!confirm(`Xóa phòng ban "${d.name}"?`)) return;
+    if (!(await confirm(`Xóa phòng ban "${d.name}"?`))) return;
     setActionError(null);
     try {
       await departmentsApi.remove(d.id);

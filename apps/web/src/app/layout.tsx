@@ -4,6 +4,7 @@ import './globals.css';
 import { AppConfigProvider } from '@/lib/app-config';
 import { AuthProvider } from '@/lib/auth-context';
 import { THEME_INIT_SCRIPT } from '@/lib/theme';
+import { ConfirmDialogProvider } from '@/components/ConfirmDialogProvider';
 
 const inter = Inter({
   subsets: ['latin', 'vietnamese'],
@@ -30,7 +31,9 @@ export default function RootLayout({
       </head>
       <body>
         <AppConfigProvider>
-          <AuthProvider>{children}</AuthProvider>
+          <ConfirmDialogProvider>
+            <AuthProvider>{children}</AuthProvider>
+          </ConfirmDialogProvider>
         </AppConfigProvider>
       </body>
     </html>

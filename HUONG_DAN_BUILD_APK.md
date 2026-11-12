@@ -2,6 +2,10 @@
 
 Ứng dụng **AMS — Khảo sát số nhà Tây Ninh** (`apps/mobile`, React Native CLI thuần, không Expo).
 
+> ⚠️ **Từ bản 3 xã (v1.16, versionCode 17):** dùng [`BUILD_APK_3_XA.md`](./BUILD_APK_3_XA.md).
+> Các lệnh `assembleRelease` và hướng dẫn sửa tay `API_URL` bên dưới **không còn dùng được**
+> vì app đã tách product flavor (thanhhoa / myan / tanan).
+
 > **Về độ tin cậy của tài liệu này:** các bước build (Mục 3) đã được **chạy thật** trên máy dev này
 > ngày 21/09/2026 và kết quả (dung lượng, chữ ký, ABI) là số đo thực tế. Các bước cài qua ADB
 > (Mục 6) và ký bằng keystore riêng (Mục 4) **chưa chạy thử được** vì lúc viết chưa có điện thoại
@@ -11,22 +15,22 @@
 
 ## 1. Tóm tắt nhanh
 
-```bash
-# 1) Build APK release (chỉ kiến trúc arm64 — hợp mọi điện thoại đời ~2017 trở lại)
-cd /media/libra/data2/tayninh_GIS/apps/mobile/android
-./gradlew assembleRelease -PreactNativeArchitectures=arm64-v8a
+```powershell
+# Build cả 3 xã (6 APK: 64-bit + 32-bit mỗi xã) — xem BUILD_APK_3_XA.md
+cd apps/mobile
+npm run apk:all
 
-# 2) Cắm điện thoại (đã bật Gỡ lỗi USB), kiểm tra máy đã nhận
+# Cắm điện thoại (đã bật Gỡ lỗi USB), kiểm tra máy đã nhận
 adb devices -l
 
-# 3) Cài đè lên bản cũ (giữ dữ liệu app)
-adb install -r app/build/outputs/apk/release/app-release.apk
+# Cài đè lên bản cũ cùng xã (giữ dữ liệu app)
+adb install -r dist/thanhhoa/AMS-ThanhHoa-v1.16-arm64-v8a.apk
 
-# 4) Mở app
-adb shell monkey -p com.tayninh.gis -c android.intent.category.LAUNCHER 1
+# Mở app (đổi package theo xã)
+adb shell monkey -p com.tayninh.gis.thanhhoa -c android.intent.category.LAUNCHER 1
 ```
 
-File sinh ra: `apps/mobile/android/app/build/outputs/apk/release/app-release.apk`
+File sinh ra: `apps/mobile/dist/<flavor>/AMS-<Ten>-v<version>-<abi>.apk`
 
 > ⚠️ **Bản build ở Mục 3 KHÔNG phải bản phát hành chính thức** — nó đang ký bằng `debug.keystore`
 > (xem Mục 2 điểm 1). Đủ để cài thử/nghiệm thu nội bộ; muốn phát hành thật hãy làm thêm **Mục 4**.
@@ -46,20 +50,21 @@ kèm chú thích *"In production, you need to generate your own keystore"*. Đã
 - ⚠️ Khi chuyển sang keystore thật, máy nào đang cài bản cũ **phải gỡ ra cài lại** (khác chữ ký) —
   xem cảnh báo mất dữ liệu ở Mục 7.
 
-### 2.2 `API_URL` được "đóng cứng" vào APK lúc build
-Đọc ở `apps/mobile/src/lib/api.ts` — hiện là:
-```ts
-export const API_URL = 'https://rv.librasoft.vn';
-```
-Đổi giá trị này **sau khi build** không có tác dụng; phải build lại. **Kiểm tra dòng này trước mỗi lần build.**
+### 2.2 `API_URL` và cấu hình xã
+
+Không sửa tay `apps/mobile/src/lib/api.ts`. Nguồn duy nhất là `apps/mobile/variants.json`
+(appName, applicationId, apiUrl, mapCenter). File `apps/mobile/src/lib/appVariant.ts` do
+`scripts/build-apk.mjs` (release) hoặc `scripts/generate-variant.mjs` (debug) sinh ra;
+Gradle không tự sinh. Build bằng `npm run apk:<flavor>` — xem
+[`BUILD_APK_3_XA.md`](./BUILD_APK_3_XA.md).
 
 ### 2.3 Release chặn HTTP thường (không mã hoá)
 Đã xác nhận trong manifest của APK release: `usesCleartextTraffic = false`
 (RN gradle plugin: debug `true`, release `false`). Nên:
 - `API_URL` dạng `https://…` → chạy bình thường.
-- `API_URL` dạng `http://192.168.x.x:3001` → **app không gọi được API**, không báo lỗi rõ ràng.
+- `API_URL` dạng `http://192.168.x.x:4002` → **app không gọi được API**, không báo lỗi rõ ràng.
 - Muốn thử với backend nội bộ qua HTTP hoặc `adb reverse` → dùng **bản debug**
-  (`./gradlew assembleDebug`), không dùng release.
+  (`npm run dev:thanhhoa` rồi `./gradlew assembleThanhhoaDebug`), không dùng release.
 
 ### 2.4 Google Maps key
 Tab **Bản Đồ** cần key Google Maps trên Android. Key được đọc từ `apps/mobile/android/local.properties`
@@ -92,7 +97,7 @@ môi trường `ANDROID_HOME` (máy này đang làm vậy).
 
 ```bash
 cd /media/libra/data2/tayninh_GIS/apps/mobile/android
-./gradlew assembleRelease -PreactNativeArchitectures=arm64-v8a
+./gradlew assembleThanhhoaRelease -PreactNativeArchitectures=arm64-v8a,armeabi-v7a
 ```
 
 Gradle tự đóng gói JS bằng Metro/Hermes — **không cần** chạy `npm start` hay bật Metro.
@@ -102,9 +107,9 @@ Gradle tự đóng gói JS bằng Metro/Hermes — **không cần** chạy `npm 
 | | |
 |---|---|
 | Kết quả | `BUILD SUCCESSFUL in 53s` *(build tăng dần, cache đã ấm — lần đầu hoặc sau `clean` sẽ lâu hơn nhiều, chưa đo)* |
-| File | `app/build/outputs/apk/release/app-release.apk` |
+| File | `app/build/outputs/apk/thanhhoa/release/app-thanhhoa-arm64-v8a-release.apk` |
 | Dung lượng | **28 MB** |
-| Package / phiên bản | `com.tayninh.gis` · versionCode `1` · versionName `1.0` |
+| Package / phiên bản | `com.tayninh.gis.thanhhoa` · versionCode `17` · versionName `1.16` |
 | Android hỗ trợ | minSdk 24 (Android 7.0) → targetSdk 36 |
 | Kiến trúc | `arm64-v8a` |
 | Chữ ký | `CN=Android Debug` (⚠️ xem Mục 2.1) |
@@ -137,7 +142,7 @@ versionName "1.0"    // ← số hiển thị cho người dùng
 ```bash
 cd apps/mobile/android
 ./gradlew clean
-./gradlew assembleRelease -PreactNativeArchitectures=arm64-v8a
+./gradlew assembleThanhhoaRelease -PreactNativeArchitectures=arm64-v8a,armeabi-v7a
 ```
 
 ---
@@ -204,10 +209,10 @@ buildTypes {
 ### 4.3 Build lại và kiểm tra chữ ký
 ```bash
 cd apps/mobile/android
-./gradlew assembleRelease -PreactNativeArchitectures=arm64-v8a
+./gradlew assembleThanhhoaRelease -PreactNativeArchitectures=arm64-v8a,armeabi-v7a
 
 /home/libra/Android/Sdk/build-tools/36.0.0/apksigner verify --print-certs \
-  app/build/outputs/apk/release/app-release.apk
+  app/build/outputs/apk/thanhhoa/release/app-thanhhoa-arm64-v8a-release.apk
 ```
 Dòng `Signer #1 certificate DN` phải là tên tổ chức bạn nhập ở 4.1, **không còn** `CN=Android Debug`.
 
@@ -259,7 +264,7 @@ adb shell getprop ro.build.version.release    # phiên bản Android hiển th�
 ### 6.3 Cài APK
 ```bash
 cd /media/libra/data2/tayninh_GIS/apps/mobile/android
-adb install -r app/build/outputs/apk/release/app-release.apk
+adb install -r app/build/outputs/apk/thanhhoa/release/app-thanhhoa-arm64-v8a-release.apk
 ```
 Thành công in `Performing Streamed Install` rồi `Success`.
 
@@ -272,26 +277,26 @@ Thành công in `Performing Streamed Install` rồi `Success`.
 ### 6.4 Có nhiều thiết bị cùng cắm
 ```bash
 adb devices                        # lấy số serial ở cột đầu
-adb -s R58M12ABCDE install -r app/build/outputs/apk/release/app-release.apk
+adb -s R58M12ABCDE install -r app/build/outputs/apk/thanhhoa/release/app-thanhhoa-arm64-v8a-release.apk
 ```
 Không có `-s` khi có ≥ 2 máy sẽ báo `error: more than one device/emulator`.
 
 ### 6.5 Mở app và xem log
 ```bash
 # Mở app
-adb shell monkey -p com.tayninh.gis -c android.intent.category.LAUNCHER 1
+adb shell monkey -p com.tayninh.gis.thanhhoa -c android.intent.category.LAUNCHER 1
 
 # Xem log của riêng app (Ctrl+C để thoát)
-adb logcat --pid=$(adb shell pidof com.tayninh.gis)
+adb logcat --pid=$(adb shell pidof com.tayninh.gis.thanhhoa)
 
 # Chỉ xem lỗi
-adb logcat --pid=$(adb shell pidof com.tayninh.gis) *:E
+adb logcat --pid=$(adb shell pidof com.tayninh.gis.thanhhoa) *:E
 ```
 Nếu `pidof` trả rỗng nghĩa là app chưa chạy hoặc vừa sập — mở app rồi chạy lại lệnh.
 
 ### 6.6 Gỡ cài đặt (chỉ khi cần)
 ```bash
-adb uninstall com.tayninh.gis
+adb uninstall com.tayninh.gis.thanhhoa
 ```
 ⚠️ **Gỡ app xoá toàn bộ dữ liệu cục bộ**, gồm các hồ sơ khảo sát đang ở trạng thái *Chờ đồng bộ* /
 *Lỗi đồng bộ* — xem Mục 7.
@@ -328,7 +333,7 @@ Hồ sơ **chưa đồng bộ chỉ tồn tại trên điện thoại đó**. V�
 | `adb devices` **không liệt kê máy nào** | Cáp chỉ sạc / chưa bật Gỡ lỗi USB / thiếu quyền trên Linux | Đổi cáp; bật lại Gỡ lỗi USB; kiểm tra `lsusb` có thấy máy không |
 | `no permissions (missing udev rules?)` *(Linux)* | Thiếu quy tắc udev cho hãng điện thoại | Cài `android-sdk-platform-tools-common` (Ubuntu: `sudo apt install android-sdk-platform-tools-common`) rồi `sudo adb kill-server`, rút/cắm cáp |
 | `unauthorized` | Chưa cho phép trên điện thoại | Xem bảng ở 6.1 |
-| `INSTALL_FAILED_UPDATE_INCOMPATIBLE` | Bản đang cài **ký bằng chứng chỉ khác** | Phải `adb uninstall com.tayninh.gis` rồi cài lại — **mất dữ liệu nháp**, xem Mục 7 |
+| `INSTALL_FAILED_UPDATE_INCOMPATIBLE` | Bản đang cài **ký bằng chứng chỉ khác** | Phải `adb uninstall com.tayninh.gis.thanhhoa` rồi cài lại — **mất dữ liệu nháp**, xem Mục 7 |
 | `INSTALL_FAILED_NO_MATCHING_ABIS` | APK không có kiến trúc CPU khớp máy | Build lại đúng ABI theo Mục 3.3 |
 | `INSTALL_FAILED_OLDER_SDK` | Máy dưới Android 7.0 | Không hỗ trợ (minSdk 24) |
 | `INSTALL_FAILED_VERSION_DOWNGRADE` | `versionCode` thấp hơn bản đang cài | Tăng `versionCode` (Mục 3.4) hoặc thêm `-d` |
@@ -360,18 +365,19 @@ Làm theo thứ tự trên máy thật:
 
 | Việc | Lệnh |
 |---|---|
-| Build release (arm64) | `./gradlew assembleRelease -PreactNativeArchitectures=arm64-v8a` |
-| Build debug (cho thử HTTP / `adb reverse`) | `./gradlew assembleDebug` |
+| Build cả 3 xã (6 APK) | `cd apps/mobile && npm run apk:all` |
+| Build 1 xã | `npm run apk:thanhhoa` (hoặc `apk:myan`, `apk:tanan`) |
+| Build debug (cho thử HTTP / `adb reverse`) | `npm run dev:thanhhoa` rồi `./gradlew assembleThanhhoaDebug` |
 | Dọn build | `./gradlew clean` |
-| Đường dẫn APK release | `android/app/build/outputs/apk/release/app-release.apk` |
+| Đường dẫn APK | `apps/mobile/dist/<flavor>/AMS-<Ten>-v<version>-<abi>.apk` |
 | Xem thông tin APK | `$ANDROID_HOME/build-tools/36.0.0/aapt dump badging <apk>` |
 | Xem chữ ký APK | `$ANDROID_HOME/build-tools/36.0.0/apksigner verify --print-certs <apk>` |
 | Liệt kê thiết bị | `adb devices -l` |
 | Cài đè | `adb install -r <apk>` |
-| Mở app | `adb shell monkey -p com.tayninh.gis -c android.intent.category.LAUNCHER 1` |
-| Xem log app | `adb logcat --pid=$(adb shell pidof com.tayninh.gis)` |
-| Gỡ app | `adb uninstall com.tayninh.gis` |
-| Copy APK ra máy khác | `cp android/app/build/outputs/apk/release/app-release.apk ~/AMS-1.0.apk` |
+| Mở app | `adb shell monkey -p com.tayninh.gis.thanhhoa -c android.intent.category.LAUNCHER 1` |
+| Xem log app | `adb logcat --pid=$(adb shell pidof com.tayninh.gis.thanhhoa)` |
+| Gỡ app | `adb uninstall com.tayninh.gis.thanhhoa` |
+| Copy APK ra máy khác | `cp ../dist/thanhhoa/AMS-ThanhHoa-v1.16-arm64-v8a.apk ~/AMS-1.16.apk` |
 
 > Tài liệu liên quan: `apps/mobile/README.md` (cài đặt môi trường lần đầu, cấu hình Maps key) ·
 > `BACKLOG.md` (các thay đổi mobile đợt góp ý 11/09/2026).

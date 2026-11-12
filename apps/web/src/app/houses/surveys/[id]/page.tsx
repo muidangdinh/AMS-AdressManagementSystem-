@@ -15,6 +15,7 @@ import {
   UserRole,
 } from '@tayninh/shared';
 import { useAuth } from '@/lib/auth-context';
+import { useConfirmDialog } from '@/components/ConfirmDialogProvider';
 import { ApiError } from '@/lib/api';
 import { assignmentsApi, campaignsApi, zonesApi } from '@/lib/surveys-api';
 import { NotificationEntity } from '@tayninh/shared';
@@ -46,6 +47,7 @@ export default function SurveyCampaignDetailPage() {
   const params = useParams<{ id: string }>();
   const campaignId = params.id;
   const { user, hasPermission } = useAuth();
+  const { confirm } = useConfirmDialog();
   const canEdit = !!user && EDITOR_ROLES.includes(user.role as UserRole);
   const canManageSurvey = hasPermission(PERMISSIONS.SURVEY_MANAGE);
   // Tuyến đường khảo sát: cùng quyền với API `survey-routes` (ghi cần survey:manage).
@@ -119,7 +121,7 @@ export default function SurveyCampaignDetailPage() {
   }
 
   async function handleRemoveZone(zoneId: string) {
-    if (!confirm('Xóa phân vùng này? Các tuyến đường vẫn còn trong kho tuyến. (chỉ xóa được khi chưa giao nhiệm vụ nào)')) return;
+    if (!(await confirm('Xóa phân vùng này? Các tuyến đường vẫn còn trong kho tuyến. (chỉ xóa được khi chưa giao nhiệm vụ nào)'))) return;
     try {
       await zonesApi.remove(zoneId);
       await load();
@@ -175,7 +177,7 @@ export default function SurveyCampaignDetailPage() {
   const [revisitTarget, setRevisitTarget] = useState<{ assignment: SurveyAssignment; zoneName: string } | null>(null);
 
   async function handleRemoveAssignment(assignmentId: string) {
-    if (!confirm('Xóa nhiệm vụ này? (chỉ xóa được khi chưa bắt đầu)')) return;
+    if (!(await confirm('Xóa nhiệm vụ này? (chỉ xóa được khi chưa bắt đầu)'))) return;
     try {
       await assignmentsApi.remove(assignmentId);
       await load();

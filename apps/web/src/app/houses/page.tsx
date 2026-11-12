@@ -53,6 +53,7 @@ import {
   Ward,
 } from '@tayninh/shared';
 import { useAuth } from '@/lib/auth-context';
+import { useConfirmDialog } from '@/components/ConfirmDialogProvider';
 import { ApiError, apiFetch, apiFetchBlob, getApiUrl } from '@/lib/api';
 import { districtsApi, hamletsApi, streetsApi, usageStatusesApi, wardsApi } from '@/lib/addresses-api';
 import { platesApi } from '@/lib/plates-api';
@@ -380,6 +381,7 @@ function ResetToTableFromQuery({ onReset }: { onReset: () => void }) {
 
 export default function HousesPage() {
   const { user, hasPermission } = useAuth();
+  const { confirm, prompt: confirmText } = useConfirmDialog();
   // Nhân sự ấp/thôn: API chỉ trả nhà trong ấp của họ (cộng nhà thuộc nhiệm vụ được giao), nên bộ lọc
   // ấp chỉ hiển thị; hồ sơ mới mặc định thuộc ấp của họ.
   const hamletScoped = user?.level === UserLevel.HAMLET;
@@ -1150,7 +1152,7 @@ export default function HousesPage() {
 
   async function handleDeletePhoto(photoId: string) {
     if (!selectedId) return;
-    if (!confirm('Xóa ảnh này?')) return;
+    if (!(await confirm('Xóa ảnh này?'))) return;
     try {
       await apiFetch(`/api/houses/${selectedId}/photos/${photoId}`, { method: 'DELETE' });
       await openDetail(selectedId);
@@ -1172,12 +1174,12 @@ export default function HousesPage() {
   async function handleDeleteHouse(house: HouseSummary) {
     const label = `số ${house.houseNumber} ${house.street}`;
     if (
-      !confirm(
+      !(await confirm(
         `Xóa hẳn hồ sơ ${label}? Ảnh, biển số, lịch sử và dòng trong phương án đánh số sẽ bị xóa. Hồ sơ hành chính liên quan chỉ mất liên kết.`,
-      )
+      ))
     )
       return;
-    const confirmation = window.prompt(`Để xác nhận, nhập chính xác:\nDELETE ${house.houseNumber} ${house.street}`);
+    const confirmation = await confirmText('Để xác nhận xóa hồ sơ, nhập chính xác:', 'DELETE');
     if (confirmation === null) return;
     setDeleting(true);
     try {
@@ -1198,12 +1200,12 @@ export default function HousesPage() {
     const ids = selectedHouseIds;
     if (ids.length === 0) return;
     if (
-      !confirm(
+      !(await confirm(
         `Xóa hẳn ${ids.length} hồ sơ đã chọn? Ảnh, biển số, lịch sử và dòng trong phương án đánh số sẽ bị xóa. Hồ sơ hành chính liên quan chỉ mất liên kết.`,
-      )
+      ))
     )
       return;
-    const confirmation = window.prompt('Để xác nhận xóa hàng loạt, nhập chính xác:\nDELETE ALL');
+    const confirmation = await confirmText('Để xác nhận xóa hàng loạt, nhập chính xác:', 'DELETE');
     if (confirmation === null) return;
     setDeleting(true);
     try {

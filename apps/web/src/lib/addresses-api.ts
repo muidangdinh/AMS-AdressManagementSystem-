@@ -7,7 +7,10 @@ import type {
   CreateWardRequest,
   District,
   Hamlet,
+  ResolveUnmatchedStreetRequest,
+  ResolveUnmatchedStreetResult,
   Street,
+  UnmatchedStreet,
   UsageStatusItem,
   CreateUsageStatusRequest,
   UpdateAlleyRequest,
@@ -61,6 +64,12 @@ export const streetsApi = {
   update: (id: string, dto: UpdateStreetRequest) =>
     apiFetch<Street>(`/api/streets/${id}`, { method: 'PATCH', body: JSON.stringify(dto) }),
   remove: (id: string) => apiFetch<void>(`/api/streets/${id}`, { method: 'DELETE' }),
+  unmatched: () => apiFetch<UnmatchedStreet[]>('/api/streets/unmatched'),
+  resolveUnmatched: (dto: ResolveUnmatchedStreetRequest) =>
+    apiFetch<ResolveUnmatchedStreetResult>('/api/streets/unmatched/resolve', {
+      method: 'POST',
+      body: JSON.stringify(dto),
+    }),
 };
 
 export const alleysApi = {

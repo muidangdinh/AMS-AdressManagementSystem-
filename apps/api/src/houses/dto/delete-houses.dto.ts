@@ -8,7 +8,7 @@ import {
   MinLength,
 } from 'class-validator';
 
-/** Body DELETE /api/houses — xóa hàng loạt hồ sơ số nhà. */
+/** Body DELETE /api/houses — xóa hàng loạt hồ sơ số nhà; yêu cầu nhập chính xác `DELETE`. */
 export class DeleteHousesDto {
   @IsArray()
   @ArrayNotEmpty()

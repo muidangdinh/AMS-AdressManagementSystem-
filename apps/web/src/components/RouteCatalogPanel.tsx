@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import dynamic from 'next/dynamic';
 import type { Street, SurveyRoute, Ward } from '@tayninh/shared';
 import { ApiError } from '@/lib/api';
+import { useConfirmDialog } from '@/components/ConfirmDialogProvider';
 import { streetsApi, wardsApi } from '@/lib/addresses-api';
 import { formatLength } from '@/lib/routing';
 import { routesApi } from '@/lib/surveys-api';
@@ -34,6 +35,7 @@ type StatusFilter = 'active' | 'inactive' | 'all';
  * thì không sửa được đường đi, chỉ nhân bản; tuyến đang dùng thì ngừng sử dụng thay vì xóa.
  */
 export default function RouteCatalogPanel() {
+  const { confirm, prompt: confirmText } = useConfirmDialog();
   const [routes, setRoutes] = useState<SurveyRoute[]>([]);
   const [wards, setWards] = useState<Ward[]>([]);
   const [streets, setStreets] = useState<Street[]>([]);
@@ -213,8 +215,8 @@ export default function RouteCatalogPanel() {
   }
 
   async function handleRemove(route: SurveyRoute) {
-    if (!confirm(`Xóa tuyến "${route.name}" khỏi kho? Thao tác này không thể hoàn tác.`)) return;
-    const confirmation = window.prompt(`Để xác nhận, nhập chính xác:\nDELETE ${route.name}`);
+    if (!(await confirm(`Xóa tuyến "${route.name}" khỏi kho? Thao tác này không thể hoàn tác.`))) return;
+    const confirmation = await confirmText('Để xác nhận, nhập chính xác:', `DELETE ${route.name}`);
     if (confirmation === null) return;
     setError(null);
     try {

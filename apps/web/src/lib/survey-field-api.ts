@@ -55,6 +55,12 @@ export function fetchHouse(id: string): Promise<HouseSummary> {
   return apiFetch<HouseSummary>(`/api/houses/${id}`);
 }
 
+export function fetchStreetSuggestions(wardId?: string): Promise<string[]> {
+  return apiFetch<string[]>(
+    `/api/houses/street-suggestions${wardId ? `?wardId=${encodeURIComponent(wardId)}` : ''}`,
+  );
+}
+
 export function searchOwners(q: string, signal?: AbortSignal): Promise<OwnerSearchResult[]> {
   return apiFetch<OwnerSearchResult[]>(`/api/houses/owners?q=${encodeURIComponent(q)}`, { signal });
 }

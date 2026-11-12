@@ -38,20 +38,28 @@ npm install
 cd ios && bundle install && bundle exec pod install && cd ..
 ```
 
-## Cấu hình `API_URL`
+## Cấu hình xã / `API_URL`
 
-Sửa `src/lib/api.ts`:
+Không sửa tay `src/lib/api.ts`. Cấu hình từng xã nằm ở `variants.json`:
 
-```ts
-export const API_URL = 'http://10.0.2.2:3001'; // mặc định cho Android Emulator
+```json
+{
+  "thanhhoa": {
+    "appName": "AMS-ThanhHoa",
+    "applicationId": "com.tayninh.gis.thanhhoa",
+    "apiUrl": "https://ams.librasoft.vn",
+    "mapCenter": [106.18222, 10.65528]
+  }
+}
 ```
 
-- **Android Emulator**: giữ nguyên `10.0.2.2` (địa chỉ đặc biệt trỏ về `localhost` của máy host).
-- **iOS Simulator**: đổi thành `http://localhost:3001`.
-- **Điện thoại thật** (cùng mạng Wi-Fi với máy chạy backend): đổi thành IP LAN thật của máy
-  chạy backend, ví dụ `http://192.168.1.10:3001`.
-- **Backend chạy trên máy chủ dev từ xa**: đổi thành domain/IP public của máy chủ đó
-  (nhớ mở port 3001 hoặc đặt sau reverse proxy HTTPS).
+- Build APK theo xã: `npm run apk:thanhhoa` (hoặc `apk:myan`, `apk:tanan`, `apk:all`).
+- Xem hướng dẫn đầy đủ tại [`BUILD_APK_3_XA.md`](../../BUILD_APK_3_XA.md).
+- Debug với API localhost (cổng 4002): `npm run dev:thanhhoa`, restart Metro `--reset-cache`,
+  rồi `npx react-native run-android --mode=thanhhoaDebug --appId com.tayninh.gis.thanhhoa`.
+  Điện thoại thật cần `adb reverse tcp:4002 tcp:4002`.
+- Test xong: `npm run variant:thanhhoa` (trả URL production từ `variants.json`).
+- Build release luôn qua `npm run apk:*`; Gradle không tự sinh `appVariant.ts`.
 
 ## Bản đồ Goong (MapLibre)
 

@@ -3,6 +3,7 @@ import { RequirePermissions } from '../auth/decorators/permissions.decorator';
 import { PERMISSIONS } from '../auth/permissions';
 import { StreetsService } from './streets.service';
 import { CreateStreetDto } from './dto/create-street.dto';
+import { ResolveUnmatchedStreetDto } from './dto/resolve-unmatched-street.dto';
 import { UpdateStreetDto } from './dto/update-street.dto';
 import { ListStreetsQueryDto } from './dto/list-streets-query.dto';
 
@@ -14,6 +15,19 @@ export class StreetsController {
   @Get()
   findAll(@Query() query: ListStreetsQueryDto) {
     return this.streetsService.findAll(query);
+  }
+
+  /** Tên đường có trong House.street nhưng chưa có trong danh mục — phải đặt trước ':id'. */
+  @RequirePermissions(PERMISSIONS.ADDRESS_WRITE)
+  @Get('unmatched')
+  findUnmatched() {
+    return this.streetsService.findUnmatchedStreets();
+  }
+
+  @RequirePermissions(PERMISSIONS.ADDRESS_WRITE)
+  @Post('unmatched/resolve')
+  resolveUnmatched(@Body() dto: ResolveUnmatchedStreetDto) {
+    return this.streetsService.resolveUnmatchedStreet(dto);
   }
 
   @Get(':id')

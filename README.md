@@ -81,8 +81,8 @@ curl http://localhost:3001/api/users -H "Authorization: Bearer <accessToken_admi
   dùng được đến khi hết hạn.
 - Đổi/đặt lại mật khẩu hoặc khóa tài khoản làm **mọi phiên** của người đó mất hiệu lực ngay
   (`User.tokenVersion`). Người tự đổi mật khẩu nhận cặp token mới để không bị đăng xuất ở thiết bị đang dùng.
-- Sai mật khẩu 5 lần trong 15 phút: tên đăng nhập đó bị chặn 15 phút (trả 429). Mỗi lần sai được ghi
-  `LOGIN_FAILED` vào `audit_log`.
+- Khóa đăng nhập khi sai nhiều lần **đang tắt mặc định**; bật bằng `LOGIN_THROTTLE_ENABLED=true`
+  (sai 5 lần/15 phút → chặn 15 phút, trả 429). Mỗi lần sai vẫn được ghi `LOGIN_FAILED` vào `audit_log`.
 - API từ chối khởi động nếu `JWT_SECRET` thiếu hoặc còn là giá trị mẫu.
 - Tài khoản bị vô hiệu hóa (`isActive=false`) sẽ bị từ chối **ngay lập tức**
   ở lần gọi API tiếp theo, kể cả khi JWT chưa hết hạn (JwtStrategy tra lại DB mỗi request).

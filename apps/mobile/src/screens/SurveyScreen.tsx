@@ -41,6 +41,14 @@ import { createDraft, syncDraft, uploadHousePhoto } from '../lib/surveyStore';
 import { PHOTO_PICKER_OPTIONS } from '../lib/imageOptions';
 import { fetchHamlets, fetchStreets, fetchUsageStatuses, fetchWards } from '../lib/addressCatalog';
 import { getActiveAssignmentId, clearActiveAssignmentId } from '../lib/activeAssignment';
+import {
+  cacheStreetSuggestions,
+  fetchStreetSuggestions,
+  getCachedStreetSuggestions,
+  getRecentStreetSuggestion,
+  mergeStreetNames,
+  rememberStreetSuggestion,
+} from '../lib/streetSuggestions';
 import { fetchHouse, getAssignment, resurveyHouse as resurveyHouseApi } from '../lib/surveysApi';
 import { ApiError } from '../lib/api';
 import type { MainTabsParamList } from '../navigation/MainTabs';
@@ -184,14 +192,24 @@ export default function SurveyScreen() {
   // chế độ nhập tay như trước (rất quan trọng cho khảo sát vùng sóng yếu).
   const [wards, setWards] = useState<Ward[]>([]);
   const [streets, setStreets] = useState<Street[]>([]);
+  // Tên đường đã nhập tay trước đây (House.street) + cache máy — gợi ý cho lần khảo sát sau.
+  const [streetSuggestions, setStreetSuggestions] = useState<string[]>([]);
+  const [recentStreet, setRecentStreet] = useState<{ wardId: string; name: string } | null>(
+    null,
+  );
   // TN-07 — danh mục ấp PHỤ THUỘC xã đã chọn (Hamlet luôn thuộc 1 Ward) — tải lại mỗi khi đổi xã.
   const [hamlets, setHamlets] = useState<Hamlet[]>([]);
 
   useEffect(() => {
     fetchWards().then(setWards).catch(() => {});
-    fetchStreets().then(setStreets).catch(() => {});
     fetchUsageStatuses().then(setUsageStatuses).catch(() => {});
   }, []);
+
+  useFocusEffect(
+    useCallback(() => {
+      fetchStreets().then(setStreets).catch(() => {});
+    }, []),
+  );
 
   useEffect(() => {
     if (!wardId) {
@@ -199,6 +217,36 @@ export default function SurveyScreen() {
       return;
     }
     fetchHamlets(wardId).then(setHamlets).catch(() => {});
+  }, [wardId]);
+
+  useEffect(() => {
+    if (!wardId) {
+      setStreetSuggestions([]);
+      return;
+    }
+    let cancelled = false;
+    setStreetSuggestions([]);
+    (async () => {
+      const [cached, storedRecent] = await Promise.all([
+        getCachedStreetSuggestions(wardId).catch(() => []),
+        getRecentStreetSuggestion(wardId).catch(() => ''),
+      ]);
+      if (!cancelled) {
+        setStreetSuggestions(cached);
+        if (storedRecent) setRecentStreet({ wardId, name: storedRecent });
+      }
+      try {
+        const names = await fetchStreetSuggestions(wardId);
+        await cacheStreetSuggestions(wardId, names);
+        const merged = await getCachedStreetSuggestions(wardId);
+        if (!cancelled) setStreetSuggestions(merged);
+      } catch {
+        // Offline: giữ gợi ý đã cache trên máy.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, [wardId]);
 
   /**
@@ -309,6 +357,54 @@ export default function SurveyScreen() {
     }
     return opts;
   }, [usageStatuses, usageStatusId, usageStatusName]);
+  const streetOptions = useMemo(() => {
+    const wardStreets = streets.filter((s) => !wardId || s.wardId === wardId);
+    const catalog = wardStreets.map((s) => ({
+      id: s.id,
+      name: s.name,
+      detail: wards.find((wardOption) => wardOption.id === s.wardId)?.name ?? 'Chưa gán Phường/Xã',
+    }));
+    const catalogKeys = new Set(catalog.map((s) => s.name.trim().toLowerCase()));
+    const used = streetSuggestions
+      .filter((name) => {
+        const key = name.trim().toLowerCase();
+        if (!key || catalogKeys.has(key)) return false;
+        catalogKeys.add(key);
+        return true;
+      })
+      .map((name) => ({ id: '', name: name.trim(), detail: 'Đã dùng trước đây' }));
+
+    const options: { id: string; name: string; detail?: string }[] = [];
+    const seen = new Set<string>();
+    const push = (option: { id: string; name: string; detail?: string }) => {
+      const key = option.name.trim().toLowerCase();
+      if (!key || seen.has(key)) return;
+      seen.add(key);
+      options.push(option);
+    };
+
+    if (recentStreet && recentStreet.wardId === wardId) {
+      const match = catalog.find(
+        (option) => option.name.trim().toLowerCase() === recentStreet.name.toLowerCase(),
+      );
+      push(
+        match
+          ? { ...match, detail: 'Vừa dùng' }
+          : { id: '', name: recentStreet.name, detail: 'Vừa dùng' },
+      );
+    }
+
+    const newest = [...wardStreets]
+      .sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt))
+      .slice(0, 5);
+    for (const option of newest) {
+      push({ id: option.id, name: option.name, detail: 'Mới thêm' });
+    }
+
+    for (const option of catalog) push(option);
+    for (const option of used) push(option);
+    return options;
+  }, [streets, streetSuggestions, wardId, wards, recentStreet]);
   const [soTo, setSoTo] = useState('');
   const [soThua, setSoThua] = useState('');
   const [buildingType, setBuildingType] = useState<BuildingType>(BuildingType.SINGLE_HOUSE);
@@ -485,6 +581,14 @@ export default function SurveyScreen() {
       setWard(ww.name);
       setWardId(ww.id);
     }
+  }
+
+  /** Ghi tên đường vừa lưu vào gợi ý trên máy — kể cả hồ sơ tạm/offline chưa đồng bộ. */
+  async function rememberStreet(name: string) {
+    if (!wardId || !name.trim()) return;
+    setRecentStreet({ wardId, name: name.trim() });
+    setStreetSuggestions((prev) => mergeStreetNames([name], prev));
+    await rememberStreetSuggestion(wardId, name).catch(() => {});
   }
 
   /**
@@ -703,6 +807,7 @@ export default function SurveyScreen() {
         longitude: lng,
         note: note || undefined,
       });
+      await rememberStreet(street);
       Alert.alert('Đã gửi', `Nhà số ${houseNumber} đã được cập nhật.`);
       await exitResurvey(true);
     } catch (e) {
@@ -762,6 +867,7 @@ export default function SurveyScreen() {
         photoUris,
         note: note || undefined,
       });
+      await rememberStreet(street);
 
       if (isOffline) {
         Alert.alert('Đã lưu tạm', 'Hồ sơ đã được lưu trên thiết bị và sẽ tự đồng bộ khi có mạng.');
@@ -1009,13 +1115,7 @@ export default function SurveyScreen() {
           required
           textValue={street}
           idValue={streetId}
-          options={streets
-            .filter((s) => !wardId || s.wardId === wardId)
-            .map((s) => ({
-              id: s.id,
-              name: s.name,
-              detail: wards.find((wardOption) => wardOption.id === s.wardId)?.name ?? 'Chưa gán Phường/Xã',
-            }))}
+          options={streetOptions}
           onSelect={(opt) => {
             setStreetId(opt?.id ?? '');
             if (opt) setStreet(opt.name);
@@ -1412,7 +1512,7 @@ function AddressPickerField({
           <FlatList
             style={styles.modalList}
             data={filtered}
-            keyExtractor={(item) => item.id}
+            keyExtractor={(item) => item.id || item.name}
             ListHeaderComponent={
               !required ? (
                 <TouchableOpacity
@@ -1428,7 +1528,10 @@ function AddressPickerField({
             }
             renderItem={({ item }) => (
               <TouchableOpacity
-                style={[styles.modalOption, item.id === idValue && styles.modalOptionActive]}
+                style={[
+                  styles.modalOption,
+                  (item.id ? item.id === idValue : item.name === textValue) && styles.modalOptionActive,
+                ]}
                 onPress={() => {
                   onSelect(item);
                   setVisible(false);

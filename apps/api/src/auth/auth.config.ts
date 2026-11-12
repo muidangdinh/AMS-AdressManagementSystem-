@@ -27,3 +27,8 @@ export function getRefreshTokenTtlMs(): number {
   const days = Number(process.env.REFRESH_TOKEN_EXPIRES_DAYS ?? 30);
   return (Number.isFinite(days) && days > 0 ? days : 30) * 24 * 3600 * 1000;
 }
+
+/** Khóa đăng nhập khi sai nhiều lần — tạm tắt mặc định; bật bằng LOGIN_THROTTLE_ENABLED=true. */
+export function isLoginThrottleEnabled(): boolean {
+  return process.env.LOGIN_THROTTLE_ENABLED === 'true';
+}

@@ -6,12 +6,14 @@ import Link from 'next/link';
 import { PERMISSIONS } from '@tayninh/shared';
 import type { Alley, District, Hamlet, Street, Ward } from '@tayninh/shared';
 import { useAuth } from '@/lib/auth-context';
+import { useConfirmDialog } from '@/components/ConfirmDialogProvider';
 import { ApiError } from '@/lib/api';
 import { alleysApi, districtsApi, hamletsApi, streetsApi, wardsApi } from '@/lib/addresses-api';
 import { FIELD_CLASS, PageHeader, EmptyState, ButtonSpinner, SegmentedControl } from '@/components/ui';
 import RouteCatalogPanel from '@/components/RouteCatalogPanel';
+import UnmatchedStreetPanel from '@/components/UnmatchedStreetPanel';
 
-type TabKey = 'district' | 'ward' | 'hamlet' | 'street' | 'alley' | 'route';
+type TabKey = 'district' | 'ward' | 'hamlet' | 'street' | 'alley' | 'unmatched' | 'route';
 
 const TABS: { key: TabKey; label: string }[] = [
   // { key: 'district', label: 'Quận/Huyện' },
@@ -19,6 +21,7 @@ const TABS: { key: TabKey; label: string }[] = [
   { key: 'hamlet', label: 'Thôn/Ấp/Tổ dân phố' },
   { key: 'street', label: 'Đường/Phố' },
   { key: 'alley', label: 'Hẻm/Ngõ' },
+  { key: 'unmatched', label: 'Đường chưa có trong danh mục' },
 ];
 const ROUTE_TAB: { key: TabKey; label: string } = { key: 'route', label: 'Tuyến trên bản đồ' };
 
@@ -33,6 +36,7 @@ const ROUTE_TAB: { key: TabKey; label: string } = { key: 'route', label: 'Tuyế
  */
 export default function AddressesAdminPage() {
   const { user, hasPermission } = useAuth();
+  const { confirm } = useConfirmDialog();
   const router = useRouter();
   const canManage = hasPermission(PERMISSIONS.ADDRESS_WRITE);
   const canManageRoutes = hasPermission(PERMISSIONS.ROUTE_MANAGE);
@@ -79,6 +83,14 @@ export default function AddressesAdminPage() {
     loadAll();
   }, [loadAll]);
 
+  const refreshStreets = useCallback(async () => {
+    try {
+      setStreets(await streetsApi.list());
+    } catch {
+      // Danh sách chưa chuẩn hoá đã báo lỗi riêng; tab Đường/Phố sẽ tự tải lại sau.
+    }
+  }, []);
+
   // ---- Quận/Huyện ----
   const [districtForm, setDistrictForm] = useState({ name: '', code: '' });
   const [districtSaving, setDistrictSaving] = useState(false);
@@ -100,7 +112,7 @@ export default function AddressesAdminPage() {
   }
 
   async function handleDeleteDistrict(id: string) {
-    if (!confirm('Xóa quận/huyện này? Xã/phường đang gán sẽ mất liên kết (không bị xóa).')) return;
+    if (!(await confirm('Xóa quận/huyện này? Xã/phường đang gán sẽ mất liên kết (không bị xóa).'))) return;
     try {
       await districtsApi.remove(id);
       setDistricts((prev) => prev.filter((d) => d.id !== id));
@@ -134,7 +146,7 @@ export default function AddressesAdminPage() {
   }
 
   async function handleDeleteWard(id: string) {
-    if (!confirm('Xóa xã/phường này? Thôn/ấp trực thuộc sẽ bị xóa theo, đường/phố mất liên kết.'))
+    if (!(await confirm('Xóa xã/phường này? Thôn/ấp trực thuộc sẽ bị xóa theo, đường/phố mất liên kết.')))
       return;
     try {
       await wardsApi.remove(id);
@@ -170,7 +182,7 @@ export default function AddressesAdminPage() {
   }
 
   async function handleDeleteHamlet(id: string) {
-    if (!confirm('Xóa thôn/ấp/tổ dân phố này?')) return;
+    if (!(await confirm('Xóa thôn/ấp/tổ dân phố này?'))) return;
     try {
       await hamletsApi.remove(id);
       setHamlets((prev) => prev.filter((h) => h.id !== id));
@@ -200,7 +212,7 @@ export default function AddressesAdminPage() {
   }
 
   async function handleDeleteStreet(id: string) {
-    if (!confirm('Xóa đường/phố này? Hẻm/ngõ trực thuộc sẽ bị xóa theo.')) return;
+    if (!(await confirm('Xóa đường/phố này? Hẻm/ngõ trực thuộc sẽ bị xóa theo.'))) return;
     try {
       await streetsApi.remove(id);
       setStreets((prev) => prev.filter((s) => s.id !== id));
@@ -235,7 +247,7 @@ export default function AddressesAdminPage() {
   }
 
   async function handleDeleteAlley(id: string) {
-    if (!confirm('Xóa hẻm/ngõ này?')) return;
+    if (!(await confirm('Xóa hẻm/ngõ này?'))) return;
     try {
       await alleysApi.remove(id);
       setAlleys((prev) => prev.filter((a) => a.id !== id));
@@ -254,7 +266,7 @@ export default function AddressesAdminPage() {
 
   return (
     <div className="h-full overflow-auto p-6 bg-app-shell">
-      <div className={`${tab === 'route' ? 'max-w-7xl' : 'max-w-3xl'} mx-auto w-full`}>
+      <div className={`${tab === 'route' || tab === 'unmatched' ? 'max-w-7xl' : 'max-w-3xl'} mx-auto w-full`}>
       <PageHeader
         title="Quản lý tuyến đường"
         subtitle="Xã/phường → Thôn/ấp/Tổ dân phố, và Đường/phố → Hẻm/ngõ. Dùng để chọn trong dropdown khi tạo/sửa hồ sơ số nhà."
@@ -545,6 +557,8 @@ export default function AddressesAdminPage() {
               />
             </>
           )}
+
+          {tab === 'unmatched' && <UnmatchedStreetPanel onStreetsChanged={refreshStreets} />}
         </div>
       )}
       </div>

@@ -48,17 +48,14 @@ import {
   type Ward,
 } from '@tayninh/shared';
 import { API_URL, apiFetch, ApiError } from '../lib/api';
+import { MAP_CENTER } from '../lib/appVariant';
 import { fetchAppConfig } from '../lib/appConfig';
 import { fetchHamlets, fetchStreets, fetchWards } from '../lib/addressCatalog';
 import { updateHouseLocation, updateHouseNumber } from '../lib/housesApi';
 import { useAuth } from '../lib/AuthContext';
 import type { MainTabsParamList } from '../navigation/MainTabs';
 
-/** Trung tâm mặc định: TP. Tây Ninh — dùng khi chưa lấy được GPS thật. */
-const TAYNINH_CENTER: [number, number] = [106.18222, 10.65528]; //Thạnh Hóa
-// const TAYNINH_CENTER: [number, number] = [106.341, 10.5762]; //Mỹ An
-// const TAYNINH_CENTER: [number, number] = [106.442222, 10.529167]; //Tân An
-
+/** Tâm bản đồ lấy theo từng xã từ variants.json (xem lib/appVariant.ts). */
 const MAP_ZOOM = 12;
 
 /** Bán kính mặc định khi bấm vào chỗ trống trên bản đồ để tra cứu số nhà xung quanh (mét). */
@@ -518,7 +515,7 @@ export default function MapScreen() {
           handleMapPress(latitude, longitude);
         }}
       >
-        <Camera ref={cameraRef} initialViewState={{ center: TAYNINH_CENTER, zoom: MAP_ZOOM }} />
+        <Camera ref={cameraRef} initialViewState={{ center: MAP_CENTER, zoom: MAP_ZOOM }} />
 
         <GeoJSONSource
           id="houses"

@@ -536,6 +536,36 @@ export class HousesService {
     });
   }
 
+  /**
+   * Gợi ý tên đường cho form khảo sát: lấy từ House.street trong phạm vi dữ liệu
+   * của tài khoản, không tự ghi vào danh mục Street. Trim + dedupe không phân biệt
+   * hoa/thường rồi giới hạn 100 tên.
+   */
+  async findStreetSuggestions(user: AuthenticatedUser, wardId?: string) {
+    const rows = await this.prisma.house.findMany({
+      where: {
+        ...(wardId ? { wardId } : {}),
+        street: { not: '' },
+        AND: [houseScopeWhere(user)],
+      },
+      select: { street: true },
+      distinct: ['street'],
+      orderBy: { street: 'asc' },
+      take: 200,
+    });
+
+    const seen = new Set<string>();
+    const names: string[] = [];
+    for (const { street } of rows) {
+      const name = street.trim();
+      const key = name.toLowerCase();
+      if (!name || seen.has(key)) continue;
+      seen.add(key);
+      names.push(name);
+    }
+    return names.slice(0, 100);
+  }
+
   /** Không kiểm tra phạm vi — chỉ dùng cho route công khai (ảnh QR). */
   async findOneOrThrow(id: string): Promise<House> {
     const house = await this.prisma.house.findUnique({ where: { id } });
@@ -909,36 +939,24 @@ export class HousesService {
   }
 
   async remove(id: string, confirmation: string, user: AuthenticatedUser) {
-    await this.deleteHouses([id], confirmation, false, user);
+    await this.deleteHouses([id], confirmation, user);
   }
 
   async removeMany(ids: string[], confirmation: string, user: AuthenticatedUser) {
-    await this.deleteHouses(ids, confirmation, true, user);
+    await this.deleteHouses(ids, confirmation, user);
   }
 
   /** Xóa hẳn nhà + file ảnh đính kèm. Ảnh/biển/lịch sử/phương án cascade theo schema. */
-  private async deleteHouses(
-    ids: string[],
-    confirmation: string,
-    bulk: boolean,
-    user: AuthenticatedUser,
-  ) {
+  private async deleteHouses(ids: string[], confirmation: string, user: AuthenticatedUser) {
     const uniqueIds = [...new Set(ids)];
     const fileUrls = await this.prisma.$transaction(async (tx) => {
       const houses = await tx.house.findMany({
         where: { id: { in: uniqueIds }, ...houseScopeWhere(user) },
-        select: { id: true, houseNumber: true, street: true },
+        select: { id: true },
       });
       if (houses.length !== uniqueIds.length) throw new NotFoundException(OUT_OF_SCOPE_HOUSE);
-      if (bulk && confirmation !== 'DELETE ALL') {
-        throw new BadRequestException('Xác nhận không chính xác — hãy nhập DELETE ALL');
-      }
-      if (!bulk) {
-        const house = houses[0];
-        const expected = `DELETE ${house.houseNumber} ${house.street}`;
-        if (confirmation !== expected) {
-          throw new BadRequestException(`Xác nhận không chính xác — hãy nhập ${expected}`);
-        }
+      if (confirmation !== 'DELETE') {
+        throw new BadRequestException('Xác nhận không chính xác — hãy nhập DELETE');
       }
 
       const [photos, plates] = await Promise.all([

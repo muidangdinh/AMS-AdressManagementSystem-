@@ -8,7 +8,18 @@
     "lint": "eslint .",
     "start": "react-native start",
     "test": "jest",
-    "postinstall": "patch-package"
+    "postinstall": "patch-package",
+    "apk:thanhhoa": "node scripts/build-apk.mjs thanhhoa",
+    "apk:myan": "node scripts/build-apk.mjs myan",
+    "apk:tanan": "node scripts/build-apk.mjs tanan",
+    "apk:all": "node scripts/build-apk.mjs all",
+    "variant:thanhhoa": "node scripts/generate-variant.mjs thanhhoa",
+    "variant:myan": "node scripts/generate-variant.mjs myan",
+    "variant:tanan": "node scripts/generate-variant.mjs tanan",
+    "variant:reset": "node scripts/generate-variant.mjs --default",
+    "dev:thanhhoa": "node scripts/generate-variant.mjs thanhhoa http://localhost:4002",
+    "dev:myan": "node scripts/generate-variant.mjs myan http://localhost:4002",
+    "dev:tanan": "node scripts/generate-variant.mjs tanan http://localhost:4002"
   },
   "dependencies": {
     "@maplibre/maplibre-react-native": "^11.5.1",
